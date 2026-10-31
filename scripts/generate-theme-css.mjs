@@ -8,7 +8,7 @@ import {ACCENTS} from '../src/appearance.js';
 const base=fs.readFileSync(new URL('../src/style.css',import.meta.url),'utf8');
 const tree=postcss.parse(base);
 const tokens=new Map();
-const special=/\.hero(?:\b|-)|\.banner-text\b|\.detail-banner\b|\.trending-(?:number|image)\b|\.source-symbol\b|\.source-pill\b|\.tab-dot\b|\.cover-status\b|\.modal-backdrop\b|\.iframe-wrap\b/;
+const special=/\.hero(?:\b|-)|\.banner-text\b|\.detail-banner\b|\.trending-(?:number|image)\b|\.source-symbol\b|\.source-pill\b|\.tab-dot\b|\.cover-status\b|\.card-rating\b|\.modal-backdrop\b|\.iframe-wrap\b/;
 const reHex=/#([0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})(?![0-9a-fA-F])/g;
 function roleFor(prop) {
   if(prop==='color')return 'text';
