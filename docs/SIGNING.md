@@ -114,10 +114,13 @@ For a run that will publish a GitHub Release, the workflow:
 
 1. requires all four secrets and stops if any is missing;
 2. decodes the keystore into the runner's temporary directory with mode `600`;
-3. runs `assembleRelease` with the signing values in environment variables;
-4. verifies the APK with `apksigner` and prints its public certificate details;
-5. uploads that signed APK for the release job; and
-6. removes the temporary keystore.
+3. proves the decoded keystore opens with the supplied store password, key
+   password, and alias, stopping with a plain-language error if they do not
+   match the file;
+4. runs `assembleRelease` with the signing values in environment variables;
+5. verifies the APK with `apksigner` and prints its public certificate details;
+6. uploads that signed APK for the release job; and
+7. removes the temporary keystores.
 
 ## 4. Build a signed release locally
 
