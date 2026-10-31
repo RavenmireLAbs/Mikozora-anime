@@ -107,7 +107,7 @@ try{
   await go(page);await page.getByRole('heading',{name:/Welcome back/i}).waitFor();
   assert.equal((await record(page)).version,APP_VERSION);assert.equal((await record(page)).status,'pending');
   await page.screenshot({path:resolve(SCREENSHOTS,'update-desktop.png')});await noOverflow(page);
-  await page.getByRole('button',{name:'Continue to Moku'}).click();
+  await page.getByRole('button',{name:'Continue to Mikozora'}).click();
   await page.locator('.app-shell').waitFor();await page.reload({waitUntil:'domcontentloaded'});await page.locator('.app-shell').waitFor();
   assert.equal(await page.locator('.intro-screen').count(),0);assert.deepEqual(errors,[]);await context.close();
  }
@@ -123,7 +123,7 @@ try{
   upgrade();await page.reload({waitUntil:'domcontentloaded'});await page.getByRole('heading',{name:/Welcome back/i}).waitFor();
   assert.equal((await record(page)).mode,'update');
   for(const [key,value] of Object.entries(legacy))assert.deepEqual(await page.evaluate(k=>JSON.parse(localStorage.getItem(k)),key),JSON.parse(value),key+' survives the actual old/new UI swap');
-  await page.getByRole('button',{name:'Continue to Moku'}).click();await page.locator('.app-shell').waitFor();
+  await page.getByRole('button',{name:'Continue to Mikozora'}).click();await page.locator('.app-shell').waitFor();
   await page.reload({waitUntil:'domcontentloaded'});await page.locator('.app-shell').waitFor();
   assert.equal(await page.locator('.intro-screen').count(),0);assert.deepEqual(errors,[]);await context.close();
   console.log('PASS actual previous APK UI -> current UI: same origin/localStorage, preserved data and one update screen.');
