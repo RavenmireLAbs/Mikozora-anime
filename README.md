@@ -2,8 +2,11 @@
 
 An Android-first anime and donghua browser inspired by the source-based discovery, library and history idea in [Kotatsu Redo](https://github.com/Kotatsu-Redo/Kotatsu-Redo). Moku is an independent project; it does not include Kotatsu's code or manga parsers.
 
-## Features in 0.10.0
+## Features in 0.11.0
 
+- **Browse filters:** the Browse page now has a filter panel with **category** (all, anime or donghua), **source**, **genre** (multi-select; a title matches any selected genre), **release year** (inclusive From/To range), **status**, **NSFW** and **sort** (popularity, score, newest, A–Z). Filters combine with the keyword search and stack into removable chips with a **Clear all** action and a mobile filter drawer. Filter choices are saved on the device under their own key, are validated on load, and never touch library, collection, history or download data.
+- **NSFW filter plus a separate global switch:** the Browse NSFW control (**Hide 18+ / Include / Only 18+**) is a view filter. **Settings → Adult content (NSFW)** is an independent master switch: when it is off, NSFW titles are removed from Browse, search, rails and title details, and the Browse NSFW options are locked to Hide 18+. Turning the switch on only unlocks the option; adult titles stay hidden until Include or Only 18+ is chosen (or **Show 18+ titles in Browse now** is tapped). The switch wins over saved filter state: adult content is off on a fresh install, open adult details close immediately when it is turned off, and the filtering layer re-checks the switch on every query.
+- **PG rating on every title:** every anime and donghua shows a rating badge on its card, in its details sheet with a plain-language explanation, and in the Settings rating legend. The scale is **G**, **PG**, **PG-13**, **R-17** and **18+** (adult), with an **NR** fallback when a source provides no rating. NSFW entries are always 18+, and a source's NSFW flag alone is enough to classify a title as adult.
 - **Appearance:** in **Settings → Appearance**, choose Dark or Light and a Green, Blue, Purple, Pink or Amber accent. Choices apply immediately and are saved separately from your library, collections, downloads and update preferences. The original dark-green appearance remains the default; artwork and video are not color-filtered. The native online-player controls and Android system bars follow the selected appearance; the offline video player remains dark. Android 6–7 keeps a dark navigation bar because those versions do not support dark navigation icons.
 - **Episode updates:** titles in Favourites or any personal collection are checked once per source/title, both when the app opens and periodically in the background (about every six hours when Android permits). The first successful check establishes a quiet baseline; later source-reported additions appear in **Updates**, with unread badges and optional Android notifications. Use **Check now** to request a manual check, even if automatic checks are off. The app asks for Android 13+ notification permission when needed; Settings has separate controls for automatic checks, Moku alerts and Android notification access. A network connection is required, Android may defer work, and force-stopping the app pauses background jobs until it is opened again. Source listings can change, disappear or report an episode before a playable server is available.
 - Only titles assigned to Favourites or a personal collection are followed; titles merely saved under All titles are not. Removing a title from its last collection stops checks and removes its episode-update history, not its library entry, history, downloads or files. Re-adding it starts a fresh silent baseline. In the interest of avoiding false alerts when a source temporarily supplies a partial list, the checker announces higher-numbered episodes and new unnumbered episode links; it does not announce newly backfilled lower-numbered episodes. Source errors leave the previous baseline intact and are shown in Updates. At most the 500 most recent update entries are kept on the device. AnimeBash checks its own provided episode metadata, filters explicitly future-dated entries and does not invent a larger episode list from the series total.
@@ -19,6 +22,35 @@ An Android-first anime and donghua browser inspired by the source-based discover
 - The queue uses AndroidX WorkManager and Media3 to persist requests and download progressive video or selected HLS renditions and their segments—not just a stream URL or playlist. Two resolver workers and up to two media downloads run concurrently. HLS audio and supported subtitle renditions are selected with Media3's download helper; Anime text selections are limited to identified English tracks.
 - **Title-organized playable folder copies.** Select an Android folder in **Settings → Download location**. New downloads are converted inside the app, then saved as MP4 files in a subfolder named for each title, with saved subtitle sidecars alongside them. After checking the saved files, Moku removes the private copies and plays from the selected folder. Existing in-app downloads can be saved individually with **Downloads → Save to folder** (or **Save another copy** if already exported).
 - The responsive browser preview demonstrates the interface and sources. **Downloads, folder copies and offline playback run in the Android app only.** Android contacts the chosen sites and video hosts directly; it does not depend on the preview server.
+
+## Browse filters, NSFW controls and PG ratings
+
+The Browse filter panel is deliberately built from small, independent pieces:
+
+- **Query:** matches the title, alternate title, source and genres, case-insensitively, and composes with every other filter.
+- **Genre:** multi-select. A title is included when it has **any** selected genre; selected genres stay visible when the chip list is collapsed.
+- **Year:** two selects (From / To). Both bounds are inclusive, so picking the same year twice shows exactly that year. Choosing a bound past the other one moves the opposite bound with it, and stored states where From is greater than To are clamped rather than silently swapped.
+- **NSFW:** Hide 18+ (default), Include, or Only 18+. Adult titles are the ones rated 18+ or flagged NSFW by their source.
+- **Sort:** most popular, highest rated, newest first or title A–Z, with a stable title tie-breaker.
+
+The global switch in **Settings → Adult content (NSFW)** is separate on purpose. Using NSFW filters should not require disabling adult content for the whole app, and disabling adult content must not depend on the Browse filter remembering to stay on Hide 18+. So two layers are enforced in `src/lib/filters.js`:
+
+1. `prefs.allowNsfw` is applied first. When it is false, no adult title can enter a result set, and a stored `Include`/`Only 18+` filter is normalized back to `Hide 18+`.
+2. The Browse NSFW filter is applied afterwards. Asking for `Only 18+` while adult content is off returns an empty list instead of quietly showing everything else.
+
+Preferences (`moku.prefs.v1`) and Browse filters (`moku.browse.filters.v1`) are stored separately from library, collections, history and downloads. Both are read defensively, so blocked WebView storage, corrupt JSON or an older schema fall back to safe defaults (adult content off, default filters). Invalid filter values are repaired on load before they reach the UI.
+
+Ratings are defined once in `src/lib/ratings.js` and rendered by `RatingBadge`:
+
+| Rating | Meaning | Age guidance |
+| --- | --- | --- |
+| G | General audiences | All ages |
+| PG | Parental guidance | 7+ with a guardian |
+| PG-13 | Teens and up | 13+ |
+| R-17 | Mature themes, not adult content | 17+ |
+| 18+ | Adults only (NSFW) | 18+ |
+
+Ratings are guidance assembled from the source and Moku's local classification, not a guarantee for every scene. The browser preview ships a fixed 59-title demo catalogue (52 anime/donghua plus 7 adult entries with invented titles); no real series is labelled NSFW. The Android WebView build fills the same fields from source metadata at runtime.
 
 ## Using an external video player
 
@@ -80,6 +112,7 @@ Open the address printed by Vite. Its development-only proxy allows requests onl
 ## Tests
 
 - `npm test` runs appearance persistence/validation tests, startup lifecycle/version checks, all ten source adapters and collection/update fixtures, including deduplication, weekly source ranking, metadata/date parsing, status routes, collection operations, source identities, partial lists, mirrors and unsafe URL rejection.
+- `npm test` also covers the Browse filters, NSFW switch, ratings and preference storage: every filter combination, the global switch overriding stored NSFW state, inclusive/clamped year ranges, case-insensitive search, stable sorting without mutating the catalogue, defensive normalization of stale filter values, rating fallbacks, and storage that survives corrupt JSON or a blocked quota.
 - `npm run build && node tests/appearance-ui.mjs` checks all ten light/dark and accent combinations, instant application, keyboard controls, storage/restart, WCAG contrast for important text, multiple screens and dialogs, unchanged artwork and 320px/desktop layouts using a simulated Android bridge and CSP; this is not a real WebView test.
 - `scripts/build-appearance-device-test.sh` builds a separate-application-ID, test-only APK with an activity for native appearance persistence, palette contrast and Android status/navigation bar checks. It restores the production sources and manifest after building; never distribute the test APK.
 - `scripts/test-episodes.sh` compiles the actual native checker/store against small in-memory Android stubs and deterministic fixtures for all ten sources. It tests quiet baselines, repeat detection, partial/empty/failing source results, future-dated AnimeBash episodes, stale in-flight results after removal/re-addition, concurrent workers and separate settings. With `MOKU_SNAPSHOT_ZIP` and `MOKU_RESEARCH_DIR`, it also checks captured source listings. This is a JVM fixture test, not an Android background test.
