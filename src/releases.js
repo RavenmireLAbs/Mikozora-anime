@@ -1,13 +1,22 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; older entries remain available.
-export const APP_VERSION = '0.10.0';
+export const APP_VERSION = '0.11.0';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.10.0',
+    version: '0.11.0',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Filters for every mood', description: 'Browse by genre, release year and content in the new Browse filters, alongside source and status.' },
+      { title: 'Age ratings at a glance', description: 'Every anime and donghua card now shows its source age rating — like PG or PG-13 — or NR when the source provides none.' },
+      { title: 'NSFW, completely off if you want', description: 'A new Settings switch hides titles sources mark as adult everywhere in Moku, without deleting anything you saved.' },
+    ],
+  },
+  {
+    version: '0.10.0',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Your space, your colors', description: 'Choose light or dark mode and a green, blue, purple, pink or amber accent in Settings.' },
       { title: 'Make it yours', description: 'Your chosen look applies right away and stays with Moku when you reopen it.' },

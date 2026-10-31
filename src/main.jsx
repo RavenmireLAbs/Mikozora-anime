@@ -4,13 +4,14 @@ import {
   Home, Compass, Bookmark, History, Layers3, Settings2, Search, ArrowRight,
   ArrowUpRight, ChevronLeft, ChevronRight, Play, Check, RefreshCw, X, Clock3,
   ExternalLink, Sparkles, SlidersHorizontal, Film, LoaderCircle, AlertCircle,
-  Trash2, RotateCcw, FolderHeart, CircleHelp, ShieldCheck, Plus, ListVideo, Download, HardDrive, ListChecks, CheckCircle2, Heart, FolderPlus, Pencil, Folder, Flame, Bell, Sun, Moon
+  Trash2, RotateCcw, FolderHeart, CircleHelp, ShieldCheck, Plus, ListVideo, Download, HardDrive, ListChecks, CheckCircle2, Heart, FolderPlus, Pencil, Folder, Flame, Bell, Sun, Moon, EyeOff
 } from 'lucide-react';
 import { SOURCES, getCatalog, getDetail, getFeatured, getTrending, getDiscoverAnime, getServers, imageUrl, isAndroid, clearNetworkCache, getDownloads, getDownloadOptions, enqueueDownloads, removeDownload, openDownload, getExportSettings, chooseDownloadFolder, clearDownloadFolder, exportDownload, openExport, hasEpisodeUpdates, syncEpisodeTitles, getEpisodeUpdates, checkEpisodes, setEpisodeAutomatic, setEpisodeAlerts, markEpisodeRead } from './data';
 import { monitoredTitles, unreadByTitle } from './episode-updates';
 import { COLLECTIONS_KEY, FAVOURITES_ID, titleKey, normalizeCollections, collectionNameError, createCollection, renameCollection, deleteCollection, setCollectionItems, setTitleCollections, toggleFavourite, removeTitleFromCollections } from './collections';
 import { APP_VERSION, RELEASES, startupExperience, completeExperience } from './releases';
 import { ACCENTS, MODES, DEFAULT_APPEARANCE, readAppearance, saveAppearance, applyAppearance, syncNativeAppearance } from './appearance';
+import { GENRES, DEFAULT_CONTENT_PREFS, readContentPrefs, saveContentPrefs, isNsfw, ratingOf, yearOf, filterTitles } from './content';
 import './style.css';
 import './theme-generated.css';
 import './appearance.css';
@@ -21,11 +22,15 @@ try { initialAppearance=readAppearance(window.localStorage); } catch { /* retain
 applyAppearance(document,initialAppearance);
 syncNativeAppearance(initialAppearance);
 
+// The hide-NSFW preference is read before first render so hidden titles never flash.
+let initialContent={...DEFAULT_CONTENT_PREFS};
+try { initialContent=readContentPrefs(window.localStorage); } catch { /* retain default */ }
+
 const LIBRARY_KEY = 'moku.library.v1';
 const HISTORY_KEY = 'moku.history.v1';
 const sourceName = id => SOURCES[id]?.name || 'Source';
 const identity = titleKey;
-const savedSummary = item => ({source:item.source,url:item.url,title:item.title,image:item.image,type:item.type,badge:item.badge,status:item.status});
+const savedSummary = item => ({source:item.source,url:item.url,title:item.title,image:item.image,type:item.type,badge:item.badge,status:item.status,genres:item.genres,aired:item.aired,year:item.year,rating:item.rating,nsfw:item.nsfw});
 const displayStatus = value => ({'currently airing':'Ongoing','releasing':'Ongoing','finished airing':'Completed','finished':'Completed','not yet aired':'Upcoming','not_yet_released':'Upcoming'}[String(value||'').trim().toLowerCase()] || value || 'Not provided');
 function readStored(key) {
   try { const x = JSON.parse(localStorage.getItem(key) || '[]'); return Array.isArray(x) ? x : []; }
@@ -96,19 +101,26 @@ function TopBar({ page, go, submitSearch, refresh, unread = 0 }) {
 function SourcePill({ source, compact = false }) {
   return <span className={'source-pill ' + source + (compact ? ' compact' : '')} style={{'--source-accent':SOURCES[source]?.accent}}><i/>{sourceName(source)}</span>;
 }
+// Every card carries an age-rating chip: the normalized rating the source provided,
+// or NR (not rated) when it provided none. Moku never invents a rating.
+function RatingBadge({ item }) {
+  const rating = ratingOf(item);
+  return <span className={'card-rating' + (rating?.adult ? ' rating-adult' : rating ? ' rating-known' : ' rating-unknown')} title={rating ? `Age rating: ${rating.label}${rating.adult ? ' · adult content' : ''} (reported by ${sourceName(item?.source)})` : `Not rated · ${sourceName(item?.source)} does not provide an age rating`}>{rating ? rating.label : 'NR'}</span>;
+}
 function Cover({ item, eager = false }) {
   return <div className="cover-img"><img src={imageUrl(item.image)} alt="" loading={eager ? 'eager' : 'lazy'} onError={e=>{ e.currentTarget.style.display='none'; }}/><div className="cover-fallback"><Film size={28}/></div></div>;
 }
 function AnimeCard({ item, onOpen, inLibrary, toggle, index = 0, favourite, onFavourite, newCount = 0 }) {
+  const year = yearOf(item);
   return <article className="anime-card">
     <div className="card-cover">
       <button className="cover-hit" onClick={() => onOpen(item)} aria-label={`Open ${item.title}`}><Cover item={item} eager={index<4}/><span className="card-shade"/><span className="card-play"><Play size={16} fill="currentColor"/></span></button>
-      <div className="cover-top"><span className="cover-badge">{item.badge || 'SUB'}</span><div className="cover-buttons">{onFavourite&&<button className={'save-mini favourite-mini '+(favourite?'saved':'')} onClick={()=>onFavourite(item)} aria-label={favourite?`Remove ${item.title} from Favourites`:`Add ${item.title} to Favourites`} title={favourite?'Remove from Favourites':'Add to Favourites'}><Heart size={15} fill={favourite?'currentColor':'none'}/></button>}<button className={'save-mini '+(inLibrary?'saved':'')} onClick={() => toggle(item)} aria-label={inLibrary ? `Remove ${item.title} from library` : `Save ${item.title} to library`} title={inLibrary?'Remove from library':'Save to library'}><Bookmark size={15} fill={inLibrary?'currentColor':'none'}/></button></div></div>
+      <div className="cover-top"><div className="cover-badges"><span className="cover-badge">{item.badge || 'SUB'}</span><RatingBadge item={item}/></div><div className="cover-buttons">{onFavourite&&<button className={'save-mini favourite-mini '+(favourite?'saved':'')} onClick={()=>onFavourite(item)} aria-label={favourite?`Remove ${item.title} from Favourites`:`Add ${item.title} to Favourites`} title={favourite?'Remove from Favourites':'Add to Favourites'}><Heart size={15} fill={favourite?'currentColor':'none'}/></button>}<button className={'save-mini '+(inLibrary?'saved':'')} onClick={() => toggle(item)} aria-label={inLibrary ? `Remove ${item.title} from library` : `Save ${item.title} to library`} title={inLibrary?'Remove from library':'Save to library'}><Bookmark size={15} fill={inLibrary?'currentColor':'none'}/></button></div></div>
       {item.status && <span className="cover-status">{item.status}</span>}
       {newCount>0&&<span className="cover-new" aria-label={`${newCount} new episode${newCount===1?'':'s'}`}>{newCount} NEW</span>}
     </div>
     <button className="card-title" onClick={() => onOpen(item)} title={item.title}>{item.title}</button>
-    <div className="card-meta"><span>{item.type || 'ANIME'}</span><b>·</b><span>{sourceName(item.source)}</span></div>
+    <div className="card-meta">{year>0&&<><span>{year}</span><b>·</b></>}<span>{item.type || 'ANIME'}</span><b>·</b><span>{sourceName(item.source)}</span></div>
   </article>;
 }
 function Empty({ icon: Icon = Sparkles, title, body, action, actionLabel }) {
@@ -129,17 +141,17 @@ function Hero({ featured, fallback, open, has, toggle }) {
   const slides = (featured || []).filter((x,i,a)=>a.findIndex(y=>y.url===x.url)===i).slice(0,2);
   const slide = slides[spotlight % Math.max(slides.length,1)];
   const matching = fallback.find(x=>x.url===slide?.url);
-  const item = slide ? {...slide, image:matching?.image || slide.banner, type:matching?.type || 'ANIME', badge: matching?.badge || 'SUB'} : null;
+  const item = slide ? {...slide, image:matching?.image || slide.banner, type:matching?.type || 'ANIME', badge: matching?.badge || 'SUB', rating:matching?.rating, year:matching?.year, nsfw:matching?.nsfw, genres: matching?.genres || slide.genres} : null;
   return <div className={'hero ' + (!item ? 'hero-loading' : '')} style={item ? {backgroundImage:`linear-gradient(90deg, #171d19 0%, rgba(22,29,25,.98) 25%, rgba(22,29,25,.8) 47%, rgba(22,29,25,.08) 100%), linear-gradient(0deg, rgba(18,25,21,.35), transparent 70%), url("${imageUrl(item.banner)}")`} : undefined}>
     <div className="hero-noise"/>
     <div className="hero-content"><div className="hero-label"><span className="tiny-spark">✦</span> THE SPOTLIGHT <span className="hero-line"/> <span>{String(spotlight+1).padStart(2,'0')} / {String(Math.max(slides.length,1)).padStart(2,'0')}</span></div>
-      {item ? <><div className="hero-kicker">FEATURED ON ANIMESOGO</div><h2>{item.title}</h2><p>{item.genres || 'A story worth getting lost in.'}</p><div className="hero-buttons"><button className="btn primary" onClick={()=>open(item)}><Play size={15} fill="currentColor"/> View anime</button><button className="btn hero-save" onClick={()=>toggle(item)} aria-label={has(item)?'Remove from library':'Add to library'}><Bookmark size={17} fill={has(item)?'currentColor':'none'}/><span>{has(item)?'Saved':'My library'}</span></button></div></> : <><div className="hero-kicker">A LITTLE ESCAPE AWAITS</div><h2>Find a world to<br/>get lost in.</h2><p>Stories, adventures and everything in between.</p><button className="btn primary" onClick={()=>open(null)}><Compass size={16}/> Explore anime</button></>}
+      {item ? <><div className="hero-kicker">FEATURED ON ANIMESOGO</div><h2>{item.title}</h2><div className="hero-meta"><RatingBadge item={item}/>{yearOf(item)>0&&<span>{yearOf(item)}</span>}</div><p>{Array.isArray(item.genres) ? item.genres.join(' · ') : item.genres || 'A story worth getting lost in.'}</p><div className="hero-buttons"><button className="btn primary" onClick={()=>open(item)}><Play size={15} fill="currentColor"/> View anime</button><button className="btn hero-save" onClick={()=>toggle(item)} aria-label={has(item)?'Remove from library':'Add to library'}><Bookmark size={17} fill={has(item)?'currentColor':'none'}/><span>{has(item)?'Saved':'My library'}</span></button></div></> : <><div className="hero-kicker">A LITTLE ESCAPE AWAITS</div><h2>Find a world to<br/>get lost in.</h2><p>Stories, adventures and everything in between.</p><button className="btn primary" onClick={()=>open(null)}><Compass size={16}/> Explore anime</button></>}
     </div><div className="hero-index"><span>CURATED FOR YOU</span><div>{slides.map((x,i)=><button key={x.url} onClick={()=>setSpotlight(i)} className={spotlight===i?'current':''} aria-label={`Show spotlight ${i+1}`}/>)}</div></div>
   </div>;
 }
-function TrendingSection({ rankings, loading, open }) {
+function TrendingSection({ rankings, loading, open, hideNsfw = false }) {
   const [source,setSource] = useState('sogo');
-  const items = rankings[source] || [];
+  const items = filterTitles(rankings[source] || [], { hideNsfw });
   return <section className="content-section trending-section">
     <SectionHeading eyebrow="WHAT PEOPLE ARE WATCHING" title="Trending now"/>
     <div className="trending-controls"><div className="tabs" role="tablist" aria-label="Trending sources">
@@ -147,12 +159,12 @@ function TrendingSection({ rankings, loading, open }) {
     </div><span><Flame size={14}/> WEEKLY SOURCE RANKING</span></div>
     {loading[source] ? <div className="trending-loading"><LoaderCircle className="spin" size={17}/> Loading the weekly ranking…</div> : items.length ?
       <div className="trending-rail" aria-label={`${sourceName(source)} weekly ranking`}>{items.map((item)=><button className="trending-card" key={identity(item)} onClick={()=>open(item)} aria-label={`Open ${item.title}, number ${item.rank} on ${sourceName(source)}`}>
-        <div className="trending-image"><Cover item={item}/><span className="trending-number">{String(item.rank).padStart(2,'0')}</span></div>
+        <div className="trending-image"><Cover item={item}/><span className="trending-rating"><RatingBadge item={item}/></span><span className="trending-number">{String(item.rank).padStart(2,'0')}</span></div>
         <div className="trending-copy"><small>#{item.rank} THIS WEEK</small><strong>{item.title}</strong><span>{sourceName(source)} <ArrowRight size={13}/></span></div>
       </button>)}</div> : <div className="source-error"><AlertCircle size={17}/><span>The weekly ranking from {sourceName(source)} is unavailable. Try refreshing.</span></div>}
   </section>;
 }
-function HomePage({open, has, toggle, browse, recent, refreshKey}) {
+function HomePage({open, has, toggle, browse, recent, refreshKey, hideNsfw = false}) {
   const [state,setState] = useState({featured:[],sogo:[],xin:[],discover:[],trendSogo:[],trendXin:[],loadingSogo:true,loadingXin:true,loadingDiscover:true,loadingTrendSogo:true,loadingTrendXin:true});
   useEffect(()=>{ let alive=true; setState(x=>({...x,loadingSogo:true,loadingXin:true,loadingDiscover:true,loadingTrendSogo:true,loadingTrendXin:true}));
     getFeatured().then(value=>{if(alive)setState(x=>({...x,featured:value}))}).catch(()=>{if(alive)setState(x=>({...x,featured:[]}))});
@@ -163,15 +175,17 @@ function HomePage({open, has, toggle, browse, recent, refreshKey}) {
     getTrending('xin').then(value=>{if(alive)setState(x=>({...x,trendXin:value,loadingTrendXin:false}))}).catch(()=>{if(alive)setState(x=>({...x,trendXin:[],loadingTrendXin:false}))});
     return ()=>{alive=false};
   },[refreshKey]);
+  const shown = list => filterTitles(list || [], { hideNsfw });
+  const shownRecent = (recent || []).filter(entry => !hideNsfw || !isNsfw(entry.item));
   const date = new Intl.DateTimeFormat(undefined, { weekday:'long', month:'short', day:'numeric' }).format(new Date()).toUpperCase();
   return <div className="content home-page">
     <div className="welcome-row"><div><div className="date-line"><span className="date-star">✦</span> {date} <span className="date-separator"/> A GOOD DAY FOR ANIME</div><h1>Your next story starts here<span>.</span></h1><p>Good to have you here. What are we watching today?</p></div><div className="source-count"><div className="source-count-icon"><Layers3 size={17}/></div><div><strong>{Object.keys(SOURCES).length} sources</strong><small>One cozy place</small></div><i/></div></div>
-    <Hero featured={state.featured} fallback={state.sogo} open={x=>x?open(x):browse('all')} has={has} toggle={toggle}/>
-    {recent.length>0 && <section className="content-section continue-section"><SectionHeading eyebrow="PICK UP WHERE YOU LEFT OFF" title="Recently opened" link="View history" action={()=>browse('history')}/><div className="continue-rail">{recent.slice(0,4).map((entry)=><button className="continue-card" key={`${identity(entry.item)}|${entry.episode.number}`} onClick={()=>open(entry.item)}><div className="continue-cover"><Cover item={entry.item}/></div><div className="continue-info"><span>EPISODE {entry.episode.number}</span><strong>{entry.item.title}</strong><small>{sourceName(entry.item.source)} · {prettyTime(entry.time)}</small></div><span className="continue-play"><Play size={14} fill="currentColor"/></span></button>)}</div></section>}
-    <TrendingSection rankings={{sogo:state.trendSogo,xin:state.trendXin}} loading={{sogo:state.loadingTrendSogo,xin:state.loadingTrendXin}} open={open}/>
-    <section className="content-section"><SectionHeading eyebrow="FRESH FROM THE SOURCE" title="Recently updated" action={()=>browse('sogo')} link="Explore AnimeSogo"/>{state.loadingSogo?<SkeletonRail/>:state.sogo.length?<Rail items={state.sogo.slice(0,14)} open={open} has={has} toggle={toggle}/>:<ErrorNote source="sogo" onRetry={()=>browse('sogo')}/>}</section>
-    <section className="content-section"><SectionHeading eyebrow="MOST VIEWED ON ANIMESOGO" title="Discover anime" action={()=>browse('sogo')} link="Explore AnimeSogo"/>{state.loadingDiscover?<SkeletonRail/>:state.discover.length?<Rail items={state.discover.slice(0,14)} open={open} has={has} toggle={toggle}/>:<ErrorNote source="sogo" onRetry={()=>browse('sogo')}/>}</section>
-    <section className="content-section last-section"><SectionHeading eyebrow="A DIFFERENT WORLD" title="Discover donghua" action={()=>browse('xin')} link="Explore AnimeXin"/>{state.loadingXin?<SkeletonRail/>:state.xin.length?<Rail items={state.xin.slice(0,14)} open={open} has={has} toggle={toggle}/>:<ErrorNote source="xin" onRetry={()=>browse('xin')}/>}</section>
+    <Hero featured={shown(state.featured)} fallback={shown(state.sogo)} open={x=>x?open(x):browse('all')} has={has} toggle={toggle}/>
+    {shownRecent.length>0 && <section className="content-section continue-section"><SectionHeading eyebrow="PICK UP WHERE YOU LEFT OFF" title="Recently opened" link="View history" action={()=>browse('history')}/><div className="continue-rail">{shownRecent.slice(0,4).map((entry)=><button className="continue-card" key={`${identity(entry.item)}|${entry.episode.number}`} onClick={()=>open(entry.item)}><div className="continue-cover"><Cover item={entry.item}/></div><div className="continue-info"><span>EPISODE {entry.episode.number}</span><strong>{entry.item.title}</strong><small>{sourceName(entry.item.source)} · {prettyTime(entry.time)}</small></div><span className="continue-play"><Play size={14} fill="currentColor"/></span></button>)}</div></section>}
+    <TrendingSection rankings={{sogo:state.trendSogo,xin:state.trendXin}} loading={{sogo:state.loadingTrendSogo,xin:state.loadingTrendXin}} open={open} hideNsfw={hideNsfw}/>
+    <section className="content-section"><SectionHeading eyebrow="FRESH FROM THE SOURCE" title="Recently updated" action={()=>browse('sogo')} link="Explore AnimeSogo"/>{state.loadingSogo?<SkeletonRail/>:shown(state.sogo).length?<Rail items={shown(state.sogo).slice(0,14)} open={open} has={has} toggle={toggle}/>:(state.sogo.length?<div className="source-error"><EyeOff size={17}/><span>These titles are hidden while NSFW content is turned off in Settings.</span></div>:(state.discover.length?<div className="source-error"><EyeOff size={17}/><span>These titles are hidden while NSFW content is turned off in Settings.</span></div>:<ErrorNote source="sogo" onRetry={()=>browse('sogo')}/>))}</section>
+    <section className="content-section"><SectionHeading eyebrow="MOST VIEWED ON ANIMESOGO" title="Discover anime" action={()=>browse('sogo')} link="Explore AnimeSogo"/>{state.loadingDiscover?<SkeletonRail/>:shown(state.discover).length?<Rail items={shown(state.discover).slice(0,14)} open={open} has={has} toggle={toggle}/>:<ErrorNote source="sogo" onRetry={()=>browse('sogo')}/>}</section>
+    <section className="content-section last-section"><SectionHeading eyebrow="A DIFFERENT WORLD" title="Discover donghua" action={()=>browse('xin')} link="Explore AnimeXin"/>{state.loadingXin?<SkeletonRail/>:shown(state.xin).length?<Rail items={shown(state.xin).slice(0,14)} open={open} has={has} toggle={toggle}/>:(state.xin.length?<div className="source-error"><EyeOff size={17}/><span>These titles are hidden while NSFW content is turned off in Settings.</span></div>:<ErrorNote source="xin" onRetry={()=>browse('xin')}/>)}</section>
     <div className="end-note"><span>✦</span> THERE’S ALWAYS ANOTHER STORY WAITING <span>✦</span></div>
   </div>;
 }
@@ -180,10 +194,17 @@ function selectedSources(source) {
   if (source==='anime' || source==='donghua') return Object.values(SOURCES).filter(x=>x.category.toLowerCase()===source).map(x=>x.id);
   return SOURCES[source] ? [source] : [];
 }
-function BrowsePage({open,has,toggle, query, setQuery, source, setSource, refreshKey}) {
+const BROWSE_YEARS = Array.from({length:new Date().getFullYear()+2-1990}, (_,i)=>String(new Date().getFullYear()+1-i));
+function BrowsePage({open,has,toggle, query, setQuery, source, setSource, refreshKey, hideNsfw = false, openSettings}) {
   const [draft,setDraft] = useState(query);
   const [status,setStatus] = useState('all');
-  const activeStatus = query.trim() ? 'all' : status;
+  const [genre,setGenre] = useState('');
+  const [year,setYear] = useState('');
+  const [nsfw,setNsfw] = useState('all');
+  const searching = !!query.trim();
+  const activeStatus = searching ? 'all' : status;
+  const activeGenre = searching ? '' : genre;
+  const activeYear = searching ? '' : year;
   const [data,setData] = useState({items:[],page:1,more:false,loading:true,errors:[],moreBySource:{}});
   const generation=useRef(0);
   useEffect(()=>{setDraft(query);if(query.trim())setStatus('all')},[query]);
@@ -192,7 +213,7 @@ function BrowsePage({open,has,toggle, query, setQuery, source, setSource, refres
     setData({items:[],page:1,more:false,loading:true,errors:[],moreBySource:{}});
     if (!selected.length) {setData({items:[],page:1,more:false,loading:false,errors:[],moreBySource:{}});return()=>{alive=false};}
     let remaining=selected.length;
-    selected.forEach(id=>getCatalog(id,{query,page:1,status:activeStatus}).then(result=>{
+    selected.forEach(id=>getCatalog(id,{query,page:1,status:activeStatus,genre:activeGenre,year:activeYear}).then(result=>{
       if(!alive || current!==generation.current)return;
       remaining--;
       setData(previous=>{
@@ -208,12 +229,12 @@ function BrowsePage({open,has,toggle, query, setQuery, source, setSource, refres
       setData(previous=>({...previous,loading:remaining>0,errors:[...previous.errors,id]}));
     }));
     return ()=>{alive=false};
-  },[query,source,refreshKey,activeStatus]);
+  },[query,source,refreshKey,activeStatus,activeGenre,activeYear]);
   async function more() {
     if(data.loading || data.loadingMore)return;
     const page=data.page+1,current=generation.current,selected=selectedSources(source).filter(id=>data.moreBySource[id]);
     setData(previous=>({...previous,loadingMore:true}));
-    const result=await Promise.allSettled(selected.map(id=>getCatalog(id,{query,page,status:activeStatus})));
+    const result=await Promise.allSettled(selected.map(id=>getCatalog(id,{query,page,status:activeStatus,genre:activeGenre,year:activeYear})));
     if(current!==generation.current)return;
     setData(previous=>{
       const seen=new Set(previous.items.map(identity));
@@ -223,17 +244,34 @@ function BrowsePage({open,has,toggle, query, setQuery, source, setSource, refres
       return {...previous,items:[...previous.items,...items],page,moreBySource,more:Object.values(moreBySource).some(Boolean) && items.length>0,loadingMore:false,errors:[...new Set([...previous.errors,...result.map((x,i)=>x.status==='rejected'?selected[i]:null).filter(Boolean)])]};
     });
   }
+  // The content (NSFW) rule and the global hide-NSFW preference apply on top of
+  // what the sources returned; genre/year/status mismatches are only used to
+  // drop titles whose own metadata contradicts the filter.
+  const visibleItems = filterTitles(data.items, { genre:activeGenre, year:activeYear, status:activeStatus, nsfw, hideNsfw });
+  const hiddenCount = data.items.length - visibleItems.length;
+  const activeFilterCount = [!!activeGenre, !!activeYear, activeStatus!=='all', nsfw!=='all'].filter(Boolean).length;
+  const clearFilters = ()=>{setStatus('all');setGenre('');setYear('');setNsfw('all');};
+  const moreButton = data.more && <div className="more-wrap"><button className="btn secondary" onClick={more} disabled={data.loading||data.loadingMore}>{data.loadingMore?<LoaderCircle className="spin" size={16}/>:null} Load more <ChevronRight size={16}/></button></div>;
   const extraValue=['all','sogo','xin'].includes(source)?'':source;
   return <div className="content page-content"><div className="page-heading"><div><div className="eyebrow">SOMETHING FOR EVERY MOOD</div><h1>Find your next favorite<span>.</span></h1><p>Search across your sources or just see where the story takes you.</p></div><div className="heading-art"><Compass size={35}/><span>✦</span></div></div>
     <form className="browse-search" onSubmit={e=>{e.preventDefault();setQuery(draft.trim())}}><Search size={20}/><input value={draft} onChange={e=>setDraft(e.target.value)} placeholder="Search titles, adventures, worlds..." aria-label="Search titles"/><button className="btn primary" type="submit">Search <ArrowRight size={15}/></button></form>
-    <div className="filter-row source-filter-row"><div className="browse-source-controls"><div className="tabs" role="group" aria-label="Filter by source">{[['all','All sources'],['sogo','AnimeSogo'],['xin','AnimeXin']].map(([id,label])=><button key={id} className={source===id?'selected':''} aria-pressed={source===id} onClick={()=>setSource(id)}>{id!=='all'&&<i className={'tab-dot '+id}/>} {label}</button>)}</div><label className="source-select"><span className="sr-only">More sources</span><select aria-label="More sources" value={extraValue} onChange={e=>setSource(e.target.value || 'all')}><option value="">More sources…</option><option value="anime">All Anime sources</option><option value="donghua">All Donghua sources</option>{['Anime','Donghua'].map(category=><optgroup key={category} label={category}>{Object.values(SOURCES).filter(x=>x.category===category && !['sogo','xin'].includes(x.id)).map(src=><option key={src.id} value={src.id}>{src.name}</option>)}</optgroup>)}</select></label></div><span className="results-label">{data.loading&&!data.items.length?'LOOKING FOR STORIES':`${data.items.length} TITLES SHOWN${data.loading?' · LOADING':''}`}</span></div>
-    <div className="status-filter"><span className="status-filter-label">STATUS</span>{query ? <button className="text-link muted" onClick={()=>{setQuery('');setDraft('')}}>Clear search to filter by status <X size={14}/></button> : <div className="tabs status-tabs" role="group" aria-label="Filter by status">{[['all','All statuses'],['ongoing','Ongoing'],['completed','Completed'],['upcoming','Upcoming']].map(([id,label])=><button key={id} className={status===id?'selected':''} aria-pressed={status===id} onClick={()=>setStatus(id)}>{label}</button>)}</div>}</div>
-    <div className="browse-title"><div><span className="eyebrow">{query?'SEARCH RESULTS':activeStatus==='all'?'THE LATEST':'SOURCE STATUS'}</span><h2>{query?`Results for “${query}”`:'Explore the catalog'}</h2></div><SlidersHorizontal size={17}/></div>
+    <div className="filter-row source-filter-row"><div className="browse-source-controls"><div className="tabs" role="group" aria-label="Filter by source">{[['all','All sources'],['sogo','AnimeSogo'],['xin','AnimeXin']].map(([id,label])=><button key={id} className={source===id?'selected':''} aria-pressed={source===id} onClick={()=>setSource(id)}>{id!=='all'&&<i className={'tab-dot '+id}/>} {label}</button>)}</div><label className="source-select"><span className="sr-only">More sources</span><select aria-label="More sources" value={extraValue} onChange={e=>setSource(e.target.value || 'all')}><option value="">More sources…</option><option value="anime">All Anime sources</option><option value="donghua">All Donghua sources</option>{['Anime','Donghua'].map(category=><optgroup key={category} label={category}>{Object.values(SOURCES).filter(x=>x.category===category && !['sogo','xin'].includes(x.id)).map(src=><option key={src.id} value={src.id}>{src.name}</option>)}</optgroup>)}</select></label></div><span className="results-label">{data.loading&&!data.items.length?'LOOKING FOR STORIES':`${visibleItems.length} TITLES SHOWN${hiddenCount>0?` · ${hiddenCount} HIDDEN BY FILTERS`:''}${data.loading?' · LOADING':''}`}</span></div>
+    <div className="status-filter"><span className="status-filter-label">STATUS</span>{query ? <button className="text-link muted" onClick={()=>{setQuery('');setDraft('')}}>Clear search to filter by status, genre or year <X size={14}/></button> : <div className="tabs status-tabs" role="group" aria-label="Filter by status">{[['all','All statuses'],['ongoing','Ongoing'],['completed','Completed'],['upcoming','Upcoming']].map(([id,label])=><button key={id} className={status===id?'selected':''} aria-pressed={status===id} onClick={()=>setStatus(id)}>{label}</button>)}</div>}</div>
+    <div className="browse-filters">
+      <div className="filter-field genre-field"><span className="status-filter-label" id="genre-filter-label">GENRE</span><div className="tabs genre-tabs" role="group" aria-labelledby="genre-filter-label"><button className={!genre?'selected':''} aria-pressed={!genre} disabled={searching} onClick={()=>setGenre('')}>All genres</button>{GENRES.map(name=><button key={name} className={genre===name?'selected':''} aria-pressed={genre===name} disabled={searching} onClick={()=>setGenre(genre===name?'':name)}>{name}</button>)}</div></div>
+      <div className="filter-field-row">
+        <label className="filter-field year-field"><span className="status-filter-label">YEAR</span><select aria-label="Filter by year" value={year} disabled={searching} onChange={e=>setYear(e.target.value)}><option value="">All years</option>{BROWSE_YEARS.map(value=><option key={value} value={value}>{value}</option>)}</select></label>
+        <div className="filter-field content-field"><span className="status-filter-label" id="content-filter-label">CONTENT</span>{hideNsfw ? <div className="nsfw-hidden-note"><EyeOff size={14}/><span>NSFW is turned off in Settings.</span>{openSettings&&<button className="text-link" onClick={openSettings}>Change</button>}</div> : <div className="tabs status-tabs" role="group" aria-labelledby="content-filter-label">{[['all','All content'],['safe','Safe only'],['only','NSFW only']].map(([id,label])=><button key={id} className={nsfw===id?'selected':''} aria-pressed={nsfw===id} onClick={()=>setNsfw(id)}>{label}</button>)}</div>}</div>
+        {activeFilterCount>0&&<button className="text-link muted clear-filters" onClick={clearFilters}><X size={14}/> Clear filters</button>}
+      </div>
+      <p className="filter-hint">Genre and year use each source’s own listings where available; sources without them are noted below. Cards show the age rating a source provides, or NR when it provides none.</p>
+    </div>
+    <div className="browse-title"><div><span className="eyebrow">{query?'SEARCH RESULTS':activeFilterCount>0||hideNsfw?'FILTERED CATALOG':'THE LATEST'}</span><h2>{query?`Results for “${query}”`:activeGenre?`${activeGenre} titles`:'Explore the catalog'}</h2></div><SlidersHorizontal size={17}/></div>
     {data.errors.length>0&&<div className="inline-error"><AlertCircle size={16}/> Some sources could not be reached or do not support this filter: {data.errors.map(sourceName).join(', ')}.</div>}
-    {data.loading && !data.items.length ? <div className="anime-grid">{Array.from({length:12}).map((_,i)=><div className="skeleton-card" key={i}><div className="skeleton shimmer"/><span className="skeleton shimmer"/><span className="skeleton shimmer"/></div>)}</div> : data.items.length ? <><div className="anime-grid">{data.items.map((item,i)=><AnimeCard key={identity(item)} item={item} index={i} onOpen={open} inLibrary={has(item)} toggle={toggle}/>)}</div>{data.more&&<div className="more-wrap"><button className="btn secondary" onClick={more} disabled={data.loading||data.loadingMore}>{data.loadingMore?<LoaderCircle className="spin" size={16}/>:null} Load more <ChevronRight size={16}/></button></div>}</> : <Empty icon={Search} title={query?'No titles found':'Nothing to show yet'} body={query?'Try a different title or select another source.':'The source may be unavailable. Try refreshing.'} action={()=>{setQuery('');setDraft('');setSource('all')}} actionLabel="Browse everything"/>}
+    {data.loading && !data.items.length ? <div className="anime-grid">{Array.from({length:12}).map((_,i)=><div className="skeleton-card" key={i}><div className="skeleton shimmer"/><span className="skeleton shimmer"/><span className="skeleton shimmer"/></div>)}</div> : visibleItems.length ? <><div className="anime-grid">{visibleItems.map((item,i)=><AnimeCard key={identity(item)} item={item} index={i} onOpen={open} inLibrary={has(item)} toggle={toggle}/>)}</div>{moreButton}</> : data.items.length ? <><Empty icon={hideNsfw?EyeOff:SlidersHorizontal} title="No titles match these filters" body={hideNsfw?'Everything loaded so far is hidden by your filters, or marked NSFW while NSFW is turned off in Settings. Load more titles or clear a filter.':'Everything loaded so far is filtered out. Load more titles from the sources, or clear a filter to see more.'} action={activeFilterCount>0?clearFilters:undefined} actionLabel="Clear filters"/>{moreButton}</> : <Empty icon={Search} title={query?'No titles found':'Nothing to show yet'} body={query?'Try a different title or select another source.':'The source may be unavailable. Try refreshing.'} action={()=>{setQuery('');setDraft('');setSource('all');clearFilters();}} actionLabel="Browse everything"/>}
   </div>;
 }
-function DetailPage({item, openEpisode, has, toggle, organize, back, history, refreshKey, queueEpisodes, downloads, showDownloads, notify}) {
+function DetailPage({item, openEpisode, has, toggle, organize, back, history, refreshKey, queueEpisodes, downloads, showDownloads, notify, hideNsfw = false, openSettings}) {
   const [state,setState]=useState({detail:null,loading:true,error:''});
   const [order,setOrder]=useState('newest'); const [filter,setFilter]=useState(''); const [visible,setVisible]=useState(40);
   const [selecting,setSelecting]=useState(false); const [selected,setSelected]=useState([]);
@@ -248,11 +286,16 @@ function DetailPage({item, openEpisode, has, toggle, organize, back, history, re
     setSelected(previous=>previous.includes(ep.url)?previous.filter(x=>x!==ep.url):[...previous,ep.url]);
   };
   const selectedEpisodes=(state.detail?.episodes||[]).filter(ep=>selected.includes(ep.url));
+  const rating=ratingOf(detail);
+  const releasedYear=yearOf(detail);
+  // With NSFW turned off in Settings, an adult-marked title cannot be opened at
+  // all, even from the library or an update notice. Nothing is deleted.
+  if (hideNsfw && isNsfw(detail)) return <div className="detail-page"><button className="back-link" onClick={back}><ChevronLeft size={17}/> Back <span>TO YOUR SPACE</span></button><div className="content page-content detail-blocked"><Empty icon={EyeOff} title="This title is hidden" body="This title is marked as NSFW (18+) content, and NSFW content is turned off in Settings. Your saved titles and downloads are unchanged; turn it back on there to view this title again." action={openSettings} actionLabel="Open content settings"/></div></div>;
   return <div className="detail-page"><button className="back-link" onClick={back}><ChevronLeft size={17}/> Back <span>TO YOUR SPACE</span></button>
     <div className="detail-banner" style={detail.banner?{backgroundImage:`linear-gradient(90deg,rgba(16,19,18,.88),rgba(16,19,18,.25)),linear-gradient(0deg,#101214,transparent 85%),url("${imageUrl(detail.banner)}")`}:undefined}><div className="banner-text">A STORY AWAITS <span>✦</span></div></div>
-    <div className="detail-body"><div className="detail-intro"><div className="detail-cover"><Cover item={detail}/></div><div className="detail-copy"><div className="detail-badges"><SourcePill source={detail.source}/>{detail.type&&<span className="plain-badge">{detail.type}</span>}{detail.status&&<span className="plain-badge">{detail.status}</span>}</div><h1>{detail.title}</h1><div className="genre-line">{detail.genres?.length?detail.genres.join('  ·  '):'Anime  ·  Adventure awaits'}</div><p>{detail.synopsis || (state.loading?'Loading the story...':'A title from your selected source. Open the source page for more information.')}</p><div className="detail-actions"><button className="btn primary" disabled={!first} onClick={()=>openEpisode(detail,resume||first)}><Play size={16} fill="currentColor"/>{resume?`Continue episode ${resume.number}`:'Watch first episode'}</button><button className={'btn secondary '+(has(detail)?'is-saved':'')} onClick={()=>toggle(detail)}><Bookmark size={17} fill={has(detail)?'currentColor':'none'}/>{has(detail)?'In your library':'Add to library'}</button><button className="btn secondary organize-detail" onClick={()=>organize(detail)} aria-label={`Organize ${detail.title} in collections`}><FolderPlus size={17}/> Collections</button><button className="icon-btn detail-external" onClick={()=>external(detail.url)} aria-label="Open original website" title="Open original website"><ExternalLink size={18}/></button></div></div></div>
+    <div className="detail-body"><div className="detail-intro"><div className="detail-cover"><Cover item={detail}/></div><div className="detail-copy"><div className="detail-badges"><SourcePill source={detail.source}/><span className={'plain-badge rating-badge'+(rating?.adult?' rating-badge-adult':'')} title={rating?`Age rating reported by ${sourceName(detail.source)}`:'Not rated — the source does not provide an age rating'}>{rating?rating.label:'NR'}</span>{detail.type&&<span className="plain-badge">{detail.type}</span>}{detail.status&&<span className="plain-badge">{detail.status}</span>}{releasedYear>0&&<span className="plain-badge">{releasedYear}</span>}</div><h1>{detail.title}</h1><div className="genre-line">{detail.genres?.length?detail.genres.join('  ·  '):'Anime  ·  Adventure awaits'}</div><p>{detail.synopsis || (state.loading?'Loading the story...':'A title from your selected source. Open the source page for more information.')}</p><div className="detail-actions"><button className="btn primary" disabled={!first} onClick={()=>openEpisode(detail,resume||first)}><Play size={16} fill="currentColor"/>{resume?`Continue episode ${resume.number}`:'Watch first episode'}</button><button className={'btn secondary '+(has(detail)?'is-saved':'')} onClick={()=>toggle(detail)}><Bookmark size={17} fill={has(detail)?'currentColor':'none'}/>{has(detail)?'In your library':'Add to library'}</button><button className="btn secondary organize-detail" onClick={()=>organize(detail)} aria-label={`Organize ${detail.title} in collections`}><FolderPlus size={17}/> Collections</button><button className="icon-btn detail-external" onClick={()=>external(detail.url)} aria-label="Open original website" title="Open original website"><ExternalLink size={18}/></button></div></div></div>
       {state.error && <div className="detail-error"><AlertCircle size={18}/><span>{state.error}</span><button onClick={()=>external(item.url)}>Open source <ExternalLink size={14}/></button></div>}
-      {state.detail && <section className="detail-facts" aria-label="Source details"><div><span>STATUS</span><strong>{displayStatus(detail.status)}</strong>{detail.status && displayStatus(detail.status)!==detail.status && <small>Source: {detail.status}</small>}</div><div><span>{SOURCES[detail.source]?.category==='Donghua'?'RELEASED':'DATE AIRED'}</span><strong>{detail.aired || 'Not provided'}</strong></div><div><span>EPISODES REPORTED</span><strong>{detail.episodeCount || 'Not provided'}</strong></div><p>Reported by {sourceName(detail.source)} · Details may change.</p></section>}
+      {state.detail && <section className="detail-facts" aria-label="Source details"><div><span>STATUS</span><strong>{displayStatus(detail.status)}</strong>{detail.status && displayStatus(detail.status)!==detail.status && <small>Source: {detail.status}</small>}</div><div><span>{SOURCES[detail.source]?.category==='Donghua'?'RELEASED':'DATE AIRED'}</span><strong>{detail.aired || 'Not provided'}</strong></div><div><span>EPISODES REPORTED</span><strong>{detail.episodeCount || 'Not provided'}</strong></div><div><span>AGE RATING</span><strong>{rating ? rating.label : 'Not provided'}</strong>{rating?.adult&&<small>Marked as adult (NSFW) content</small>}{!rating&&<small>Shown as NR on cards</small>}</div><p>Reported by {sourceName(detail.source)} · Details may change.</p></section>}
       <div className="episode-section"><div className="episode-head"><div><span className="eyebrow">THE STORY SO FAR</span><h2>Episodes <small>{state.detail?.episodes.length ?? '—'}</small></h2></div><div className="episode-tools"><label className="episode-search"><Search size={15}/><input value={filter} onChange={e=>{setFilter(e.target.value);setVisible(40)}} placeholder="Find episode" aria-label="Find episode"/></label><button className="sort-button" onClick={()=>setOrder(x=>x==='newest'?'oldest':'newest')}>{order==='newest'?'Newest first':'Oldest first'} <SlidersHorizontal size={15}/></button></div></div>
       {state.detail?.source==='bash' && Number(detail.episodeCount)>detail.episodes.length && detail.episodes.length>0 && <p className="batch-hint">AnimeBash reports {detail.episodeCount} episodes but currently lists {detail.episodes.length}. Availability may vary.</p>}
       {!state.loading && episodes.length>0 && <div className="batch-tools">
@@ -273,13 +316,14 @@ function DetailPage({item, openEpisode, has, toggle, organize, back, history, re
     </div>
   </div>;
 }
-function LibraryPage({items,open,has,toggle,browse,collections,activeCollection,setActiveCollection,onCreate,onRename,onDelete,onMembers,onFavourite,unreadTitles}) {
+function LibraryPage({items,open,has,toggle,browse,collections,activeCollection,setActiveCollection,onCreate,onRename,onDelete,onMembers,onFavourite,unreadTitles,hideNsfw = false}) {
   const [filter,setFilter]=useState('all');
   useEffect(()=>setFilter('all'),[activeCollection]);
-  const keys = new Set(items.map(identity));
+  const catalog = hideNsfw ? items.filter(item=>!isNsfw(item)) : items;
+  const keys = new Set(catalog.map(identity));
   const selected = collections.find(c=>c.id===activeCollection);
   const selectedKeys = new Set(selected?.items || []);
-  const inCollection = activeCollection==='all' ? items : items.filter(x=>selectedKeys.has(identity(x)));
+  const inCollection = activeCollection==='all' ? catalog : catalog.filter(x=>selectedKeys.has(identity(x)));
   const list = filter==='all' ? inCollection : inCollection.filter(x=>x.source===filter);
   const favourites = new Set(collections.find(c=>c.id===FAVOURITES_ID)?.items || []);
   const count = c=>c.items.filter(key=>keys.has(key)).length;
@@ -287,14 +331,15 @@ function LibraryPage({items,open,has,toggle,browse,collections,activeCollection,
     <div className="page-heading"><div><div className="eyebrow">YOUR LITTLE CORNER</div><h1>Saved for later<span>.</span></h1><p>Keep your stories together, just the way you like. Saved on this device.</p></div><div className="heading-art"><Bookmark size={31}/><span>✦</span></div></div>
     <div className="collections-heading"><div><span className="eyebrow">MADE BY YOU</span><h2>Your collections</h2></div><button className="btn secondary new-collection" onClick={onCreate}><Plus size={16}/> New collection</button></div>
     <div className="collection-tabs" role="tablist" aria-label="Library collections">
-      <button role="tab" aria-selected={activeCollection==='all'} className={'collection-tab '+(activeCollection==='all'?'selected':'')} onClick={()=>setActiveCollection('all')}><Bookmark size={15}/> <span>All titles</span><b>{items.length}</b></button>
+      <button role="tab" aria-selected={activeCollection==='all'} className={'collection-tab '+(activeCollection==='all'?'selected':'')} onClick={()=>setActiveCollection('all')}><Bookmark size={15}/> <span>All titles</span><b>{catalog.length}</b></button>
       {collections.map(c=><button key={c.id} role="tab" aria-selected={activeCollection===c.id} className={'collection-tab '+(activeCollection===c.id?'selected':'')} onClick={()=>setActiveCollection(c.id)}>{c.id===FAVOURITES_ID?<Heart size={15}/>:<Folder size={15}/>} <span>{c.name}</span><b>{count(c)}</b></button>)}
     </div>
     <div className="collection-toolbar"><div><span className="eyebrow">YOUR LIBRARY</span><h2>{selected?.name || 'All titles'}</h2><p>{inCollection.length} {inCollection.length===1?'title':'titles'} · {activeCollection==='all'?'All saved stories':'A collection of saved stories'}</p></div>
-      {selected&&<div className="collection-tools"><button className="btn secondary" onClick={()=>onMembers(selected.id)} disabled={!items.length}><Plus size={15}/> Add titles</button>{selected.id!==FAVOURITES_ID&&<><button className="icon-btn" onClick={()=>onRename(selected.id)} aria-label={`Rename ${selected.name}`} title="Rename collection"><Pencil size={16}/></button><button className="icon-btn" onClick={()=>onDelete(selected.id)} aria-label={`Delete ${selected.name}`} title="Delete collection"><Trash2 size={16}/></button></>}</div>}
+      {selected&&<div className="collection-tools"><button className="btn secondary" onClick={()=>onMembers(selected.id)} disabled={!catalog.length}><Plus size={15}/> Add titles</button>{selected.id!==FAVOURITES_ID&&<><button className="icon-btn" onClick={()=>onRename(selected.id)} aria-label={`Rename ${selected.name}`} title="Rename collection"><Pencil size={16}/></button><button className="icon-btn" onClick={()=>onDelete(selected.id)} aria-label={`Delete ${selected.name}`} title="Delete collection"><Trash2 size={16}/></button></>}</div>}
     </div>
     <div className="filter-row library-filters"><div className="tabs" role="group" aria-label="Filter library by source">{[['all','All sources'],...Object.values(SOURCES).filter(src=>inCollection.some(item=>item.source===src.id)).map(src=>[src.id,src.name])].map(([id,label])=><button key={id} className={filter===id?'selected':''} aria-pressed={filter===id} onClick={()=>setFilter(id)}>{label}</button>)}</div><span className="results-label">{list.length} {list.length===1?'TITLE':'TITLES'} SHOWN</span></div>
     {list.length ? <div className="anime-grid">{list.map((item,i)=><AnimeCard key={identity(item)} item={item} index={i} onOpen={open} inLibrary={has(item)} toggle={toggle} favourite={favourites.has(identity(item))} onFavourite={onFavourite} newCount={unreadTitles[identity(item)]||0}/>)}</div> :
+      hideNsfw && items.length>0 && catalog.length===0 ? <Empty icon={EyeOff} title="Adult titles are hidden" body="Every saved title is currently hidden because NSFW content is turned off in Settings. Nothing has been removed from your library."/> :
       items.length && activeCollection!=='all' && inCollection.length===0 ? <Empty icon={FolderHeart} title={`Nothing in ${selected?.name || 'this collection'} yet`} body="Add stories you have already saved, or organize a title from its details page." action={()=>onMembers(activeCollection)} actionLabel="Add saved titles"/> :
       <Empty icon={FolderHeart} title={items.length?'No titles from this source yet':'Your library is waiting'} body={items.length?'Pick another source to see the rest of your saved stories.':'Save an anime or donghua to keep it close. Your library and collections stay on this device.'} action={()=>browse('all')} actionLabel="Find something to watch"/>}
   </div>;
@@ -427,11 +472,14 @@ function AppearanceSettings({appearance,changeAppearance}) {
     </div>
   </section>;
 }
-function SettingsPage({library,history,clearLibrary,clearHistory,openLicenses,openReleaseNotes,folder,chooseFolder,usePrivate,updates,updatesAvailable,changeAutomatic,changeAlerts,notificationPermission,appearance,changeAppearance}) {
+function SettingsPage({library,history,clearLibrary,clearHistory,openLicenses,openReleaseNotes,folder,chooseFolder,usePrivate,updates,updatesAvailable,changeAutomatic,changeAlerts,notificationPermission,appearance,changeAppearance,contentPrefs,changeContentPrefs}) {
   const current=!isAndroid()?'Available in the Android app':!folder?.configured?'Moku only · no external folder selected':folder.granted?folder.name||'Selected folder':'Folder access lost · choose it again';
   const notificationText=!updatesAvailable?'Available in the Android app':updates.notificationStatus==='allowed'?'Allowed in Android':updates.notificationStatus==='permission'?'Android notification permission is needed':updates.notificationStatus==='channel-blocked'?'New episode channel is blocked in Android':'Notifications are blocked in Android';
   return <div className="content page-content"><div className="page-heading"><div><div className="eyebrow">MAKE YOURSELF AT HOME</div><h1>Your space, your way<span>.</span></h1><p>A simple little place for your anime.</p></div><div className="heading-art"><Settings2 size={32}/><span>✦</span></div></div>
     <AppearanceSettings appearance={appearance} changeAppearance={changeAppearance}/>
+    <div className="settings-group content-settings"><div className="settings-title">CONTENT <span>AGE RATINGS &amp; NSFW</span></div><div className="setting-row"><div className="setting-icon"><EyeOff size={19}/></div><div><strong>Hide NSFW content</strong><p>{contentPrefs.hideNsfw?'On · Adult-marked titles are hidden':'Off · Adult-marked titles can appear'}</p></div><button aria-label="Hide NSFW content" aria-pressed={!!contentPrefs.hideNsfw} onClick={()=>changeContentPrefs({hideNsfw:!contentPrefs.hideNsfw})}>{contentPrefs.hideNsfw?'On':'Off'}</button></div>
+      <div className="folder-explainer content-explainer"><p>When on, titles a source marks 18+ or with adult genres such as Ecchi or Hentai are completely hidden — from Discover, Browse, search results, your Library and History — and cannot be opened. This is separate from the Browse content filter and stays on until you turn it off.</p><p>Nothing is deleted: your library, collections, history and downloads stay exactly as they are. Every card shows the age rating its source provides, or NR when it provides none. Sources do not label every title, so hiding NSFW cannot guarantee everything shown is suitable for all ages.</p></div>
+    </div>
     <div className="settings-group episode-settings"><div className="settings-title">EPISODE UPDATES <span>YOUR COLLECTIONS</span></div><div className="setting-row"><div className="setting-icon"><RefreshCw size={19}/></div><div><strong>Automatic checks</strong><p>On open and about every 6 hours while connected. Android can delay checks or pause them after a force-stop.</p></div><button aria-label="Automatic episode checks" aria-pressed={!!updates.automatic} disabled={!updatesAvailable} onClick={()=>changeAutomatic(!updates.automatic)}>{updates.automatic?'On':'Off'}</button></div><div className="setting-row"><div className="setting-icon"><Bell size={19}/></div><div><strong>Android episode alerts</strong><p>{updates.alerts?'On in Moku':'Off in Moku'} · New episodes still appear in Updates.</p></div><button aria-label="Android episode alerts" aria-pressed={!!updates.alerts} disabled={!updatesAvailable} onClick={()=>changeAlerts(!updates.alerts)}>{updates.alerts?'On':'Off'}</button></div><div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div><strong>Android notification access</strong><p>{notificationText}</p></div><button disabled={!updatesAvailable} onClick={notificationPermission}>{updates.notificationStatus==='permission'?'Allow':'Manage'}</button></div></div>
     <div className="settings-group folder-settings"><div className="settings-title">DOWNLOAD LOCATION <span>EXTERNAL PLAYER</span></div><div className="setting-row"><div className="setting-icon"><FolderHeart size={19}/></div><div><strong>Playable copies</strong><p className="folder-name">{current}</p></div><button onClick={chooseFolder} disabled={!isAndroid()}>{folder?.configured?'Change':'Choose folder'}</button></div>
       <div className="folder-explainer"><p>New playable MP4 copies are organized into a folder for each anime or donghua. Existing downloads can be saved from Downloads; earlier exported files stay where they are.</p><p>After Moku verifies the saved video and subtitle files, it removes its private copy to free space. Moku then plays the file from your folder. If verification fails or subtitles cannot be safely copied, the private copy stays. Downloading and conversion still need extra storage temporarily.</p>{folder?.configured&&<button className="text-link" onClick={usePrivate}>Stop saving folder copies</button>}</div>
@@ -505,6 +553,14 @@ function App() {
   useEffect(()=>{try{localStorage.setItem(COLLECTIONS_KEY,JSON.stringify(collections))}catch{/* storage can be disabled */}},[collections]);
   const [browseSource,setBrowseSource]=useState('all'); const [query,setQuery]=useState('');
   const [refreshKey,setRefreshKey]=useState(0); const [player,setPlayer]=useState(null); const [licenses,setLicenses]=useState(false); const [downloadModal,setDownloadModal]=useState(null); const [downloads,setDownloads]=useState([]); const [downloadsLoading,setDownloadsLoading]=useState(true); const [busy,setBusy]=useState(''); const [toast,setToast]=useState('');
+  const [contentPrefs,setContentPrefs]=useState(initialContent);
+  const hideNsfw=contentPrefs.hideNsfw;
+  const changeContentPrefs=patch=>{
+    const next={...contentPrefs,...patch};
+    setContentPrefs(next);
+    try{saveContentPrefs(window.localStorage,next)}catch{/* The current session still uses the choice. */}
+    setToast(next.hideNsfw?'NSFW content is now hidden':'NSFW content can now appear');
+  };
   const [folder,setFolder]=useState({configured:false,granted:false,name:''});
   const updatesAvailable=hasEpisodeUpdates();
   const [updates,setUpdates]=useState({automatic:true,alerts:true,watchedCount:0,initializedCount:0,unreadCount:0,updates:[],errors:[],checking:false,queued:false,notificationStatus:'unknown'});
@@ -608,7 +664,7 @@ function App() {
   };
   const submitSearch=value=>{setQuery(value);setBrowseSource('all');if(route.page!=='browse')go('browse');};
   const refresh=()=>{clearNetworkCache();setRefreshKey(x=>x+1);setToast('Refreshing your sources');};
-  const remember=(item,episode)=>setHistory(prev=>[{item:{source:item.source,url:item.url,title:item.title,image:item.image,type:item.type,badge:item.badge,status:item.status},episode:{number:episode.number,url:episode.url,title:episode.title},time:Date.now()},...prev.filter(x=>!(identity(x.item)===identity(item)&&String(x.episode.number)===String(episode.number)))].slice(0,100));
+  const remember=(item,episode)=>setHistory(prev=>[{item:{source:item.source,url:item.url,title:item.title,image:item.image,type:item.type,badge:item.badge,status:item.status,genres:item.genres,aired:item.aired,year:item.year,rating:item.rating,nsfw:item.nsfw},episode:{number:episode.number,url:episode.url,title:episode.title},time:Date.now()},...prev.filter(x=>!(identity(x.item)===identity(item)&&String(x.episode.number)===String(episode.number)))].slice(0,100));
   const play=async(item,episode)=>{setBusy(`Finding servers for episode ${episode.number}...`);try{const servers=await getServers(item.source,episode);if(!servers.length)throw new Error('No available video servers were found. Try the original site.');remember(item,episode);const payload={item:{title:item.title,source:item.source},episode:{number:episode.number,url:episode.url},servers};if(isAndroid())window.MokuBridge.openPlayer(JSON.stringify(payload));else setPlayer({...payload,item});}catch(e){setToast(e.message||'Could not load this episode.');}finally{setBusy('')}};
   const resume=async entry=>{setBusy('Finding your episode...');try{const d=await getDetail(entry.item);const ep=d.episodes.find(e=>String(e.number)===String(entry.episode.number));if(!ep)throw new Error('Episode not found. Open the series or original source.');setBusy('');await play(d,ep);}catch(e){setBusy('');setToast(e.message||'Could not open this episode.')}};
   const clearHistory=()=>{if(window.confirm('Clear recently opened episodes from this device?')){setHistory([]);setToast('History cleared');}};
@@ -651,16 +707,16 @@ function App() {
   if(experience) return <WelcomeScreen mode={experience.mode} manual={!!experience.manual} onContinue={finishExperience}/>;
   const common={open,has,toggle,browse};
   return <div className="app-shell"><SideNav page={route.page} go={go} unread={updates.unreadCount}/><div className="main-shell"><TopBar page={route.page} go={go} submitSearch={submitSearch} refresh={refresh} unread={updates.unreadCount}/><main key={route.page==='detail'?identity(route.item):route.page}>
-    {route.page==='home'&&<HomePage {...common} recent={history} refreshKey={refreshKey}/>}
-    {route.page==='browse'&&<BrowsePage {...common} query={query} setQuery={setQuery} source={browseSource} setSource={setBrowseSource} refreshKey={refreshKey}/>}
-    {route.page==='detail'&&<DetailPage item={route.item} openEpisode={play} has={has} toggle={toggle} organize={item=>setCollectionDialog({kind:'title',item})} back={back} history={history} refreshKey={refreshKey} queueEpisodes={queueEpisodes} downloads={downloads} showDownloads={()=>go('downloads')} notify={setToast}/>}
-    {route.page==='library'&&<LibraryPage {...common} items={library} collections={collections} activeCollection={activeCollection} setActiveCollection={setActiveCollection} onCreate={()=>setCollectionDialog({kind:'new'})} onRename={id=>setCollectionDialog({kind:'rename',id})} onDelete={removeCollection} onMembers={id=>setCollectionDialog({kind:'members',id})} onFavourite={favourite} unreadTitles={unreadTitles}/>}
+    {route.page==='home'&&<HomePage {...common} recent={history} refreshKey={refreshKey} hideNsfw={hideNsfw}/>}
+    {route.page==='browse'&&<BrowsePage {...common} query={query} setQuery={setQuery} source={browseSource} setSource={setBrowseSource} refreshKey={refreshKey} hideNsfw={hideNsfw} openSettings={()=>go('settings')}/>}
+    {route.page==='detail'&&<DetailPage item={route.item} openEpisode={play} has={has} toggle={toggle} organize={item=>setCollectionDialog({kind:'title',item})} back={back} history={history} refreshKey={refreshKey} queueEpisodes={queueEpisodes} downloads={downloads} showDownloads={()=>go('downloads')} notify={setToast} hideNsfw={hideNsfw} openSettings={()=>go('settings')}/>}
+    {route.page==='library'&&<LibraryPage {...common} items={library} collections={collections} activeCollection={activeCollection} setActiveCollection={setActiveCollection} onCreate={()=>setCollectionDialog({kind:'new'})} onRename={id=>setCollectionDialog({kind:'rename',id})} onDelete={removeCollection} onMembers={id=>setCollectionDialog({kind:'members',id})} onFavourite={favourite} unreadTitles={unreadTitles} hideNsfw={hideNsfw}/>}
     {route.page==='updates'&&<UpdatesPage state={updates} available={updatesAvailable} syncError={updatesSyncError} actionError={updatesActionError} check={checkNow} readAll={readAllUpdates} openUpdate={viewUpdate} openLibrary={()=>go('library')} openSettings={()=>go('settings')}/>}
     {route.page==='downloads'&&<DownloadsPage items={downloads} loading={downloadsLoading} remove={deleteDownload} retry={retryDownload} change={d=>setDownloadModal({item:d.item,episodes:[d.episode],language:d.language||'english'})} browse={browse} folder={folder} saveCopy={saveCopy} openSettings={()=>go('settings')}/>}
-    {route.page==='history'&&<HistoryPage items={history} resume={resume} open={open} clear={clearHistory} browse={browse}/>}
+    {route.page==='history'&&<HistoryPage items={history.filter(entry=>!hideNsfw||!isNsfw(entry.item))} resume={resume} open={open} clear={clearHistory} browse={browse}/>}
     {route.page==='sources'&&<SourcesPage browse={browse}/>}
-    {route.page==='settings'&&<SettingsPage library={library} history={history} clearLibrary={clearLibrary} clearHistory={clearHistory} openLicenses={()=>setLicenses(true)} openReleaseNotes={()=>setExperience({mode:'update',manual:true})} folder={folder} chooseFolder={chooseFolder} usePrivate={usePrivate} updates={updates} updatesAvailable={updatesAvailable} changeAutomatic={changeAutomatic} changeAlerts={changeAlerts} notificationPermission={notificationPermission} appearance={appearance} changeAppearance={changeAppearance}/>}
-  </main></div><BottomNav page={route.page} go={go}/>{collectionDialog?.kind==='new'&&<CollectionNameDialog close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='rename'&&<CollectionNameDialog editing value={collections.find(c=>c.id===collectionDialog.id)?.name||''} close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='title'&&<TitleCollectionsDialog item={collectionDialog.item} collections={collections} close={()=>setCollectionDialog(null)} submit={selected=>saveTitleCollectionChoices(collectionDialog.item,selected)}/>}{collectionDialog?.kind==='members'&&collections.find(c=>c.id===collectionDialog.id)&&<CollectionMembersDialog collection={collections.find(c=>c.id===collectionDialog.id)} items={library} close={()=>setCollectionDialog(null)} submit={keys=>saveCollectionMembers(collectionDialog.id,keys)}/>} {player&&<PlayerModal player={player} close={()=>setPlayer(null)}/>}{licenses&&<LicenseModal close={()=>setLicenses(false)}/>}{downloadModal&&<DownloadModal request={downloadModal} close={()=>setDownloadModal(null)} submit={submitDownload}/>}{busy&&<div className="busy-overlay"><div><LoaderCircle size={20} className="spin"/><span>{busy}</span></div></div>}{toast&&<div className="toast"><Check size={16}/>{toast}</div>}</div>;
+    {route.page==='settings'&&<SettingsPage library={library} history={history} clearLibrary={clearLibrary} clearHistory={clearHistory} openLicenses={()=>setLicenses(true)} openReleaseNotes={()=>setExperience({mode:'update',manual:true})} folder={folder} chooseFolder={chooseFolder} usePrivate={usePrivate} updates={updates} updatesAvailable={updatesAvailable} changeAutomatic={changeAutomatic} changeAlerts={changeAlerts} notificationPermission={notificationPermission} appearance={appearance} changeAppearance={changeAppearance} contentPrefs={contentPrefs} changeContentPrefs={changeContentPrefs}/>}
+  </main></div><BottomNav page={route.page} go={go}/>{collectionDialog?.kind==='new'&&<CollectionNameDialog close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='rename'&&<CollectionNameDialog editing value={collections.find(c=>c.id===collectionDialog.id)?.name||''} close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='title'&&<TitleCollectionsDialog item={collectionDialog.item} collections={collections} close={()=>setCollectionDialog(null)} submit={selected=>saveTitleCollectionChoices(collectionDialog.item,selected)}/>}{collectionDialog?.kind==='members'&&collections.find(c=>c.id===collectionDialog.id)&&<CollectionMembersDialog collection={collections.find(c=>c.id===collectionDialog.id)} items={hideNsfw?library.filter(item=>!isNsfw(item)):library} close={()=>setCollectionDialog(null)} submit={keys=>saveCollectionMembers(collectionDialog.id,keys)}/>} {player&&<PlayerModal player={player} close={()=>setPlayer(null)}/>}{licenses&&<LicenseModal close={()=>setLicenses(false)}/>}{downloadModal&&<DownloadModal request={downloadModal} close={()=>setDownloadModal(null)} submit={submitDownload}/>}{busy&&<div className="busy-overlay"><div><LoaderCircle size={20} className="spin"/><span>{busy}</span></div></div>}{toast&&<div className="toast"><Check size={16}/>{toast}</div>}</div>;
 }
 
 createRoot(document.getElementById('root')).render(<App/>);

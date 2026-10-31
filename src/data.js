@@ -1,4 +1,5 @@
 import { DOMParser as InertDOMParser } from 'linkedom/worker';
+import { findGenre, genreSlug, normalizeRating, findRatingInText, yearFromText, isNsfw as titleIsNsfw } from './content.js';
 
 /** Independent source adapters. Titles, episodes and video servers come from the sites. */
 export const SOURCES = {
@@ -119,17 +120,60 @@ function distinct(items) {
   const set = new Set();
   return items.filter(x => x?.url && x.title && !set.has(x.url) && set.add(x.url));
 }
+// Listing cards carry less metadata than detail pages, but some sources include
+// genre links, a release year or an age-rating token in the card meta. Extract
+// only what is actually there; unknown values stay absent rather than guessed.
+function uniqueText(values) {
+  return [...new Set(values.map(value => String(value || '').trim()).filter(Boolean))];
+}
+function cardGenres(scope) {
+  if (!scope) return [];
+  return uniqueText([...scope.querySelectorAll('a[href*="/genre/"], a[href*="/genres/"], .genxed a, .genres a')].map(text)).filter(name => name.length <= 40);
+}
+function enrichCard(item, scope) {
+  // Join descendant text too: sibling spans can concatenate ("2024"+"18+") and hide both values.
+  const meta = scope ? [...scope.querySelectorAll('.meta, .fdi, .fdi-item, .item-status, .bt, .year, .rating, .age-rating')].flatMap(el => [text(el), ...[...el.querySelectorAll('*')].map(text)]).join(' ') : '';
+  const genres = cardGenres(scope);
+  const year = yearFromText(meta);
+  const rating = findRatingInText(meta);
+  const result = {...item};
+  if (genres.length) result.genres = genres;
+  if (year) result.year = year;
+  if (rating) result.rating = rating.label;
+  if (titleIsNsfw(result)) result.nsfw = true;
+  return result;
+}
+// Age ratings live under several label wordings. A "Rating" that turns out to be a
+// numeric score is rejected by normalizeRating, so scores never pose as age ratings.
+function ratingInDocument(document, getter) {
+  for (const label of ['Age rating','Age Rating','Rated','Rating']) {
+    const rating = normalizeRating(getter(document, label));
+    if (rating) return rating.label;
+  }
+  const meta = [...document.querySelectorAll('.bl-meta, .bmeta, .spe, .fdi')].map(text).join(' ');
+  return findRatingInText(meta)?.label || '';
+}
+// Finish a detail record: derive its release year, keep only a normalized rating
+// label, and flag it NSFW when its own rating/genres say so.
+function withContent(result) {
+  const year = yearFromText(result.aired || '') || result.year;
+  if (year) result.year = Number(year); else delete result.year;
+  const rating = normalizeRating(result.rating);
+  if (rating) result.rating = rating.label; else delete result.rating;
+  if (titleIsNsfw(result)) result.nsfw = true; else delete result.nsfw;
+  return result;
+}
 function parseSogoCards(document) {
   return distinct([...document.querySelectorAll('div.ani.items > div.item, #recent-update .ani.items > div.item')].map(item => {
     const a = item.querySelector('a.name[href], a.poster[href]');
     const image = item.querySelector('a.poster img, img');
-    return { source: 'sogo', url: normSogo(attr(a, 'href')), title: text(item.querySelector('a.name')) || attr(image, 'alt'), image: absolute(attr(image, 'data-src') || attr(image, 'src'), SOURCES.sogo.base), type: text(item.querySelector('.type')) || 'Anime', badge: text(item.querySelector('.ep-status.sub')) ? `EP ${text(item.querySelector('.ep-status.sub'))}` : 'SUB', status: '' };
+    return enrichCard({ source: 'sogo', url: normSogo(attr(a, 'href')), title: text(item.querySelector('a.name')) || attr(image, 'alt'), image: absolute(attr(image, 'data-src') || attr(image, 'src'), SOURCES.sogo.base), type: text(item.querySelector('.type')) || 'Anime', badge: text(item.querySelector('.ep-status.sub')) ? `EP ${text(item.querySelector('.ep-status.sub'))}` : 'SUB', status: '' }, item);
   }));
 }
 function parseXinCards(document) {
   return distinct([...document.querySelectorAll('.postbody .listupd article.bs')].map(item => {
     const a = item.querySelector('a[href]'), image = item.querySelector('img');
-    return { source: 'xin', url: normXin(attr(a, 'href')), title: attr(a, 'title') || text(item.querySelector('.tt h2')) || text(item.querySelector('.tt')), image: absolute(attr(image, 'data-src') || attr(image, 'src'), SOURCES.xin.base), type: text(item.querySelector('.typez')) || 'Donghua', badge: text(item.querySelector('.sb')) || 'SUB', status: text(item.querySelector('.epx')) };
+    return enrichCard({ source: 'xin', url: normXin(attr(a, 'href')), title: attr(a, 'title') || text(item.querySelector('.tt h2')) || text(item.querySelector('.tt')), image: absolute(attr(image, 'data-src') || attr(image, 'src'), SOURCES.xin.base), type: text(item.querySelector('.typez')) || 'Donghua', badge: text(item.querySelector('.sb')) || 'SUB', status: text(item.querySelector('.epx')) }, item);
   }));
 }
 export async function getFeatured() {
@@ -149,7 +193,7 @@ export async function getTrending(source) {
     const items = [...document.querySelectorAll('#top-anime .tab-content[data-name="week"] a.item[href]')].map((link, i) => {
       const style = attr(link.querySelector('.poster [style]'), 'style');
       const bg = style.match(/url\(['"]?([^'")]+)['"]?\)/i)?.[1] || '';
-      return { source:'sogo', url:normSogo(attr(link, 'href')), title:text(link.querySelector('.name')), image:absolute(bg, SOURCES.sogo.base), type:'Anime', rank:i + 1 };
+      return enrichCard({ source:'sogo', url:normSogo(attr(link, 'href')), title:text(link.querySelector('.name')), image:absolute(bg, SOURCES.sogo.base), type:'Anime', rank:i + 1 }, link);
     });
     return distinct(items);
   }
@@ -159,7 +203,7 @@ export async function getTrending(source) {
       const link = item.querySelector('h4 a.series[href], .imgseries a.series[href]');
       const image = item.querySelector('.imgseries img');
       const rank = Number(text(item.querySelector('.ctr'))) || i + 1;
-      return { source:'xin', url:normXin(attr(link, 'href')), title:text(item.querySelector('h4 a')) || attr(image, 'alt'), image:absolute(attr(image, 'data-src') || attr(image, 'src'), SOURCES.xin.base), type:'Donghua', rank };
+      return enrichCard({ source:'xin', url:normXin(attr(link, 'href')), title:text(item.querySelector('h4 a')) || attr(image, 'alt'), image:absolute(attr(image, 'data-src') || attr(image, 'src'), SOURCES.xin.base), type:'Donghua', rank }, item);
     });
     return distinct(items);
   }
@@ -215,40 +259,64 @@ function parseWatchCards(document, source) {
     const image = card?.querySelector('img');
     const title = source === 'suge' ? text(card?.querySelector('.item-bottom .name a')) || attr(image,'alt') : text(card?.querySelector('a.name')) || attr(image,'alt');
     const number = text(card?.querySelector(source === 'suge' ? '.dub-sub-total .sub' : '.ep-status.sub'));
-    return { source, url:sourceUrl(attr(link,'href'),source,true), title, image:sourceImage(attr(image,'data-src') || attr(image,'src'),source), type:text(card?.querySelector(source==='suge'?'.item-status .type':'.meta .right')) || 'Anime', badge:number?`EP ${number}`:'SUB', status:'' };
+    return enrichCard({ source, url:sourceUrl(attr(link,'href'),source,true), title, image:sourceImage(attr(image,'data-src') || attr(image,'src'),source), type:text(card?.querySelector(source==='suge'?'.item-status .type':'.meta .right')) || 'Anime', badge:number?`EP ${number}`:'SUB', status:'' }, card);
   });
   return distinct(items);
 }
 function parseWpCards(document, source) {
   return distinct([...document.querySelectorAll('.postbody .listupd article.bs')].map(card => {
     const link=card.querySelector('a[href]'), image=card.querySelector('img');
-    return { source, url:sourceUrl(attr(link,'href'),source,true), title:attr(link,'title') || text(card.querySelector('.tt h2')) || text(card.querySelector('.tt')), image:sourceImage(attr(image,'data-src') || attr(image,'data-lazy-src') || attr(image,'src'),source), type:text(card.querySelector('.typez')) || SOURCES[source].category, badge:text(card.querySelector('.sb')) || 'SUB', status:text(card.querySelector('.epx')) };
+    return enrichCard({ source, url:sourceUrl(attr(link,'href'),source,true), title:attr(link,'title') || text(card.querySelector('.tt h2')) || text(card.querySelector('.tt')), image:sourceImage(attr(image,'data-src') || attr(image,'data-lazy-src') || attr(image,'src'),source), type:text(card.querySelector('.typez')) || SOURCES[source].category, badge:text(card.querySelector('.sb')) || 'SUB', status:text(card.querySelector('.epx')) }, card);
   }));
 }
 function bashCard(row) {
   const id=String(row?.id || '');
   if (!/^\d{1,10}$/.test(id)) return null;
-  return { source:'bash', url:`${SOURCES.bash.base}/anime/${id}`, title:row.title?.english || row.title?.romaji || '', image:sourceImage(row.coverImage?.large || row.coverImage?.extraLarge || row.coverImage?.medium || '', 'bash'), type:row.format || 'Anime', badge:'SUB & DUB', status:row.status || '' };
+  const item={ source:'bash', url:`${SOURCES.bash.base}/anime/${id}`, title:row.title?.english || row.title?.romaji || '', image:sourceImage(row.coverImage?.large || row.coverImage?.extraLarge || row.coverImage?.medium || '', 'bash'), type:row.format || 'Anime', badge:'SUB & DUB', status:row.status || '' };
+  // AnimeBash mirrors AniList fields when it returns them; keep only real values.
+  const genres=uniqueText(Array.isArray(row.genres)?row.genres:[]);
+  if (genres.length) item.genres=genres;
+  const year=Number(row.seasonYear) || Number(row.startDate?.year) || 0;
+  if (year>=1900 && year<=2099) item.year=year;
+  if (row.isAdult===true || titleIsNsfw(item)) item.nsfw=true;
+  return item;
 }
-async function extraCatalog(source, { search, page, status }) {
+// Genre and year are applied through each source's own listing where one exists,
+// like status. A single genre uses the same /genre/ listing the source itself
+// links to from its detail pages; combined or year-only filtering uses the watch
+// sources' /filter route. WordPress sources expose a genre parameter on their
+// anime list but no year listing, so a year request is reported, never faked.
+function watchCatalogUrl(base, source, { search, page, status, genre, year }) {
+  if (search) return `${base}/filter?keyword=${encodeURIComponent(search)}&page=${page}${source==='sogo'?'&vrf=':''}`;
+  if (genre && !year && status==='all') return `${base}/genre/${genre}?page=${page}`;
+  if (genre || year) {
+    const params=[];
+    if (genre) params.push(`genre%5B%5D=${encodeURIComponent(genre)}`);
+    if (year) params.push(`year%5B%5D=${year}`);
+    if (status!=='all') params.push(`status%5B%5D=${source==='waves'?(status==='ongoing'?'0':'1'):SOGO_STATUS[status]}`);
+    return `${base}/filter?${params.join('&')}&page=${page}`;
+  }
+  if (source==='waves') return status!=='all' ? `${base}/filter?status%5B%5D=${status==='ongoing'?'0':'1'}&page=${page}` : `${base}/updated/page/${page}`;
+  return status!=='all' ? `${base}/status/${SOGO_STATUS[status]}?page=${page}` : `${base}/latest-updated?page=${page}`;
+}
+async function extraCatalog(source, { search, page, status, genre = '', genreName = '', year = '' }) {
   const base=SOURCES[source].base;
   if (source==='bash') {
     const statusValue={ongoing:'RELEASING',completed:'FINISHED',upcoming:'NOT_YET_RELEASED'}[status];
-    const url=`${base}/api/search?limit=24&offset=${(page-1)*24}${search?`&q=${encodeURIComponent(search)}`:''}${statusValue?`&status=${statusValue}`:''}`;
+    const url=`${base}/api/search?limit=24&offset=${(page-1)*24}${search?`&q=${encodeURIComponent(search)}`:''}${statusValue?`&status=${statusValue}`:''}${genreName?`&genre=${encodeURIComponent(genreName)}`:''}${year?`&year=${year}`:''}`;
     const json=JSON.parse(await getText(url));
     if (!Array.isArray(json.media)) throw new Error('AnimeBash did not return its catalog.');
     return {items:distinct(json.media.map(bashCard)),hasMore:!!json.pageInfo?.hasNextPage};
   }
   if (WATCH_SOURCES.has(source)) {
     if (source==='waves' && status==='upcoming') throw new Error('Aniwaves does not offer this status filter.');
-    const url = source==='waves'
-      ? (search?`${base}/filter?keyword=${encodeURIComponent(search)}&page=${page}`:status!=='all'?`${base}/filter?status%5B%5D=${status==='ongoing'?'0':'1'}&page=${page}`:`${base}/updated/page/${page}`)
-      : (search?`${base}/filter?keyword=${encodeURIComponent(search)}&page=${page}`:status!=='all'?`${base}/status/${SOGO_STATUS[status]}?page=${page}`:`${base}/latest-updated?page=${page}`);
+    const url=watchCatalogUrl(base, source, { search, page, status, genre, year });
     const document=doc(await getText(url));
     return {items:parseWatchCards(document,source),hasMore:!!document.querySelector('.pagination li.active ~ li a[href]')};
   }
   if (WORDPRESS_SOURCES.has(source)) {
-    const url=search?`${base}/${page>1?`page/${page}/`:''}?s=${encodeURIComponent(search)}`:`${base}/anime/?page=${page}&order=update${status!=='all'?`&status=${status}`:''}`;
+    if (year) throw new Error(`${SOURCES[source].name} does not offer a year filter.`);
+    const url=search?`${base}/${page>1?`page/${page}/`:''}?s=${encodeURIComponent(search)}`:`${base}/anime/?page=${page}&order=update${status!=='all'?`&status=${status}`:''}${genre?`&genre%5B%5D=${encodeURIComponent(genre)}`:''}`;
     const document=doc(await getText(url));
     return {items:parseWpCards(document,source),hasMore:!!document.querySelector('.pagination a.next, .hpage a.r, .postbody a.r[href], .nav-links a.next')};
   }
@@ -283,7 +351,7 @@ async function extraDetail(item) {
     const rows=sorted.length ? sorted : Array.from({length:count},(_,i)=>({number:i+1}));
     const episodes=rows.map((ep,i)=>({number:String(i+1),title:ep.title || `Episode ${i+1}`,url:`${base}/anime/${id}/${i+1}`,date:ep.airDate || '',sub:true,dub:true}));
     const release=detail.startDate ? [detail.startDate.year,detail.startDate.month,detail.startDate.day].filter(Boolean).join('-') : '';
-    return {...item,title:detail.title.english || detail.title.romaji || item.title,image:sourceImage(detail.coverImage?.extraLarge || detail.coverImage?.large || item.image,source),banner:sourceImage(detail.bannerImage || '',source),synopsis:detail.description || '',genres:Array.isArray(detail.genres)?detail.genres:[],status:({RELEASING:'Currently airing',FINISHED:'Finished',NOT_YET_RELEASED:'Upcoming',CANCELLED:'Cancelled',HIATUS:'Hiatus'})[detail.status] || detail.status || '',aired:release,episodeCount:String(detail.episodes || ''),type:detail.format || item.type,episodes};
+    return withContent({...item,title:detail.title.english || detail.title.romaji || item.title,image:sourceImage(detail.coverImage?.extraLarge || detail.coverImage?.large || item.image,source),banner:sourceImage(detail.bannerImage || '',source),synopsis:detail.description || '',genres:Array.isArray(detail.genres)?detail.genres:[],status:({RELEASING:'Currently airing',FINISHED:'Finished',NOT_YET_RELEASED:'Upcoming',CANCELLED:'Cancelled',HIATUS:'Hiatus'})[detail.status] || detail.status || '',aired:release,episodeCount:String(detail.episodes || ''),type:detail.format || item.type,episodes,...(detail.isAdult===true?{nsfw:true}:{})});
   }
   const document=doc(await getText(series));
   if (WATCH_SOURCES.has(source)) {
@@ -303,7 +371,7 @@ async function extraDetail(item) {
     const background=playerStyle.match(/url\(['"]?([^'")]+)['"]?\)/i)?.[1] || '';
     const synopsis=text(document.querySelector('#w-info .synopsis .content, .watch-wrap .description .full > div, .watch-wrap .description .short > div'));
     const genres=[...document.querySelectorAll('#w-info .bmeta a[href*="/genre/"], .watch-wrap .data .meta a[href*="/genre/"]')].map(text);
-    return {...item,title:text(document.querySelector('h1.title')) || item.title,image:sourceImage(attr(image,'data-src') || attr(image,'src'),source) || item.image,banner:sourceImage(background,source),synopsis,genres,status:extraMeta(document,'Status'),aired:extraMeta(document,'Date aired') || extraMeta(document,'Aired'),episodeCount:extraMeta(document,'Episodes'),type:extraMeta(document,'Type') || item.type,episodes};
+    return withContent({...item,title:text(document.querySelector('h1.title')) || item.title,image:sourceImage(attr(image,'data-src') || attr(image,'src'),source) || item.image,banner:sourceImage(background,source),synopsis,genres,status:extraMeta(document,'Status'),aired:extraMeta(document,'Date aired') || extraMeta(document,'Aired'),episodeCount:extraMeta(document,'Episodes'),type:extraMeta(document,'Type') || item.type,rating:ratingInDocument(document,extraMeta),episodes});
   }
   if (WORDPRESS_SOURCES.has(source)) {
     const image=document.querySelector('.thumbook .thumb img');
@@ -314,7 +382,7 @@ async function extraDetail(item) {
       const number=parseEpisodeNumber(displayed || text(el),String(i+1));
       return {number,title:text(el.querySelector('.epl-title')) || `Episode ${number}`,url:sourceUrl(attr(el,'href'),source),date:text(el.querySelector('.epl-date')),sub:true,dub:false};
     }).filter(x=>x.url);
-    return {...item,title:text(document.querySelector('h1.entry-title, h1[itemprop="name"]')) || item.title,image:sourceImage(attr(image,'data-src') || attr(image,'data-lazy-src') || attr(image,'src'),source) || item.image,banner:sourceImage(attr(document.querySelector('.bigcover img'),'data-src') || attr(document.querySelector('.bigcover img'),'src'),source),synopsis:paragraphs[0] || text(document.querySelector('.synp .entry-content')),genres:[...document.querySelectorAll('.genxed a')].map(text),status:extraMeta(document,'Status'),aired:extraMeta(document,'Released'),episodeCount:extraMeta(document,'Episodes'),type:extraMeta(document,'Type') || item.type,episodes};
+    return withContent({...item,title:text(document.querySelector('h1.entry-title, h1[itemprop="name"]')) || item.title,image:sourceImage(attr(image,'data-src') || attr(image,'data-lazy-src') || attr(image,'src'),source) || item.image,banner:sourceImage(attr(document.querySelector('.bigcover img'),'data-src') || attr(document.querySelector('.bigcover img'),'src'),source),synopsis:paragraphs[0] || text(document.querySelector('.synp .entry-content')),genres:[...document.querySelectorAll('.genxed a')].map(text),status:extraMeta(document,'Status'),aired:extraMeta(document,'Released'),episodeCount:extraMeta(document,'Episodes'),type:extraMeta(document,'Type') || item.type,rating:ratingInDocument(document,extraMeta),episodes});
   }
   throw new Error('Unknown source');
 }
@@ -353,27 +421,29 @@ async function bashServers(episode) {
   return results;
 }
 
-export async function getCatalog(source, { query = '', page = 1, status = 'all' } = {}) {
+export async function getCatalog(source, { query = '', page = 1, status = 'all', genre = '', year = '' } = {}) {
   const search = query.trim();
-  // AnimeXin's keyword search ignores its status parameter; never pretend it filtered.
-  if (search && status !== 'all') throw new Error('Clear the search to browse by status.');
+  const genreName = genre ? findGenre(genre) : '';
+  if (genre && !genreName) throw new Error('Unknown genre');
+  const genreValue = genreName ? genreSlug(genreName) : '';
+  const yearValue = year === '' || year == null ? '' : String(year);
+  if (yearValue && !/^(?:19|20)\d{2}$/.test(yearValue)) throw new Error('Unknown year');
+  // Source keyword searches ignore their listing filters; never pretend they filtered.
+  if (search && (status !== 'all' || genreValue || yearValue)) throw new Error('Clear the search to browse by status, genre or year.');
   if (status !== 'all' && !Object.prototype.hasOwnProperty.call(SOGO_STATUS, status)) throw new Error('Unknown status');
-  if (WATCH_SOURCES.has(source) || WORDPRESS_SOURCES.has(source) || source === 'bash') return extraCatalog(source, { search, page, status });
+  if (WATCH_SOURCES.has(source) || WORDPRESS_SOURCES.has(source) || source === 'bash') return extraCatalog(source, { search, page, status, genre:genreValue, genreName, year:yearValue });
   if (source === 'sogo') {
-    const url = search
-      ? `${SOURCES.sogo.base}/filter?keyword=${encodeURIComponent(search)}&page=${page}&vrf=`
-      : status !== 'all'
-        ? `${SOURCES.sogo.base}/status/${SOGO_STATUS[status]}?page=${page}`
-        : `${SOURCES.sogo.base}/latest-updated?page=${page}`;
+    const url = watchCatalogUrl(SOURCES.sogo.base, 'sogo', { search, page, status, genre:genreValue, year:yearValue });
     const document = doc(await getText(url));
     const items = parseSogoCards(document);
     const hasMore = !!document.querySelector('.pagination li.active ~ li a[href]');
     return { items, hasMore };
   }
   if (source === 'xin') {
+    if (yearValue) throw new Error('AnimeXin does not offer a year filter.');
     const url = search
       ? `${SOURCES.xin.base}/${page > 1 ? `page/${page}/` : ''}?s=${encodeURIComponent(search)}`
-      : `${SOURCES.xin.base}/anime/?page=${page}&order=update${XIN_STATUS.has(status) ? `&status=${status}` : ''}`;
+      : `${SOURCES.xin.base}/anime/?page=${page}&order=update${XIN_STATUS.has(status) ? `&status=${status}` : ''}${genreValue ? `&genre%5B%5D=${encodeURIComponent(genreValue)}` : ''}`;
     const document = doc(await getText(url));
     const items = parseXinCards(document);
     const hasMore = !!document.querySelector('.pagination a.next, .hpage a.r');
@@ -381,6 +451,7 @@ export async function getCatalog(source, { query = '', page = 1, status = 'all' 
   }
   throw new Error('Unknown source');
 }
+
 function metaValue(document, label) {
   // Match the entire label: Xin's "Released on" is the post date, not "Released".
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -415,7 +486,7 @@ export async function getDetail(item) {
       const number = attr(el, 'data-num') || String(i + 1);
       return { number, title: `Episode ${number}`, url: `${baseUrl}/ep-${encodeURIComponent(number)}`, ids: attr(el, 'data-ids'), sub: attr(el, 'data-sub') === '1', dub: attr(el, 'data-dub') === '1', date: '' };
     });
-    return { ...item, title, image, banner, synopsis, genres, status: metaValue(document, 'Status'), aired: metaValue(document, 'Date aired'), episodeCount: metaValue(document, 'Episodes'), type: metaValue(document, 'Type') || item.type, episodes };
+    return withContent({ ...item, title, image, banner, synopsis, genres, status: metaValue(document, 'Status'), aired: metaValue(document, 'Date aired'), episodeCount: metaValue(document, 'Episodes'), type: metaValue(document, 'Type') || item.type, rating: ratingInDocument(document, metaValue), episodes });
   }
   const title = text(document.querySelector('h1.entry-title, h1[itemprop="name"]')) || item.title;
   const image = absolute(attr(document.querySelector('.thumbook .thumb img'), 'src'), SOURCES.xin.base) || item.image;
@@ -427,7 +498,7 @@ export async function getDetail(item) {
     const number = text(el.querySelector('.epl-num')) || parseEpisodeNumber(text(el), String(i + 1));
     return { number, title: text(el.querySelector('.epl-title')) || `Episode ${number}`, url: normXin(attr(el, 'href')), date: text(el.querySelector('.epl-date')), sub: true, dub: false };
   }).filter(e => e.url);
-  return { ...item, title, image, banner, synopsis, genres, status: metaValue(document, 'Status'), aired: metaValue(document, 'Released'), episodeCount: metaValue(document, 'Episodes'), type: metaValue(document, 'Type') || item.type, episodes };
+  return withContent({ ...item, title, image, banner, synopsis, genres, status: metaValue(document, 'Status'), aired: metaValue(document, 'Released'), episodeCount: metaValue(document, 'Episodes'), type: metaValue(document, 'Type') || item.type, rating: ratingInDocument(document, metaValue), episodes });
 }
 function safeEmbed(url, base) {
   try {
