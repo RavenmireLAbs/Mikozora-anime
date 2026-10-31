@@ -1,4 +1,4 @@
-/* Appearance controls use the same palette as the rest of Moku. */
+/* Appearance controls use the same palette as the rest of Mikozora. */
 html.appearance-changing *,html.appearance-changing *::before,html.appearance-changing *::after{transition:none!important}
 html[data-themed] .topbar{background:var(--bg)}
 /* Raise the smallest chrome labels enough to remain legible in either mode. */

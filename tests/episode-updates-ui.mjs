@@ -59,7 +59,7 @@ const noOverflow=async page=>assert.equal(await page.evaluate(()=>document.docum
 try{
  const {context,page,errors}=await setup();await goto(page);
  await page.getByRole('heading',{name:/Welcome back/i}).waitFor();
- await page.getByRole('button',{name:'Continue to Moku'}).click();
+ await page.getByRole('button',{name:'Continue to Mikozora'}).click();
  await page.locator('.updates-page').waitFor();
  await page.waitForFunction(()=>window.__syncs.at(-1)?.length===2);
  assert.deepEqual((await page.evaluate(()=>window.__syncs.at(-1))).map(x=>x.title),[a.title,b.title],'deduplicated collection members only');
@@ -119,7 +119,7 @@ try{
  await page.getByRole('button',{name:'Check now'}).click();await page.waitForFunction(()=>window.__manualCalls===2);
  assert.deepEqual(errors,[]);await context.close();
  console.log('PASS simulated Android: silent baseline UX, deduplicated memberships, notification deep-link/permission, manual checks, updates/badges/read, removal, settings, failures and 320px layout.');
- const desktop=await setup({width:1440,height:900},false);await goto(desktop.page);await desktop.page.getByRole('button',{name:'Continue to Moku'}).click();await desktop.page.locator('.updates-page').waitFor();
+ const desktop=await setup({width:1440,height:900},false);await goto(desktop.page);await desktop.page.getByRole('button',{name:'Continue to Mikozora'}).click();await desktop.page.locator('.updates-page').waitFor();
  await desktop.page.evaluate(item=>window.__addUpdate(item,2),b);await desktop.page.getByText('Episode 2',{exact:false}).first().waitFor();await noOverflow(desktop.page);
  await desktop.page.screenshot({path:resolve(SHOTS,'updates-desktop.png')});assert.deepEqual(desktop.errors,[]);await desktop.context.close();
  console.log('PASS simulated desktop updates layout.');

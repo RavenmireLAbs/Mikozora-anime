@@ -228,7 +228,7 @@ public final class MainActivity extends Activity {
                     sendChunks(id, options.toString(), null);
                 } catch (Exception e) {
                     String message=e.getMessage();
-                    boolean known=message!=null && message.length()<180 && (message.startsWith("No Moku-compatible download server") || message.startsWith("No compatible download server") || message.startsWith("No compatible subtitled AnimeBash"));
+                    boolean known=message!=null && message.length()<180 && (message.startsWith("No Mikozora-compatible download server") || message.startsWith("No compatible download server") || message.startsWith("No compatible subtitled AnimeBash"));
                     sendChunks(id, "", known ? message : "Could not check server qualities. Try again or use Automatic.");
                 }
             });
@@ -294,7 +294,7 @@ public final class MainActivity extends Activity {
                     Uri uri=Uri.parse(raw);if(!"content".equalsIgnoreCase(uri.getScheme()))throw new Exception("Invalid file");
                     Intent view=new Intent(Intent.ACTION_VIEW).setDataAndType(uri,"video/mp4")
                         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                    view.setClipData(ClipData.newRawUri("Moku video",uri));
+                    view.setClipData(ClipData.newRawUri("Mikozora video",uri));
                     startActivity(Intent.createChooser(view,"Open episode with"));
                 }catch(Exception e){Toast.makeText(MainActivity.this,"Could not open the exported file. Check the folder and install a video player.",Toast.LENGTH_LONG).show();}
             });

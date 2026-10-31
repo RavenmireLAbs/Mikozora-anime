@@ -80,7 +80,7 @@ public final class OfflinePlayerActivity extends Activity {
             player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
                 .setPreferredTextLanguage("indonesian".equals(meta.optString("language"))?"id":"en").build());
             player.addListener(new Player.Listener(){@Override public void onPlayerError(PlaybackException e){
-                Toast.makeText(OfflinePlayerActivity.this,folder?"Could not play the saved folder file. Check that it still exists and Moku can access the folder.":"Offline playback failed. Check device format support, or remove and download this episode again.",Toast.LENGTH_LONG).show();
+                Toast.makeText(OfflinePlayerActivity.this,folder?"Could not play the saved folder file. Check that it still exists and Mikozora can access the folder.":"Offline playback failed. Check device format support, or remove and download this episode again.",Toast.LENGTH_LONG).show();
             }});
             FrameLayout root=new FrameLayout(this);root.setBackgroundColor(Color.BLACK);
             PlayerView view=new PlayerView(this);view.setPlayer(player);view.setShowSubtitleButton(true);

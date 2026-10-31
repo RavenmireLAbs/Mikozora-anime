@@ -32,7 +32,7 @@ async function remote(u, isDoc, redirects = 0) {
   return { data, type };
 }
 function sourceProxy() {
-  return { name: 'moku-source-proxy', configureServer(server) {
+  return { name: 'mikozora-source-proxy', configureServer(server) {
     server.middlewares.use(async (req, res, next) => {
       const path = new URL(req.url, 'http://local');
       if (path.pathname !== '/api/raw' && path.pathname !== '/api/image') return next();

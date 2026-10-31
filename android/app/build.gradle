@@ -4,11 +4,12 @@ android {
     namespace 'app.moku.anime'
     compileSdk 35
     defaultConfig {
+        // Legacy application ID retained so pre-rebrand installs update in place.
         applicationId 'app.moku.anime'
         minSdk 23
         targetSdk 34
-        versionCode 13
-        versionName '0.11.0'
+        versionCode 14
+        versionName '0.12.0'
     }
     buildTypes { release { minifyEnabled false } }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }

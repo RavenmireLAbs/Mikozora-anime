@@ -21,7 +21,7 @@ public final class EpisodeWorker extends ListenableWorker {
                 try{result=check();}catch(Exception e){result=Result.retry();}
                 completer.set(result);
             });
-            return "Moku episode check";
+            return "Mikozora episode check";
         });
     }
     private Result check() throws Exception {
