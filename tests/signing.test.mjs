@@ -43,8 +43,23 @@ test('permanent signing is environment-driven and release publication cannot sil
   assert.match(workflow, /apksigner" verify --verbose --print-certs app\/build\/outputs\/apk\/Mikozora\.apk/);
   assert.match(workflow, /Prepare throwaway CI signing check/);
   assert.match(workflow, /\.\/gradlew assembleRelease assembleDebug/);
-  assert.match(workflow, /cp release\/Mikozora\.apk "\$RELEASE_APK"/);
+  assert.match(workflow, /cp release\/Mikozora\.apk "\$release_apk"/);
   assert.doesNotMatch(workflow, /cp release\/app-debug\.apk/);
+
+  // Regression (v0.13.0 first publishing run): the alias secret's value
+  // ("Mikozora") appears inside the release APK filename and the former temp
+  // keystore filenames, and GitHub discards job outputs that may contain a
+  // secret ("Skip output 'apk' since it may contain secret"). The asset name
+  // must be derived inside the release job from the safe `tag` output, and
+  // keystore locations must use fixed paths rather than step/job outputs.
+  assert.doesNotMatch(workflow, /steps\.release\.outputs\.apk/);
+  assert.doesNotMatch(workflow, /needs\.build\.outputs\.apk/);
+  assert.doesNotMatch(workflow, /keystore_path/);
+  assert.match(workflow, /release_apk="Mikozora-\$\{RELEASE_TAG\}-Android\.apk"/);
+  assert.match(workflow, /MIKOZORA_KEYSTORE_PATH: \$\{\{ runner\.temp \}\}\/release-signing\.p12/);
+  assert.match(workflow, /MIKOZORA_KEYSTORE_PATH: \$\{\{ runner\.temp \}\}\/ci-signing-test\.p12/);
+  assert.match(workflow, /keytool -importkeystore -noprompt/);
+  assert.match(workflow, /The permanent signing secrets do not open the key/);
 
   for (const pattern of ['*.jks', '*.keystore', '*.p12', '*.pfx', 'key.properties']) {
     assert.ok(gitignore.split(/\r?\n/).includes(pattern), `${pattern} is ignored`);

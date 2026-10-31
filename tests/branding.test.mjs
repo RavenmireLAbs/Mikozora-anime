@@ -32,7 +32,7 @@ test('Mikozora branding is consistent while the legacy Android identity is retai
   assert.match(readme, /Mikozora was previously called Moku/);
   assert.match(readme, /legacy `app\.moku\.anime` and `moku\.\*` values/);
 
-  assert.match(workflow, /apk=Mikozora-\$\{tag\}-Android\.apk/);
+  assert.match(workflow, /release_apk="Mikozora-\$\{RELEASE_TAG\}-Android\.apk"/);
   assert.equal((workflow.match(/name: Mikozora-Android\n/g) || []).length, 2);
   assert.match(workflow, /--title "Mikozora \$RELEASE_TAG"/);
   assert.doesNotMatch(workflow, /Moku-(?:\$\{tag\}|Android)|--title "Moku /);
