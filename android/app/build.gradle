@@ -1,5 +1,13 @@
 plugins { id 'com.android.application' }
 
+def releaseKeystorePath = System.getenv('MIKOZORA_KEYSTORE_PATH')
+def releaseKeystorePassword = System.getenv('MIKOZORA_KEYSTORE_PASSWORD')
+def releaseKeyAlias = System.getenv('MIKOZORA_KEY_ALIAS')
+def releaseKeyPassword = System.getenv('MIKOZORA_KEY_PASSWORD')
+def releaseKeystoreType = System.getenv('MIKOZORA_KEYSTORE_TYPE') ?: 'PKCS12'
+def hasReleaseSigning = [releaseKeystorePath, releaseKeystorePassword, releaseKeyAlias, releaseKeyPassword]
+    .every { it != null && !it.trim().empty }
+
 android {
     namespace 'app.moku.anime'
     compileSdk 35
@@ -11,7 +19,25 @@ android {
         versionCode 14
         versionName '0.12.0'
     }
-    buildTypes { release { minifyEnabled false } }
+    signingConfigs {
+        release {
+            if (hasReleaseSigning) {
+                storeFile file(releaseKeystorePath)
+                storePassword releaseKeystorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+                storeType releaseKeystoreType
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
 }
 
