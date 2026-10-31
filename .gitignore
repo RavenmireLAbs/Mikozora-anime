@@ -5,3 +5,11 @@ android/local.properties
 android/app/build/
 *.iml
 .DS_Store
+
+# Android signing material must never be committed.
+*.jks
+*.keystore
+*.p12
+*.pfx
+key.properties
+**/key.properties

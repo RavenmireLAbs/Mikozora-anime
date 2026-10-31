@@ -1,4 +1,4 @@
-name: Android debug build
+name: Android build
 
 on:
   push:
@@ -75,16 +75,100 @@ jobs:
       - uses: android-actions/setup-android@v4
       - name: Install Android SDK
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Prepare permanent release signing
+        id: permanent-signing
+        if: steps.release.outputs.publish == 'true' && github.event_name != 'pull_request'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.MIKOZORA_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.MIKOZORA_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.MIKOZORA_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.MIKOZORA_KEY_PASSWORD }}
+        run: |
+          missing=()
+          [[ -n "$KEYSTORE_BASE64" ]] || missing+=("MIKOZORA_KEYSTORE_BASE64")
+          [[ -n "$KEYSTORE_PASSWORD" ]] || missing+=("MIKOZORA_KEYSTORE_PASSWORD")
+          [[ -n "$KEY_ALIAS" ]] || missing+=("MIKOZORA_KEY_ALIAS")
+          [[ -n "$KEY_PASSWORD" ]] || missing+=("MIKOZORA_KEY_PASSWORD")
+
+          if (( ${#missing[@]} > 0 )); then
+            printf '::error::Missing required GitHub Actions secret: %s\n' "${missing[@]}"
+            echo "Add the permanent signing secrets before publishing a release. See docs/SIGNING.md."
+            exit 1
+          fi
+
+          keystore="$RUNNER_TEMP/Mikozora-release.p12"
+          umask 077
+          printf '%s' "$KEYSTORE_BASE64" | tr -d '[:space:]' | base64 --decode > "$keystore"
+          chmod 600 "$keystore"
+          test -s "$keystore"
+          echo "keystore_path=$keystore" >> "$GITHUB_OUTPUT"
+          echo "Permanent release signing is configured."
+      - name: Prepare throwaway CI signing check
+        id: test-signing
+        if: ${{ !(steps.release.outputs.publish == 'true' && github.event_name != 'pull_request') }}
+        run: |
+          keystore="$RUNNER_TEMP/Mikozora-ci-test.p12"
+          rm -f "$keystore"
+          keytool -genkeypair \
+            -keystore "$keystore" \
+            -storetype PKCS12 \
+            -storepass Mikozora-ci-test \
+            -keypass Mikozora-ci-test \
+            -alias Mikozora \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Mikozora CI test, O=Mikozora, C=PK" >/dev/null
+          chmod 600 "$keystore"
+          echo "keystore_path=$keystore" >> "$GITHUB_OUTPUT"
+          echo "Using a throwaway key only to verify the release-signing wiring; the uploaded non-release artifact remains a debug build."
       - run: npm ci
       - run: npm test
       - run: npm run prepare:android
-      - name: Build debug APK
+      - name: Build permanently signed release APK
+        if: steps.release.outputs.publish == 'true' && github.event_name != 'pull_request'
         working-directory: android
-        run: ./gradlew assembleDebug
+        env:
+          MIKOZORA_KEYSTORE_PATH: ${{ steps.permanent-signing.outputs.keystore_path }}
+          MIKOZORA_KEYSTORE_PASSWORD: ${{ secrets.MIKOZORA_KEYSTORE_PASSWORD }}
+          MIKOZORA_KEY_ALIAS: ${{ secrets.MIKOZORA_KEY_ALIAS }}
+          MIKOZORA_KEY_PASSWORD: ${{ secrets.MIKOZORA_KEY_PASSWORD }}
+          MIKOZORA_KEYSTORE_TYPE: PKCS12
+        run: |
+          ./gradlew assembleRelease
+          mkdir -p app/build/outputs/apk
+          cp app/build/outputs/apk/release/app-release.apk app/build/outputs/apk/Mikozora.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/Mikozora.apk
+      - name: Build debug APK and verify release-signing wiring
+        if: ${{ !(steps.release.outputs.publish == 'true' && github.event_name != 'pull_request') }}
+        working-directory: android
+        env:
+          MIKOZORA_KEYSTORE_PATH: ${{ steps.test-signing.outputs.keystore_path }}
+          MIKOZORA_KEYSTORE_PASSWORD: Mikozora-ci-test
+          MIKOZORA_KEY_ALIAS: Mikozora
+          MIKOZORA_KEY_PASSWORD: Mikozora-ci-test
+          MIKOZORA_KEYSTORE_TYPE: PKCS12
+        run: |
+          ./gradlew assembleRelease assembleDebug
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose app/build/outputs/apk/release/app-release.apk >/dev/null
+          mkdir -p app/build/outputs/apk
+          cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/Mikozora.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose app/build/outputs/apk/Mikozora.apk >/dev/null
+      - name: Remove temporary keystores
+        if: always()
+        env:
+          PERMANENT_KEYSTORE_PATH: ${{ steps.permanent-signing.outputs.keystore_path }}
+          TEST_KEYSTORE_PATH: ${{ steps.test-signing.outputs.keystore_path }}
+        run: |
+          for keystore in "$PERMANENT_KEYSTORE_PATH" "$TEST_KEYSTORE_PATH"; do
+            if [[ -n "$keystore" ]]; then
+              rm -f "$keystore"
+            fi
+          done
       - uses: actions/upload-artifact@v7
         with:
-          name: Mikozora-Android-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: Mikozora-Android
+          path: android/app/build/outputs/apk/Mikozora.apk
 
   release:
     needs: build
@@ -95,7 +179,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v7
         with:
-          name: Mikozora-Android-debug
+          name: Mikozora-Android
           path: release
       - name: Publish GitHub Release
         env:
@@ -105,7 +189,7 @@ jobs:
           RELEASE_APK: ${{ needs.build.outputs.apk }}
           REPLACE_ASSET: ${{ needs.build.outputs.replace }}
         run: |
-          cp release/app-debug.apk "$RELEASE_APK"
+          cp release/Mikozora.apk "$RELEASE_APK"
 
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             if [[ "$REPLACE_ASSET" != "true" ]]; then
