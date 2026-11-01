@@ -71,3 +71,20 @@ test('compact Android playlist entries omit source server tokens and redundant t
     { number: '2', url: 'https://example.test/watch/show/ep-2', title: 'A named chapter' },
   ]);
 });
+
+test('compact Android playlist entries flag watched episodes only', () => {
+  const episodes = [episode(1), episode(2), episode(3)];
+  const watched = new Set([episodes[0].url, episodes[2].url]);
+  assert.deepEqual(compactPlaybackEpisodes(episodes, { watched }), [
+    { number: '1', url: episodes[0].url, watched: true },
+    { number: '2', url: episodes[1].url },
+    { number: '3', url: episodes[2].url, watched: true },
+  ]);
+  const { episodes: compact } = compactPlaybackPlaylist(episodes, 1, 260000, watched);
+  assert.deepEqual(compact.map(e => !!e.watched), [true, false, true]);
+  // The current-only size fallback keeps the flag for the surviving episode.
+  const currentOnly = compactPlaybackPlaylist(episodes, 2, 10, watched);
+  assert.deepEqual(currentOnly.episodes, [{ number: '3', url: episodes[2].url, watched: true }]);
+  // Without a watched set the payload shape is unchanged.
+  assert.ok(compactPlaybackPlaylist(episodes, 1).episodes.every(e => !('watched' in e)));
+});
