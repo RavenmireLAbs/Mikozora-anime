@@ -58,12 +58,12 @@ await page.addInitScript(({ version, experienceKey })=>{
   localStorage.setItem('moku.history.v1',JSON.stringify([{item:old,episode:{number:'1',url:'https://animesogo.to/watch/old/ep-1'},time:1}]));
   localStorage.setItem('multi.seed','yes');
  }
- window.__players=[];window.__queued=[];window.__oldDownloads=[{id:'legacy',item:{source:'sogo',title:'Existing saved title'},episode:{number:'1'},status:'completed',storageMode:'folder'}];
+ window.__players=[];window.__playerErrors=[];window.__queued=[];window.__oldDownloads=[{id:'legacy',item:{source:'sogo',title:'Existing saved title'},episode:{number:'1'},status:'completed',storageMode:'folder'}];
  const reply=(id,obj)=>window.__mokuNativeChunk(id,typeof obj==='string'?obj:JSON.stringify(obj),true,null);
  window.MokuBridge={
   request(id,url){window.__fixture(url).then(v=>reply(id,v)).catch(e=>window.__mokuNativeChunk(id,'',true,e.message));},
   downloads(id){reply(id,window.__oldDownloads)},exportSettings(id){reply(id,{configured:true,granted:true,name:'My folder'})},
-  openPlayer(raw){window.__players.push(JSON.parse(raw))},openExternal(){},openDownload(){},openExport(){},
+  openPlayer(raw){window.__players.push(JSON.parse(raw))},playerNavigationError(message){window.__playerErrors.push(message)},openExternal(){},openDownload(){},openExport(){},
   downloadOptions(id,raw){let p=JSON.parse(raw);reply(id,{servers:[{id:`${p.item.source}-server-0`,label:'Test server',qualities:[{id:'best',label:'Best'},{id:'v:1280x720',label:'720p'}]}],unavailable:0})},
   enqueueDownloads(id,raw){let p=JSON.parse(raw);window.__queued.push(p);reply(id,{added:p.episodes.length,skipped:0})}
  };
@@ -85,6 +85,16 @@ try{
   await page.waitForFunction(src=>window.__players.some(p=>p.item.source===src),id,{timeout:10000});
   let player=(await page.evaluate(()=>window.__players)).find(p=>p.item.source===id);
   assert.ok(player.servers.length>0);assert.equal(player.episode.number,'1');
+  assert.equal(player.episodeIndex,0);assert.ok(Array.isArray(player.episodes));
+  assert.equal(player.episodes[player.episodeIndex].url,player.episode.url);
+  if(id==='suge'){
+   assert.deepEqual(player.episodes.map(episode=>episode.number),['1','2']);
+   assert.equal(await page.evaluate(current=>window.__mokuPlayerEpisode(1,current.episodes[1].url),player),true);
+   await page.waitForFunction(()=>window.__players.some(p=>p.item.source==='suge'&&String(p.episode.number)==='2'&&p.episodeIndex===1),null,{timeout:10000});
+   const nextPlayer=(await page.evaluate(()=>window.__players)).find(p=>p.item.source==='suge'&&String(p.episode.number)==='2');
+   assert.equal(nextPlayer.episodes[nextPlayer.episodeIndex].url,nextPlayer.episode.url);
+   assert.deepEqual(await page.evaluate(()=>window.__playerErrors),[]);
+  }
   if(id==='waves'||id==='narul'){
    await page.getByRole('button',{name:'Download episode 1'}).click();
    const language=page.getByLabel('PREFERRED SUBTITLE LANGUAGE');
@@ -111,5 +121,5 @@ try{
  await page.locator('.bottom-nav').getByRole('button',{name:'Browse'}).click();await page.getByLabel('More sources').selectOption('world');
  await page.getByRole('button',{name:'Open DonghuaWorld fixture'}).first().waitFor({timeout:10000});await noOverflow();
  await page.locator('.bottom-nav').getByRole('button',{name:'Library'}).click();assert.ok(await page.getByRole('button',{name:'AnimeSuge',exact:true}).isVisible());await noOverflow();
- assert.deepEqual(errors,[]);console.log('PASS multi-source UI: 6 Anime + 4 Donghua, 8 catalog/detail/player flows, batch server/quality queue, legacy data, folder setting, 320px.');
+ assert.deepEqual(errors,[]);console.log('PASS multi-source UI: 6 Anime + 4 Donghua, 8 catalog/detail/player flows, in-player next-episode request, batch server/quality queue, legacy data, folder setting, 320px.');
 }finally{await browser.close()}

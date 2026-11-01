@@ -1,13 +1,22 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; older entries remain available.
-export const APP_VERSION = '0.13.0';
+export const APP_VERSION = '0.14.0';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.13.0',
+    version: '0.14.0',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Keep watching without going back', description: 'The online player now has Previous and Next episode buttons, so you can move through a series without returning to its episode list.' },
+      { title: 'Pick any episode in the player', description: 'Scroll the episode rail under the video, tap an episode number, and Mikozora finds that episode’s servers while the current one stays open.' },
+      { title: 'Your place stays up to date', description: 'Episodes opened from the player are added to your recent history just like episodes chosen from a series page.' },
+    ],
+  },
+  {
+    version: '0.13.0',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Signed for smoother updates', description: 'Mikozora now uses one permanent Android signing key, so future GitHub releases can update this signed installation in place.' },
       { title: 'One last reinstall from older builds', description: 'Android cannot update a debug-signed 0.12.0 or earlier installation to this build. Uninstalling removes in-app data and private downloads; files already exported to your chosen folder remain.' },
