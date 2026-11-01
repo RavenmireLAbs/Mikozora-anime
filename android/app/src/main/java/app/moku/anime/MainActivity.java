@@ -374,7 +374,7 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
             });
         }
         @JavascriptInterface public void openExternal(String url) {
-            if (!Network.allowedSource(url)) return;
+            if (!Network.allowedSource(url) && !Network.allowedProjectRelease(url)) return;
             runOnUiThread(() -> {
                 try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url))); }
                 catch (Exception ignored) { }
