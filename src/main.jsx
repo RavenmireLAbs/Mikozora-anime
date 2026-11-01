@@ -7,6 +7,7 @@ import {
   Trash2, RotateCcw, FolderHeart, CircleHelp, ShieldCheck, Plus, ListVideo, Download, HardDrive, ListChecks, CheckCircle2, Heart, FolderPlus, Pencil, Folder, Flame, Bell, Sun, Moon, EyeOff
 } from 'lucide-react';
 import { SOURCES, getCatalog, getDetail, getFeatured, getTrending, getDiscoverAnime, getServers, imageUrl, isAndroid, clearNetworkCache, getDownloads, getDownloadOptions, enqueueDownloads, removeDownload, openDownload, getExportSettings, chooseDownloadFolder, clearDownloadFolder, exportDownload, openExport, hasEpisodeUpdates, syncEpisodeTitles, getEpisodeUpdates, checkEpisodes, setEpisodeAutomatic, setEpisodeAlerts, markEpisodeRead } from './data';
+import { buildPlaybackPlaylist, compactPlaybackPlaylist } from './playback';
 import { monitoredTitles, unreadByTitle } from './episode-updates';
 import { COLLECTIONS_KEY, FAVOURITES_ID, titleKey, normalizeCollections, collectionNameError, createCollection, renameCollection, deleteCollection, setCollectionItems, setTitleCollections, toggleFavourite, removeTitleFromCollections } from './collections';
 import { APP_VERSION, RELEASES, startupExperience, completeExperience } from './releases';
@@ -486,9 +487,47 @@ function SettingsPage({library,history,clearLibrary,clearHistory,openLicenses,op
     </div>
     <div className="settings-group"><div className="settings-title">YOUR DATA <span>ON THIS DEVICE</span></div><div className="setting-row"><div className="setting-icon"><Bookmark size={19}/></div><div><strong>Saved library</strong><p>{library.length} {library.length===1?'title':'titles'} saved locally</p></div><button onClick={clearLibrary} disabled={!library.length}>Clear</button></div><div className="setting-row"><div className="setting-icon"><History size={19}/></div><div><strong>Watch history</strong><p>{history.length} recently opened {history.length===1?'episode':'episodes'}</p></div><button onClick={clearHistory} disabled={!history.length}>Clear</button></div></div><div className="settings-group"><div className="settings-title">ABOUT <span>MIKOZORA {APP_VERSION}</span></div><div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div><strong>Private by default</strong><p>Your library, collections and history stay on this device. No account is required.</p></div></div><div className="setting-row"><div className="setting-icon"><Film size={19}/></div><div><strong>Player availability</strong><p>Video hosts may restrict embedding or be unavailable. Try another server or open the source page.</p></div></div><div className="setting-row"><div className="setting-icon"><Sparkles size={19}/></div><div><strong>What’s new</strong><p>See the latest changes to Mikozora.</p></div><button onClick={openReleaseNotes}>View</button></div><div className="setting-row"><div className="setting-icon"><CircleHelp size={19}/></div><div><strong>Open source licenses</strong><p>Credits and licenses for Mikozora and its dependencies.</p></div><button onClick={openLicenses}>View</button></div></div></div>;
 }
-function PlayerModal({player,close}) {
+function PlayerModal({player,close,onEpisode}) {
   const [current,setCurrent]=useState(0);
-  return <div className="modal-backdrop" role="presentation" onMouseDown={close}><div className="player-modal" role="dialog" aria-modal="true" aria-label="Episode player" onMouseDown={e=>e.stopPropagation()}><div className="player-header"><div><span className="eyebrow">NOW OPENING</span><h2>{player.item.title}</h2><p>Episode {player.episode.number} · {sourceName(player.item.source)}</p></div><button className="icon-btn" onClick={close} aria-label="Close player"><X size={20}/></button></div><div className="iframe-wrap"><iframe key={player.servers[current]?.url} src={player.servers[current]?.url} title={`${player.item.title} episode ${player.episode.number}`} allow="autoplay; fullscreen; picture-in-picture" allowFullScreen referrerPolicy="no-referrer-when-downgrade"/></div><div className="player-controls"><label>VIDEO SERVER<select value={current} onChange={e=>setCurrent(Number(e.target.value))}>{player.servers.map((s,i)=><option value={i} key={i}>{s.name}</option>)}</select></label><button className="btn secondary" onClick={()=>external(player.episode.url)}>Open source <ExternalLink size={15}/></button></div><p className="player-disclaimer">Video is provided by the selected third-party server. If it doesn’t load here, try another server or open the original site.</p></div></div>;
+  const [switching,setSwitching]=useState(false);
+  const episodeRail=useRef(null);
+  const episodes=Array.isArray(player.episodes)&&player.episodes.length?player.episodes:[player.episode];
+  const episodeIndex=Number.isInteger(player.episodeIndex)&&episodes[player.episodeIndex]?.url===player.episode.url
+    ? player.episodeIndex
+    : Math.max(0,episodes.findIndex(episode=>episode.url===player.episode.url));
+  const previous=episodeIndex>0?episodes[episodeIndex-1]:null;
+  const next=episodeIndex>=0&&episodeIndex<episodes.length-1?episodes[episodeIndex+1]:null;
+
+  useEffect(()=>{setCurrent(0);setSwitching(false);},[player.episode.url]);
+  useEffect(()=>{
+    const frame=requestAnimationFrame(()=>{
+      episodeRail.current?.querySelector(`[data-episode-index="${episodeIndex}"]`)
+        ?.scrollIntoView({block:'nearest',inline:'center'});
+    });
+    return()=>cancelAnimationFrame(frame);
+  },[episodeIndex,episodes.length]);
+
+  const choose=async episode=>{
+    if(!episode||episode.url===player.episode.url||switching||typeof onEpisode!=='function')return;
+    setSwitching(true);
+    try{await onEpisode(episode);}finally{setSwitching(false);}
+  };
+
+  return <div className="modal-backdrop" role="presentation" onMouseDown={close}><div className="player-modal" role="dialog" aria-modal="true" aria-label="Episode player" onMouseDown={e=>e.stopPropagation()}>
+    <div className="player-header"><div><span className="eyebrow">NOW PLAYING</span><h2>{player.item.title}</h2><p>Episode {player.episode.number} · {sourceName(player.item.source)}</p></div><button className="icon-btn" onClick={close} aria-label="Close player"><X size={20}/></button></div>
+    <div className="iframe-wrap"><iframe key={`${player.episode.url}|${player.servers[current]?.url||''}`} src={player.servers[current]?.url} title={`${player.item.title} episode ${player.episode.number}`} allow="autoplay; fullscreen; picture-in-picture" allowFullScreen referrerPolicy="no-referrer-when-downgrade"/></div>
+    {episodes.length>1&&<section className="player-episode-browser" aria-label="Episode navigation">
+      <div className="player-episode-heading"><span>EPISODES</span><strong aria-live="polite">{episodeIndex+1} of {episodes.length}</strong></div>
+      <div className="player-episode-nav">
+        <button className="btn secondary player-nav-button" disabled={!previous||switching} onClick={()=>choose(previous)} aria-label={previous?`Previous episode ${previous.number}`:'Previous episode'}><ChevronLeft size={16}/> Previous</button>
+        <div className="player-episode-rail" ref={episodeRail} aria-label="Scrollable episode list">{episodes.map((episode,index)=><button key={`${episode.url}-${index}`} type="button" data-episode-index={index} className={'player-episode-chip'+(index===episodeIndex?' current':'')} disabled={switching} onClick={()=>choose(episode)} aria-label={`Play episode ${episode.number}`} aria-current={index===episodeIndex?'true':undefined} title={episode.title||`Episode ${episode.number}`}>{episode.number}</button>)}</div>
+        <button className="btn secondary player-nav-button" disabled={!next||switching} onClick={()=>choose(next)} aria-label={next?`Next episode ${next.number}`:'Next episode'}>Next <ChevronRight size={16}/></button>
+      </div>
+      {switching&&<p className="player-switching" role="status"><LoaderCircle size={14} className="spin"/> Finding servers for the selected episode…</p>}
+    </section>}
+    <div className="player-controls"><label>VIDEO SERVER<select value={current} onChange={e=>setCurrent(Number(e.target.value))}>{player.servers.map((s,i)=><option value={i} key={i}>{s.name}</option>)}</select></label><button className="btn secondary" onClick={()=>external(player.episode.url)}>Open source <ExternalLink size={15}/></button></div>
+    <p className="player-disclaimer">Video is provided by the selected third-party server. If it doesn’t load here, try another server or open the original site.</p>
+  </div></div>;
 }
 function LicenseModal({close}) {
   const [text,setText]=useState('Loading licenses...');
@@ -567,6 +606,10 @@ function App() {
   const [updatesSyncError,setUpdatesSyncError]=useState(''); const [updatesActionError,setUpdatesActionError]=useState('');
   const [notificationRoute,setNotificationRoute]=useState(false);
   const firstEpisodeSync=useRef(true);
+  const playbackSession=useRef(null);
+  const playbackRequest=useRef(0);
+  const nativeEpisodePending=useRef(false);
+  const playRef=useRef(null);
   const monitored=useMemo(()=>monitoredTitles(library,collections),[library,collections]);
   const unreadTitles=useMemo(()=>unreadByTitle(updates.updates),[updates.updates]);
   useEffect(()=>{ window.history.replaceState({page:'home'},'',location.pathname+location.search+'#home'); const listener=e=>setRoute(e.state||{page:'home'});window.addEventListener('popstate',listener);return()=>window.removeEventListener('popstate',listener); },[]);
@@ -599,6 +642,45 @@ function App() {
       try{window.MokuBridge.episodeNotificationPermission(true)}catch{}
   },[experience,updatesAvailable,updates.watchedCount,updates.alerts,updates.notificationStatus,updates.permissionAsked]);
   useEffect(()=>{window.__handleAndroidBack=()=>{if(experience){finishExperience();return true;}if(collectionDialog){setCollectionDialog(null);return true;}if(downloadModal){setDownloadModal(null);return true;}if(player){setPlayer(null);return true;}if(licenses){setLicenses(false);return true;}if(route.page!=='home'){window.history.back();return true;}return false;};},[experience,player,route,licenses,downloadModal,collectionDialog]);
+  useEffect(()=>{
+    const report=message=>{try{window.MokuBridge?.playerNavigationError?.(message);}catch{}};
+    const handler=async(index,url)=>{
+      const session=playbackSession.current;
+      if(!session||typeof playRef.current!=='function'){
+        report('This episode list is no longer available. Return to the series and choose an episode again.');
+        return false;
+      }
+      let target=session.episodes[Number(index)];
+      if(!target||(url&&target.url!==url)) target=session.episodes.find(episode=>episode.url===url);
+      if(!target){
+        report('That episode could not be found in this series.');
+        return false;
+      }
+      if(target.url===session.currentUrl) return true;
+      nativeEpisodePending.current=true;
+      try{
+        return await playRef.current(session.item,target,{playlist:session.episodes,reportNativeError:true});
+      }finally{
+        nativeEpisodePending.current=false;
+      }
+    };
+    const closed=()=>{
+      // Backing out while a native switch is resolving should not reopen it.
+      if(nativeEpisodePending.current){
+        nativeEpisodePending.current=false;
+        playbackRequest.current++;
+        setBusy('');
+      }
+      playbackSession.current=null;
+      return true;
+    };
+    window.__mokuPlayerEpisode=handler;
+    window.__mokuPlayerClosed=closed;
+    return()=>{
+      if(window.__mokuPlayerEpisode===handler)delete window.__mokuPlayerEpisode;
+      if(window.__mokuPlayerClosed===closed)delete window.__mokuPlayerClosed;
+    };
+  },[]);
   useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(''),3200);return()=>clearTimeout(t)},[toast]);
   useEffect(()=>{
     if(!isAndroid()){setDownloadsLoading(false);return;}
@@ -665,7 +747,48 @@ function App() {
   const submitSearch=value=>{setQuery(value);setBrowseSource('all');if(route.page!=='browse')go('browse');};
   const refresh=()=>{clearNetworkCache();setRefreshKey(x=>x+1);setToast('Refreshing your sources');};
   const remember=(item,episode)=>setHistory(prev=>[{item:{source:item.source,url:item.url,title:item.title,image:item.image,type:item.type,badge:item.badge,status:item.status,genres:item.genres,aired:item.aired,year:item.year,rating:item.rating,nsfw:item.nsfw},episode:{number:episode.number,url:episode.url,title:episode.title},time:Date.now()},...prev.filter(x=>!(identity(x.item)===identity(item)&&String(x.episode.number)===String(episode.number)))].slice(0,100));
-  const play=async(item,episode)=>{setBusy(`Finding servers for episode ${episode.number}...`);try{const servers=await getServers(item.source,episode);if(!servers.length)throw new Error('No available video servers were found. Try the original site.');remember(item,episode);const payload={item:{title:item.title,source:item.source},episode:{number:episode.number,url:episode.url},servers};if(isAndroid())window.MokuBridge.openPlayer(JSON.stringify(payload));else setPlayer({...payload,item});}catch(e){setToast(e.message||'Could not load this episode.');}finally{setBusy('')}};
+  const play=async(item,episode,options={})=>{
+    const request=++playbackRequest.current;
+    setBusy(`Finding servers for episode ${episode.number}...`);
+    try{
+      const playlist=buildPlaybackPlaylist(options.playlist||item.episodes||[],episode);
+      const servers=await getServers(item.source,episode);
+      if(request!==playbackRequest.current)return false;
+      if(!servers.length)throw new Error('No available video servers were found. Try the original site.');
+      remember(item,episode);
+      const episodeIndex=Math.max(0,playlist.currentIndex);
+      const nativePlaylist=compactPlaybackPlaylist(playlist.episodes,episodeIndex);
+      const payload={
+        item:{title:item.title,source:item.source},
+        episode:{number:episode.number,url:episode.url},
+        episodes:nativePlaylist.episodes,
+        episodeIndex:nativePlaylist.episodeIndex,
+        servers,
+      };
+      if(isAndroid()){
+        let raw=JSON.stringify(payload);
+        if(raw.length>290000&&payload.episodes.length>1){
+          // Never let an unusually long rail prevent the episode itself opening.
+          payload.episodes=[payload.episodes[payload.episodeIndex]];
+          payload.episodeIndex=0;
+          raw=JSON.stringify(payload);
+        }
+        window.MokuBridge.openPlayer(raw);
+      }
+      else setPlayer({...payload,item,episodes:playlist.episodes,episodeIndex});
+      playbackSession.current={item,episodes:playlist.episodes,currentUrl:episode.url};
+      return true;
+    }catch(e){
+      if(request!==playbackRequest.current)return false;
+      const message=e.message||'Could not load this episode.';
+      if(options.reportNativeError){try{window.MokuBridge?.playerNavigationError?.(message);}catch{}}
+      setToast(message);
+      return false;
+    }finally{
+      if(request===playbackRequest.current)setBusy('');
+    }
+  };
+  playRef.current=play;
   const resume=async entry=>{setBusy('Finding your episode...');try{const d=await getDetail(entry.item);const ep=d.episodes.find(e=>String(e.number)===String(entry.episode.number));if(!ep)throw new Error('Episode not found. Open the series or original source.');setBusy('');await play(d,ep);}catch(e){setBusy('');setToast(e.message||'Could not open this episode.')}};
   const clearHistory=()=>{if(window.confirm('Clear recently opened episodes from this device?')){setHistory([]);setToast('History cleared');}};
   const clearLibrary=()=>{if(window.confirm('Remove all saved titles from this device and their collection memberships? Your collections, downloads and folder files will remain.')){setLibrary([]);setCollections(previous=>previous.map(c=>({...c,items:[]})));setToast('Library cleared');}};
@@ -716,7 +839,7 @@ function App() {
     {route.page==='history'&&<HistoryPage items={history.filter(entry=>!hideNsfw||!isNsfw(entry.item))} resume={resume} open={open} clear={clearHistory} browse={browse}/>}
     {route.page==='sources'&&<SourcesPage browse={browse}/>}
     {route.page==='settings'&&<SettingsPage library={library} history={history} clearLibrary={clearLibrary} clearHistory={clearHistory} openLicenses={()=>setLicenses(true)} openReleaseNotes={()=>setExperience({mode:'update',manual:true})} folder={folder} chooseFolder={chooseFolder} usePrivate={usePrivate} updates={updates} updatesAvailable={updatesAvailable} changeAutomatic={changeAutomatic} changeAlerts={changeAlerts} notificationPermission={notificationPermission} appearance={appearance} changeAppearance={changeAppearance} contentPrefs={contentPrefs} changeContentPrefs={changeContentPrefs}/>}
-  </main></div><BottomNav page={route.page} go={go}/>{collectionDialog?.kind==='new'&&<CollectionNameDialog close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='rename'&&<CollectionNameDialog editing value={collections.find(c=>c.id===collectionDialog.id)?.name||''} close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='title'&&<TitleCollectionsDialog item={collectionDialog.item} collections={collections} close={()=>setCollectionDialog(null)} submit={selected=>saveTitleCollectionChoices(collectionDialog.item,selected)}/>}{collectionDialog?.kind==='members'&&collections.find(c=>c.id===collectionDialog.id)&&<CollectionMembersDialog collection={collections.find(c=>c.id===collectionDialog.id)} items={hideNsfw?library.filter(item=>!isNsfw(item)):library} close={()=>setCollectionDialog(null)} submit={keys=>saveCollectionMembers(collectionDialog.id,keys)}/>} {player&&<PlayerModal player={player} close={()=>setPlayer(null)}/>}{licenses&&<LicenseModal close={()=>setLicenses(false)}/>}{downloadModal&&<DownloadModal request={downloadModal} close={()=>setDownloadModal(null)} submit={submitDownload}/>}{busy&&<div className="busy-overlay"><div><LoaderCircle size={20} className="spin"/><span>{busy}</span></div></div>}{toast&&<div className="toast"><Check size={16}/>{toast}</div>}</div>;
+  </main></div><BottomNav page={route.page} go={go}/>{collectionDialog?.kind==='new'&&<CollectionNameDialog close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='rename'&&<CollectionNameDialog editing value={collections.find(c=>c.id===collectionDialog.id)?.name||''} close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='title'&&<TitleCollectionsDialog item={collectionDialog.item} collections={collections} close={()=>setCollectionDialog(null)} submit={selected=>saveTitleCollectionChoices(collectionDialog.item,selected)}/>}{collectionDialog?.kind==='members'&&collections.find(c=>c.id===collectionDialog.id)&&<CollectionMembersDialog collection={collections.find(c=>c.id===collectionDialog.id)} items={hideNsfw?library.filter(item=>!isNsfw(item)):library} close={()=>setCollectionDialog(null)} submit={keys=>saveCollectionMembers(collectionDialog.id,keys)}/>} {player&&<PlayerModal key={player.episode.url} player={player} close={()=>setPlayer(null)} onEpisode={episode=>play(player.item,episode,{playlist:player.episodes})}/>}{licenses&&<LicenseModal close={()=>setLicenses(false)}/>}{downloadModal&&<DownloadModal request={downloadModal} close={()=>setDownloadModal(null)} submit={submitDownload}/>}{busy&&<div className="busy-overlay"><div><LoaderCircle size={20} className="spin"/><span>{busy}</span></div></div>}{toast&&<div className="toast"><Check size={16}/>{toast}</div>}</div>;
 }
 
 createRoot(document.getElementById('root')).render(<App/>);

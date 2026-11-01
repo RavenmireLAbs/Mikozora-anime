@@ -22,6 +22,7 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
+import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -33,7 +34,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public final class MainActivity extends Activity {
+public final class MainActivity extends Activity implements PlayerNavigation.RequestListener {
     private WebView web;
     private final ExecutorService requests = Executors.newFixedThreadPool(6);
     // Ten independent catalog requests must not starve folder and download controls.
@@ -91,8 +92,43 @@ public final class MainActivity extends Activity {
             }
         });
         setContentView(web);
+        PlayerNavigation.setRequestListener(this);
         web.loadUrl(HOME);
     }
+
+    @Override public void onEpisodeRequested(int index, String url) {
+        if (index < 0 || index > 10000 || url == null || url.length() > 4096 || !Network.allowedSource(url)) {
+            PlayerNavigation.reportError("That episode is not available from this source.");
+            return;
+        }
+        String script = "(function(){try{if(window.__mokuPlayerEpisode){window.__mokuPlayerEpisode("
+            + index + "," + JSONObject.quote(url) + ");return true;}}catch(e){}return false;})()";
+        runOnUiThread(() -> {
+            if (closed || web == null) {
+                PlayerNavigation.reportError("Mikozora is no longer open behind the player. Return to the series and choose an episode again.");
+                return;
+            }
+            web.evaluateJavascript(script, result -> {
+                if (!"true".equals(result)) {
+                    PlayerNavigation.reportError("This episode list is no longer available. Return to the series and choose an episode again.");
+                }
+            });
+        });
+    }
+
+    @Override public void onPlayerClosed() {
+        runOnUiThread(() -> {
+            if (!closed && web != null) {
+                web.evaluateJavascript("window.__mokuPlayerClosed && window.__mokuPlayerClosed()", null);
+            }
+        });
+    }
+
+    private void rejectPlayerPayload(String message) {
+        if (PlayerNavigation.reportError(message)) return;
+        runOnUiThread(() -> Toast.makeText(MainActivity.this, message, Toast.LENGTH_LONG).show());
+    }
+
     private final class LocalClient extends WebViewClient {
         @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
             Uri uri = request.getUrl();
@@ -195,17 +231,55 @@ public final class MainActivity extends Activity {
         @JavascriptInterface public boolean takeOpenUpdates(){return openUpdates.getAndSet(false);}
         @JavascriptInterface public void episodeNotificationPermission(boolean automaticPrompt){runOnUiThread(()->notificationPermission(automaticPrompt));}
         @JavascriptInterface public void openPlayer(String payload) {
-            if (payload == null || payload.length() > 300000) return;
+            if (payload == null || payload.length() > 300000) {
+                rejectPlayerPayload("This episode list is too large to open in the player.");
+                return;
+            }
             runOnUiThread(() -> {
                 try {
                     JSONObject data = new JSONObject(payload);
                     String episode = data.getJSONObject("episode").getString("url");
-                    if (!Network.allowedSource(episode)) return;
+                    if (!Network.allowedSource(episode)) {
+                        rejectPlayerPayload("That episode is not available from this source.");
+                        return;
+                    }
+                    JSONArray episodes = data.optJSONArray("episodes");
+                    if (episodes != null) {
+                        int index = data.optInt("episodeIndex", -1);
+                        if (episodes.length() == 0 || episodes.length() > 10000 || index < 0 || index >= episodes.length()) {
+                            rejectPlayerPayload("That episode list could not be opened.");
+                            return;
+                        }
+                        for (int i = 0; i < episodes.length(); i++) {
+                            JSONObject entry = episodes.getJSONObject(i);
+                            String number = entry.optString("number", "");
+                            String url = entry.getString("url");
+                            if (number.isEmpty() || number.length() > 40 || url.length() > 4096 || !Network.allowedSource(url)) {
+                                rejectPlayerPayload("That episode list contains an unavailable episode.");
+                                return;
+                            }
+                        }
+                        if (!episode.equals(episodes.getJSONObject(index).getString("url"))) {
+                            rejectPlayerPayload("The selected episode does not match this episode list.");
+                            return;
+                        }
+                    }
                     Intent intent = new Intent(MainActivity.this, PlayerActivity.class);
                     intent.putExtra("payload", payload);
+                    // Reuse the open player for in-player episode changes instead
+                    // of closing it or stacking another player activity.
+                    intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
                     startActivity(intent);
-                } catch (Exception ignored) { }
+                } catch (Exception ignored) {
+                    rejectPlayerPayload("This episode could not be opened.");
+                }
             });
+        }
+        @JavascriptInterface public void playerNavigationError(String message) {
+            String safe = message == null ? "" : message.trim();
+            if (safe.isEmpty()) safe = "Could not load that episode.";
+            if (safe.length() > 500) safe = safe.substring(0, 500);
+            PlayerNavigation.reportError(safe);
         }
         @JavascriptInterface public void downloads(String id) {
             if (id == null || !id.matches("[0-9]{1,12}")) return;
@@ -403,7 +477,8 @@ public final class MainActivity extends Activity {
         });
     }
     @Override protected void onDestroy() {
-        closed = true; EpisodeStore.preferences(this).unregisterOnSharedPreferenceChangeListener(updatesListener);
+        closed = true; PlayerNavigation.clearRequestListener(this);
+        EpisodeStore.preferences(this).unregisterOnSharedPreferenceChangeListener(updatesListener);
         requests.shutdownNow(); sourceRequests.shutdownNow(); optionRequests.shutdownNow(); episodeCommands.shutdown();
         if (web != null) { web.removeJavascriptInterface("MokuBridge"); web.destroy(); web = null; }
         super.onDestroy();
