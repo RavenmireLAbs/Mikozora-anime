@@ -2,16 +2,18 @@
 
 An Android-first anime and donghua browser inspired by the source-based discovery, library and history idea in [Kotatsu Redo](https://github.com/Kotatsu-Redo/Kotatsu-Redo). Mikozora is an independent project; it does not include Kotatsu's code or manga parsers.
 
-**Mikozora was previously called Moku.** The 0.12.0 rebrand kept the Android application ID and existing on-device storage identifiers as the legacy `app.moku.anime` and `moku.*` values. Mikozora 0.13.0 then introduced the project's permanent Android signing key. Because GitHub builds through 0.12.0 were debug-signed, Android cannot install a permanently signed release over them: uninstall the old copy once. Uninstalling removes private app data and in-app downloads, but files already exported to a chosen folder remain. Later permanently signed releases such as 0.16.0 use the same key and update signed 0.13.0 and newer installations in place.
+**Mikozora was previously called Moku.** The 0.12.0 rebrand kept the Android application ID and existing on-device storage identifiers as the legacy `app.moku.anime` and `moku.*` values. Mikozora 0.13.0 then introduced the project's permanent Android signing key. Because GitHub builds through 0.12.0 were debug-signed, Android cannot install a permanently signed release over them: uninstall the old copy once. Uninstalling removes private app data and in-app downloads, but files already exported to a chosen folder remain. Later permanently signed releases such as 0.17.0 use the same key and update signed 0.13.0 and newer installations in place.
 
-## Features in 0.16.0
+## Features in 0.17.0
+
+- **Continue watching & watched progress:** Home's **Continue watching** rail lists series you are partway through — one tap plays the next unwatched episode, each card shows how far you have got (for example 7 of 12 watched) with a progress bar, and the × button removes a series from the rail. Opened episodes are marked **WATCHED** in episode lists and carry a check in the player's episode rail; Library cards show your progress instead of the status chip once you have started a title. Progress is tracked per title on this device from episodes you actually open, merged with your existing history; it records opened episodes, not playback position. Clearing watch history clears progress too, and until you have played something the rail keeps its previous Recently opened behavior.
 
 - **In-app update checker:** Mikozora is installed from GitHub, so it now checks the project's GitHub Releases for a newer signed version when it opens (at most twice a day) and shows a dismissible banner with a direct link to the new APK. **Settings → About → App updates** shows when it last checked, offers a manual **Check**, and has a switch for automatic checks. Dismissing a version hides it until an even newer one appears; a failed check stays silent and simply retries later. The check only asks GitHub for the latest release — no account or analytics involved.
 
 - **New app icon:** a torii gate beneath the morning star with the sun rising between its pillars — a proper adaptive icon that follows your launcher's shape, with a themed monochrome version on Android 13 and newer.
 
 - **In-player episode navigation:** while an online episode is open, use **Previous** or **Next** below the video, or scroll the episode rail and tap an episode number. Mikozora finds the selected episode's servers without making you return to the series page; if that lookup fails, the current episode stays open and the player shows why. Episode changes use chronological episode order, update recent history, reset to the new episode's first available server, and disable Previous or Next at the ends of the series. The controls are below the video, so exit a third-party player's fullscreen mode to use them.
-- **Permanent Android signing:** 0.13.0 was the first GitHub release signed with Mikozora's permanent key. A debug-signed 0.12.0 or earlier installation must be uninstalled once before installing a permanently signed release; after that transition, signed GitHub releases such as 0.16.0 update in place.
+- **Permanent Android signing:** 0.13.0 was the first GitHub release signed with Mikozora's permanent key. A debug-signed 0.12.0 or earlier installation must be uninstalled once before installing a permanently signed release; after that transition, signed GitHub releases such as 0.17.0 update in place.
 
 - **A new name:** Moku is now **Mikozora**. Only the name, wordmark and release/artifact naming change; your existing library, collections, history, downloads, settings and exported folder copies remain in place on an in-place update.
 
@@ -58,10 +60,10 @@ MP4 export depends on the source format, the device's media codecs, Android's do
 
 ## Install the APK
 
-Copy `Mikozora-v0.16.0-Android.apk` to an Android device and open it, or use:
+Copy `Mikozora-v0.17.0-Android.apk` to an Android device and open it, or use:
 
 ```sh
-adb install -r Mikozora-v0.16.0-Android.apk
+adb install -r Mikozora-v0.17.0-Android.apk
 ```
 
 Android may ask you to allow installs from your file manager. On Android 13+, notification permission lets Android show download progress and new-episode alerts in the notification shade. Granting it is recommended; episode updates still appear inside Mikozora if notification permission is denied. An APK update must be signed with the same key as the installed build to preserve local data; locally built debug APKs may have a different signing key. In particular, if Android reports a signature conflict when moving from 0.12.0 or earlier to a permanently signed release, uninstall the old copy first—this is the expected one-time signing transition and will remove private app data and in-app downloads. Signed 0.13.0 and later installations update in place.
