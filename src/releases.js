@@ -1,13 +1,22 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; older entries remain available.
-export const APP_VERSION = '0.14.0';
+export const APP_VERSION = '0.15.0';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.14.0',
+    version: '0.15.0',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'A new dawn for Mikozora', description: 'Mikozora has a new app icon: a torii gate beneath the morning star, with the sun rising between its pillars — shrine and sky, just like the name.' },
+      { title: 'At home on every launcher', description: 'The icon now adapts to your launcher’s shape and includes a themed monochrome version on Android 13 and newer.' },
+      { title: 'Same Mikozora inside', description: 'Your library, collections, history, downloads and settings are untouched — only the face of the app changed.' },
+    ],
+  },
+  {
+    version: '0.14.0',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Keep watching without going back', description: 'The online player now has Previous and Next episode buttons, so you can move through a series without returning to its episode list.' },
       { title: 'Pick any episode in the player', description: 'Scroll the episode rail under the video, tap an episode number, and Mikozora finds that episode’s servers while the current one stays open.' },

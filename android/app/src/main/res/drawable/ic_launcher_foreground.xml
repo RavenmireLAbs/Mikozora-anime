@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Torii silhouette and morning star. Geometry matches public/favicon.svg
+     on the 108dp adaptive-icon grid; pillar bases meet the background's
+     ground band at y=88. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,10.5 L55.2,14.8 L59.5,16 L55.2,17.2 L54,21.5 L52.8,17.2 L48.5,16 L52.8,14.8 Z" />
+    <path
+        android:fillColor="#17152E"
+        android:pathData="M14,41 C30,44.5 40,46 54,46 C68,46 78,44.5 94,41 L92.5,48.5 C78,51 68,52 54,52 C40,52 30,51 15.5,48.5 Z" />
+    <path
+        android:fillColor="#17152E"
+        android:pathData="M27,49.5 h54 v5 H27 Z M51.5,54.5 h5 V62 h-5 Z M23,62 h62 v5.5 H23 Z M33,53 h8 l1,35 H32 Z M67,53 h8 l1,35 H66 Z" />
+</vector>

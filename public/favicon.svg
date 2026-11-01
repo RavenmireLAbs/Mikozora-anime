@@ -1,1 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="19" fill="#c7ef93"/><path d="M14 39.5 22.8 22l9.2 11 9.2-11L50 39.5v5H14z" fill="#19221a"/><circle cx="25" cy="38" r="2.2" fill="#c7ef93"/><circle cx="39" cy="38" r="2.2" fill="#c7ef93"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#211E59"/>
+      <stop offset="0.55" stop-color="#9E5A7D"/>
+      <stop offset="1" stop-color="#F9B06C"/>
+    </linearGradient>
+    <clipPath id="iconClip"><rect width="108" height="108" rx="24"/></clipPath>
+  </defs>
+  <g clip-path="url(#iconClip)">
+    <rect width="108" height="108" fill="url(#sky)"/>
+    <circle cx="54" cy="88" r="16" fill="#FFF1DC"/>
+    <rect y="88" width="108" height="20" fill="#17152E"/>
+    <path d="M54 10.5 55.2 14.8 59.5 16 55.2 17.2 54 21.5 52.8 17.2 48.5 16 52.8 14.8Z" fill="#fff"/>
+    <path d="M14 41C30 44.5 40 46 54 46c14 0 24-1.5 40-5l-1.5 7.5C78 51 68 52 54 52S30 51 15.5 48.5Z" fill="#17152E"/>
+    <path d="M27 49.5h54v5H27Zm24.5 5h5V62h-5ZM23 62h62v5.5H23Zm10-9h8l1 35H32Zm34 0h8l1 35H66Z" fill="#17152E"/>
+  </g>
+</svg>
