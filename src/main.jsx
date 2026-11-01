@@ -56,7 +56,7 @@ function external(url) {
   else window.open(url, '_blank', 'noopener,noreferrer');
 }
 function Mark({ small = false }) {
-  return <span className={'mark' + (small ? ' mark-small' : '')} aria-hidden="true"><svg viewBox="0 0 40 40" fill="none"><path d="M7 25.8 13.6 12.5l6.4 7.8 6.4-7.8L33 25.8v3.8H7z" fill="currentColor"/><circle cx="15.2" cy="24.8" r="1.65" className="mark-eye"/><circle cx="24.8" cy="24.8" r="1.65" className="mark-eye"/></svg></span>;
+  return <span className={'mark' + (small ? ' mark-small' : '')} aria-hidden="true"><svg viewBox="0 0 40 40" fill="none"><path d="M20 4l.6 1.9L22.5 6.5l-1.9.6L20 9l-.6-1.9L17.5 6.5l1.9-.6Z" fill="currentColor"/><path d="M5 11.4C11 12.7 14.8 13.3 20 13.3s9-0.6 15-1.9l-.6 2.8C29 15.1 25.2 15.5 20 15.5S11 15.1 5.6 14.2Z" fill="currentColor"/><path d="M9.9 14.6h20.2v1.9H9.9Zm9.2 1.9h1.9v2.8h-1.9ZM8.4 19.3h23.2v2H8.4Zm3.7-3.4h3L15.5 29h-3.7Zm12.8 0h3L28.3 29h-3.8Z" fill="currentColor"/></svg></span>;
 }
 function Brand({ onClick }) {
   return <button className="brand" onClick={onClick} aria-label="Mikozora home"><Mark/><span><strong>Mikozora<span className="brand-dot">.</span></strong><small>YOUR ANIME SPACE</small></span></button>;

@@ -24,7 +24,8 @@ test('Mikozora branding is consistent while the legacy Android identity is retai
   assert.equal(lock.packages[''].name, 'Mikozora');
   assert.match(settings, /rootProject\.name = 'Mikozora'/);
   assert.match(strings, /<string name="app_name">Mikozora<\/string>/);
-  assert.match(manifest, /android:icon="@drawable\/ic_mikozora"/);
+  assert.match(manifest, /android:icon="@mipmap\/ic_launcher"/);
+  assert.match(manifest, /android:roundIcon="@mipmap\/ic_launcher_round"/);
   assert.match(manifest, /android:label="@string\/app_name"/);
   assert.doesNotMatch(manifest, /android:label="Moku"/);
   assert.match(index, /<title>Mikozora — your anime space<\/title>/);
