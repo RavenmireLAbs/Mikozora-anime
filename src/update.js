@@ -39,17 +39,22 @@ function httpsUrl(value) {
 // Shape a GitHub Releases API payload into {version, pageUrl, apkUrl}, or
 // null when it is not recognizable as a release. The APK asset is preferred
 // so the update action can start the download directly.
-export function releaseFromApi(json) {
+export function releaseFromApi(json, platform = 'android') {
   if (!json || typeof json !== 'object') return null;
   const parsed = parseVersion(json.tag_name);
   if (!parsed) return null;
   const assets = Array.isArray(json.assets) ? json.assets : [];
   const apks = assets.filter(a => /\.apk$/i.test(String(a?.name || '')) && httpsUrl(a?.browser_download_url));
   const apk = apks.find(a => /android/i.test(a.name)) || apks[0];
+  const exes = assets.filter(a => /\.exe$/i.test(String(a?.name || '')) && httpsUrl(a?.browser_download_url));
+  const exe = exes.find(a => /setup/i.test(a.name)) || exes[0];
+  const apkUrl = apk ? httpsUrl(apk.browser_download_url) : '';
   return {
     version: parsed.join('.'),
     pageUrl: httpsUrl(json.html_url),
-    apkUrl: apk ? httpsUrl(apk.browser_download_url) : '',
+    apkUrl,
+    // The Windows app downloads its installer; everywhere else keeps the APK.
+    downloadUrl: platform === 'desktop' ? (exe ? httpsUrl(exe.browser_download_url) : '') : apkUrl,
   };
 }
 

@@ -59,7 +59,9 @@ test('release, package and Android versions agree, with a current changelog',asy
   const pkg=JSON.parse(await readFile(new URL('../package.json',import.meta.url),'utf8'));
   const lock=JSON.parse(await readFile(new URL('../package-lock.json',import.meta.url),'utf8'));
   const gradle=await readFile(new URL('../android/app/build.gradle',import.meta.url),'utf8');
+  const desktopPkg=JSON.parse(await readFile(new URL('../desktop/package.json',import.meta.url),'utf8'));
   assert.equal(pkg.version,APP_VERSION);assert.equal(lock.version,APP_VERSION);assert.equal(lock.packages[''].version,APP_VERSION);
+  assert.equal(desktopPkg.version,APP_VERSION);
   assert.match(gradle,new RegExp(`versionName ['"]${APP_VERSION.replaceAll('.','\\.')}['"]`));
   assert.equal(RELEASES[0].version,APP_VERSION);assert.ok(RELEASES[0].entries.length>0);
   assert.equal(new Set(RELEASES.map(r=>r.version)).size,RELEASES.length);

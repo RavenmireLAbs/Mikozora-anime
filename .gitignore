@@ -13,3 +13,7 @@ android/app/build/
 *.pfx
 key.properties
 **/key.properties
+
+# Windows desktop build products (synced web UI + packaged executables).
+desktop/web/
+desktop/dist/

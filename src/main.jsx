@@ -6,7 +6,7 @@ import {
   ExternalLink, Sparkles, SlidersHorizontal, Film, LoaderCircle, AlertCircle,
   Trash2, RotateCcw, FolderHeart, CircleHelp, ShieldCheck, Plus, ListVideo, Download, HardDrive, ListChecks, CheckCircle2, Heart, FolderPlus, Pencil, Folder, Flame, Bell, Sun, Moon, EyeOff
 } from 'lucide-react';
-import { SOURCES, getCatalog, getDetail, getFeatured, getTrending, getDiscoverAnime, getServers, imageUrl, isAndroid, clearNetworkCache, getDownloads, getDownloadOptions, enqueueDownloads, removeDownload, openDownload, getExportSettings, chooseDownloadFolder, clearDownloadFolder, exportDownload, openExport, hasEpisodeUpdates, syncEpisodeTitles, getEpisodeUpdates, checkEpisodes, setEpisodeAutomatic, setEpisodeAlerts, markEpisodeRead, fetchLatestRelease, exportBackupToFile, readBackupFromFile } from './data';
+import { SOURCES, getCatalog, getDetail, getFeatured, getTrending, getDiscoverAnime, getServers, imageUrl, isAndroid, clearNetworkCache, getDownloads, getDownloadOptions, enqueueDownloads, removeDownload, openDownload, getExportSettings, chooseDownloadFolder, clearDownloadFolder, exportDownload, openExport, hasEpisodeUpdates, syncEpisodeTitles, getEpisodeUpdates, checkEpisodes, setEpisodeAutomatic, setEpisodeAlerts, markEpisodeRead, fetchLatestRelease, exportBackupToFile, readBackupFromFile, isDesktopApp, hasNativeDownloads } from './data';
 import { buildPlaybackPlaylist, compactPlaybackPlaylist } from './playback';
 import { monitoredTitles, unreadByTitle } from './episode-updates';
 import { COLLECTIONS_KEY, FAVOURITES_ID, titleKey, normalizeCollections, collectionNameError, createCollection, renameCollection, deleteCollection, setCollectionItems, setTitleCollections, toggleFavourite, removeTitleFromCollections } from './collections';
@@ -396,7 +396,7 @@ function DownloadModal({request,close,submit}) {
   const count=request.episodes.length, sample=request.episodes[0];
   useEffect(()=>{
     let alive=true;
-    if(!isAndroid()){setOptions({loading:false,servers:[],unavailable:0,error:''});return()=>{alive=false}};
+    if(!hasNativeDownloads()){setOptions({loading:false,servers:[],unavailable:0,error:''});return()=>{alive=false}};
     setOptions({loading:true,servers:[],unavailable:0,error:''});
     const timer=setTimeout(()=>getDownloadOptions(request.item,sample,language).then(value=>{
       if(alive)setOptions({loading:false,servers:Array.isArray(value.servers)?value.servers:[],unavailable:Number(value.unavailable)||0,error:''});
@@ -419,14 +419,14 @@ function DownloadModal({request,close,submit}) {
       {count>1&&<p className="quality-batch-hint">Choices are based on episode {sample.number}. Each episode must offer the selected server and quality, or that episode will fail rather than silently switch.</p>}
       <div className="download-explainer"><ShieldCheck size={18}/><p>{request.item.source==='xin'?'Only supported servers are shown. AnimeXin subtitles are usually burned into the video in the selected language.':englishOnly?`${sourceName(request.item.source)} downloads identifiable English subtitle tracks only. If English is unavailable, the video may be saved without subtitles.`:'Only compatible servers are shown. Subtitles and languages depend on the selected third-party server.'}</p></div>
       <p className="download-caution">Best HLS quality is capped at 1080p. Downloads use temporary app space; if you choose a folder, Mikozora removes its private copy after the saved video and subtitles are verified. Downloads can be large and may use mobile data.</p>
-      {!isAndroid()&&<p className="preview-note"><AlertCircle size={15}/> Downloads work in the Android app, not the browser preview.</p>}
-      <div className="download-dialog-actions"><button className="btn secondary" onClick={close}>Cancel</button><button className="btn primary" disabled={!isAndroid()||working} onClick={confirm}>{working?<LoaderCircle size={16} className="spin"/>:<Download size={16}/>} Add to queue</button></div>
+      {!hasNativeDownloads()&&<p className="preview-note"><AlertCircle size={15}/> {isDesktopApp()?'Downloads are coming to the Windows app in a later update.':'Downloads work in the Android app, not the browser preview.'}</p>}
+      <div className="download-dialog-actions"><button className="btn secondary" onClick={close}>Cancel</button><button className="btn primary" disabled={!hasNativeDownloads()||working} onClick={confirm}>{working?<LoaderCircle size={16} className="spin"/>:<Download size={16}/>} Add to queue</button></div>
     </div></div></div>;
 }
 function DownloadsPage({items,loading,remove,retry,change,browse,folder,saveCopy,openSettings}) {
   const statusText={queued:'Waiting for network or a queue slot',resolving:'Finding a supported mirror',downloading:'Downloading',completed:'Ready to watch offline',failed:'Download failed',paused:'Waiting to resume',removing:'Removing'};
   return <div className="content page-content"><div className="page-heading"><div><div className="eyebrow">A LITTLE SOMETHING FOR LATER</div><h1>Ready when you are<span>.</span></h1><p>Your offline episodes and download queue, saved on this device.</p></div><div className="heading-art"><HardDrive size={32}/><span>✦</span></div></div>
-    {!isAndroid()?<Empty icon={Download} title="Take your stories offline" body="Open Mikozora on Android to download individual episodes or select a batch. The browser preview cannot store episodes." action={()=>browse('all')} actionLabel="Browse titles"/>:
+    {!hasNativeDownloads()?<Empty icon={Download} title="Take your stories offline" body={isDesktopApp()?"Downloads are coming to the Windows app in a later update. Until then, episodes stream in the built-in player.":"Open Mikozora on Android to download individual episodes or select a batch. The browser preview cannot store episodes."} action={()=>browse('all')} actionLabel="Browse titles"/>:
       loading&&!items.length?<div className="episode-loading"><LoaderCircle size={18} className="spin"/> Loading downloads...</div>:
       items.length?<div className="downloads-list">{items.map(d=>{
         const progress=typeof d.progress==='number'?Math.max(0,Math.min(100,d.progress)):null;
@@ -482,7 +482,7 @@ function AppearanceSettings({appearance,changeAppearance}) {
   </section>;
 }
 function SettingsPage({library,history,clearLibrary,clearHistory,openLicenses,openReleaseNotes,folder,chooseFolder,usePrivate,updates,updatesAvailable,changeAutomatic,changeAlerts,notificationPermission,appearance,changeAppearance,contentPrefs,changeContentPrefs,appUpdate,pendingUpdate,updateStatus,checkUpdate,changeAutoCheck,downloadUpdate,exportBackup,importBackup}) {
-  const current=!isAndroid()?'Available in the Android app':!folder?.configured?'Mikozora only · no external folder selected':folder.granted?folder.name||'Selected folder':'Folder access lost · choose it again';
+  const current=!hasNativeDownloads()?(isDesktopApp()?'Coming to the Windows app soon':'Available in the Android app'):!folder?.configured?'Mikozora only · no external folder selected':folder.granted?folder.name||'Selected folder':'Folder access lost · choose it again';
   const notificationText=!updatesAvailable?'Available in the Android app':updates.notificationStatus==='allowed'?'Allowed in Android':updates.notificationStatus==='permission'?'Android notification permission is needed':updates.notificationStatus==='channel-blocked'?'New episode channel is blocked in Android':'Notifications are blocked in Android';
   const updateText=pendingUpdate?`Mikozora ${pendingUpdate.version} is ready — you’re on ${APP_VERSION}.`:updateStatus.phase==='checking'?'Checking GitHub for a newer version…':updateStatus.phase==='error'?(updateStatus.message||'Could not check just now. Try again in a moment.'):appUpdate.lastCheck?`You’re up to date · Checked ${prettyTime(appUpdate.lastCheck)}`:`You’re on Mikozora ${APP_VERSION} · Not checked yet`;
   return <div className="content page-content"><div className="page-heading"><div><div className="eyebrow">MAKE YOURSELF AT HOME</div><h1>Your space, your way<span>.</span></h1><p>A simple little place for your anime.</p></div><div className="heading-art"><Settings2 size={32}/><span>✦</span></div></div>
@@ -491,7 +491,7 @@ function SettingsPage({library,history,clearLibrary,clearHistory,openLicenses,op
       <div className="folder-explainer content-explainer"><p>When on, titles a source marks 18+ or with adult genres such as Ecchi or Hentai are completely hidden — from Discover, Browse, search results, your Library and History — and cannot be opened. This is separate from the Browse content filter and stays on until you turn it off.</p><p>Nothing is deleted: your library, collections, history and downloads stay exactly as they are. Every card shows the age rating its source provides, or NR when it provides none. Sources do not label every title, so hiding NSFW cannot guarantee everything shown is suitable for all ages.</p></div>
     </div>
     <div className="settings-group episode-settings"><div className="settings-title">EPISODE UPDATES <span>YOUR COLLECTIONS</span></div><div className="setting-row"><div className="setting-icon"><RefreshCw size={19}/></div><div><strong>Automatic checks</strong><p>On open and about every 6 hours while connected. Android can delay checks or pause them after a force-stop.</p></div><button aria-label="Automatic episode checks" aria-pressed={!!updates.automatic} disabled={!updatesAvailable} onClick={()=>changeAutomatic(!updates.automatic)}>{updates.automatic?'On':'Off'}</button></div><div className="setting-row"><div className="setting-icon"><Bell size={19}/></div><div><strong>Android episode alerts</strong><p>{updates.alerts?'On in Mikozora':'Off in Mikozora'} · New episodes still appear in Updates.</p></div><button aria-label="Android episode alerts" aria-pressed={!!updates.alerts} disabled={!updatesAvailable} onClick={()=>changeAlerts(!updates.alerts)}>{updates.alerts?'On':'Off'}</button></div><div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div><strong>Android notification access</strong><p>{notificationText}</p></div><button disabled={!updatesAvailable} onClick={notificationPermission}>{updates.notificationStatus==='permission'?'Allow':'Manage'}</button></div></div>
-    <div className="settings-group folder-settings"><div className="settings-title">DOWNLOAD LOCATION <span>EXTERNAL PLAYER</span></div><div className="setting-row"><div className="setting-icon"><FolderHeart size={19}/></div><div><strong>Playable copies</strong><p className="folder-name">{current}</p></div><button onClick={chooseFolder} disabled={!isAndroid()}>{folder?.configured?'Change':'Choose folder'}</button></div>
+    <div className="settings-group folder-settings"><div className="settings-title">DOWNLOAD LOCATION <span>EXTERNAL PLAYER</span></div><div className="setting-row"><div className="setting-icon"><FolderHeart size={19}/></div><div><strong>Playable copies</strong><p className="folder-name">{current}</p></div><button onClick={chooseFolder} disabled={!hasNativeDownloads()}>{folder?.configured?'Change':'Choose folder'}</button></div>
       <div className="folder-explainer"><p>New playable MP4 copies are organized into a folder for each anime or donghua. Existing downloads can be saved from Downloads; earlier exported files stay where they are.</p><p>After Mikozora verifies the saved video and subtitle files, it removes its private copy to free space. Mikozora then plays the file from your folder. If verification fails or subtitles cannot be safely copied, the private copy stays. Downloading and conversion still need extra storage temporarily.</p>{folder?.configured&&<button className="text-link" onClick={usePrivate}>Stop saving folder copies</button>}</div>
     </div>
     <div className="settings-group"><div className="settings-title">YOUR DATA <span>ON THIS DEVICE</span></div><div className="setting-row"><div className="setting-icon"><Bookmark size={19}/></div><div><strong>Saved library</strong><p>{library.length} {library.length===1?'title':'titles'} saved locally</p></div><button onClick={clearLibrary} disabled={!library.length}>Clear</button></div><div className="setting-row"><div className="setting-icon"><History size={19}/></div><div><strong>Watch history</strong><p>{history.length} recently opened {history.length===1?'episode':'episodes'}</p></div><button onClick={clearHistory} disabled={!history.length}>Clear</button></div><div className="setting-row"><div className="setting-icon"><HardDrive size={19}/></div><div><strong>Back up your data</strong><p>Save your library, collections, history, watch progress and settings to a file you keep. Downloaded videos are not included.</p></div><button onClick={exportBackup}>Export</button></div><div className="setting-row"><div className="setting-icon"><RotateCcw size={19}/></div><div><strong>Restore a backup</strong><p>Replace this device's library, collections, history, progress and settings with a backup file.</p></div><button onClick={importBackup}>Import</button></div></div><div className="settings-group"><div className="settings-title">ABOUT <span>MIKOZORA {APP_VERSION}</span></div><div className="setting-row"><div className="setting-icon"><Download size={19}/></div><div><strong>App updates</strong><p>{updateText}</p></div>{pendingUpdate?<button onClick={downloadUpdate}>Download</button>:<button onClick={()=>checkUpdate(true)} disabled={updateStatus.phase==='checking'}>{updateStatus.phase==='checking'?'Checking…':updateStatus.phase==='error'?'Try again':'Check'}</button>}</div><div className="setting-row"><div className="setting-icon"><RefreshCw size={19}/></div><div><strong>Check automatically</strong><p>Look for new versions on GitHub when Mikozora opens, at most twice a day.</p></div><button aria-label="Automatic update checks" aria-pressed={!!appUpdate.autoCheck} onClick={()=>changeAutoCheck(!appUpdate.autoCheck)}>{appUpdate.autoCheck?'On':'Off'}</button></div><div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div><strong>Private by default</strong><p>Your library, collections and history stay on this device. No account is required.</p></div></div><div className="setting-row"><div className="setting-icon"><Film size={19}/></div><div><strong>Player availability</strong><p>Video hosts may restrict embedding or be unavailable. Try another server or open the source page.</p></div></div><div className="setting-row"><div className="setting-icon"><Sparkles size={19}/></div><div><strong>What’s new</strong><p>See the latest changes to Mikozora.</p></div><button onClick={openReleaseNotes}>View</button></div><div className="setting-row"><div className="setting-icon"><CircleHelp size={19}/></div><div><strong>Open source licenses</strong><p>Credits and licenses for Mikozora and its dependencies.</p></div><button onClick={openLicenses}>View</button></div></div></div>;
@@ -607,7 +607,7 @@ function App() {
     if(shouldAutoCheck(stored,Date.now()))checkAppUpdate(false);
   },[experience]);
   const pendingUpdate=visibleUpdate(appUpdate,APP_VERSION);
-  const downloadAppUpdate=()=>{const target=pendingUpdate?.apkUrl||pendingUpdate?.pageUrl;if(target)external(target);};
+  const downloadAppUpdate=()=>{const target=pendingUpdate?.downloadUrl||pendingUpdate?.apkUrl||pendingUpdate?.pageUrl;if(target)external(target);};
   const dismissAppUpdate=()=>storeAppUpdate(dismissUpdate(appUpdate));
   const changeAutoCheck=enabled=>storeAppUpdate({...appUpdate,autoCheck:enabled});
   const [appearance,setAppearance]=useState(initialAppearance);
@@ -720,13 +720,13 @@ function App() {
   },[]);
   useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(''),3200);return()=>clearTimeout(t)},[toast]);
   useEffect(()=>{
-    if(!isAndroid()){setDownloadsLoading(false);return;}
+    if(!hasNativeDownloads()){setDownloadsLoading(false);return;}
     if(!['downloads','detail'].includes(route.page))return;
     let active=true;const load=()=>getDownloads().then(items=>{if(active){setDownloads(items);setDownloadsLoading(false)}}).catch(()=>{if(active)setDownloadsLoading(false)});
     load();const timer=setInterval(load,2500);return()=>{active=false;clearInterval(timer)};
   },[route.page]);
   useEffect(()=>{
-    if(!isAndroid()||!['settings','downloads'].includes(route.page))return;
+    if(!hasNativeDownloads()||!['settings','downloads'].includes(route.page))return;
     let active=true;const load=()=>getExportSettings().then(value=>{if(active)setFolder(value)}).catch(()=>{});
     load();window.addEventListener('focus',load);return()=>{active=false;window.removeEventListener('focus',load)};
   },[route.page]);
@@ -805,7 +805,7 @@ function App() {
         episodeIndex:nativePlaylist.episodeIndex,
         servers,
       };
-      if(isAndroid()){
+      if(isAndroid()&&typeof window.MokuBridge.openPlayer==='function'){
         let raw=JSON.stringify(payload);
         if(raw.length>290000&&payload.episodes.length>1){
           // Never let an unusually long rail prevent the episode itself opening.

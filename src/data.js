@@ -32,6 +32,11 @@ if (typeof window !== 'undefined') {
   };
 }
 export function isAndroid() { return typeof window !== 'undefined' && !!window.MokuBridge; }
+// The Windows app exposes the same bridge with platform:'desktop' (see
+// desktop/src/preload.cjs). Feature checks probe for methods, so anything
+// a desktop build has not implemented yet simply reports unavailable.
+export function isDesktopApp() { return typeof window !== 'undefined' && window.MokuBridge?.platform === 'desktop'; }
+export function hasNativeDownloads() { return isAndroid() && typeof window.MokuBridge.downloads === 'function' && typeof window.MokuBridge.enqueueDownloads === 'function'; }
 function bridgeCall(method, ...args) {
   return new Promise((resolve, reject) => {
     if (!isAndroid() || typeof window.MokuBridge[method] !== 'function') { reject(new Error('Downloads are available in the Android app.')); return; }
@@ -100,14 +105,14 @@ export function clearNetworkCache() { cacheGeneration++; cache.clear(); inflight
 // Rides the same document fetch path as source pages; api.github.com is on
 // the native document-host allowlist for exactly this call.
 export async function fetchLatestRelease() {
-  const info = releaseFromApi(JSON.parse(await getText(RELEASES_API_URL, 0)));
+  const info = releaseFromApi(JSON.parse(await getText(RELEASES_API_URL, 0)), isDesktopApp() ? 'desktop' : 'android');
   if (!info) throw new Error('GitHub did not return a recognizable release.');
   return info;
 }
 export function imageUrl(url) {
   if (!url) return '';
   // Images are proxied with the source Referer. AnimeXin otherwise blocks hotlinks.
-  return `${isAndroid() ? 'https://app.moku.local' : ''}/api/image?url=${encodeURIComponent(url)}`;
+  return `${isDesktopApp() ? 'mikozora://app' : isAndroid() ? 'https://app.moku.local' : ''}/api/image?url=${encodeURIComponent(url)}`;
 }
 // Parse source HTML in a pure-JS, inert DOM: no scripts, event handlers, iframes or image requests execute.
 const doc = (html) => new InertDOMParser().parseFromString(html, 'text/html');

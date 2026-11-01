@@ -1,0 +1,81 @@
+name: Windows build
+
+# Builds the Windows desktop app (installer + portable) on a Windows
+# runner. Releases are created by the Android workflow with GITHUB_TOKEN,
+# which does not fire `release` events, so that workflow dispatches this
+# one with the release tag after publishing; a hand-created release also
+# triggers the attach directly.
+
+on:
+  push:
+    paths:
+      - 'desktop/**'
+      - 'src/**'
+      - 'public/**'
+      - 'scripts/**'
+      - 'index.html'
+      - 'vite.config.js'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/desktop.yml'
+  pull_request:
+    paths:
+      - 'desktop/**'
+      - 'src/**'
+      - 'public/**'
+      - 'scripts/**'
+      - 'index.html'
+      - 'vite.config.js'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/desktop.yml'
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag (e.g. v0.21.0) to attach the executables to; leave empty to only build
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write # only used by the release-attach step below
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.release_tag || github.event.release.tag_name || github.ref }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            desktop/package-lock.json
+      - name: Build the web UI
+        run: |
+          npm ci
+          npm run build
+      - name: Package the Windows app
+        working-directory: desktop
+        run: |
+          npm ci
+          npm run sync-web
+          npm run dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Mikozora-Windows
+          path: desktop/dist/*.exe
+          if-no-files-found: error
+      - name: Attach the executables to the GitHub release
+        if: github.event_name == 'release' || inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.event.release.tag_name }}
+        run: gh release upload "$env:RELEASE_TAG" desktop/dist/*.exe --clobber
