@@ -1,13 +1,21 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; older entries remain available.
-export const APP_VERSION = '0.17.0';
+export const APP_VERSION = '0.18.0';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.17.0',
+    version: '0.18.0',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Update downloads work again', description: 'Tapping “Download update” could silently do nothing, because GitHub links were blocked by the same allowlist that protects source links. Mikozora now lets its own GitHub release links open in your browser as intended.' },
+      { title: 'Sorry about the detour', description: 'If you fetched this update from the GitHub releases page because the button did nothing — that was this bug. From now on, update banners take you straight to the download again.' },
+    ],
+  },
+  {
+    version: '0.17.0',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Continue watching, right where you left off', description: 'Home now leads with a Continue watching rail: one tap plays the next unwatched episode of each series you are in the middle of, with your progress shown on every card.' },
       { title: 'See what you have already watched', description: 'Opened episodes are marked WATCHED in episode lists and carry a check in the player’s episode rail, and Library cards show your progress — like 7/12 — with a slim progress bar.' },

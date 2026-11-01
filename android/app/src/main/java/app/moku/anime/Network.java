@@ -21,6 +21,18 @@ final class Network {
     static boolean allowedSource(String raw) {
         try { checkUrl(raw, true); return true; } catch (Exception ignored) { return false; }
     }
+    // The in-app update checker opens this project's GitHub release page and
+    // APK asset in the browser. GitHub is not a content source, so keep the
+    // exception scoped to exactly those release links.
+    static boolean allowedProjectRelease(String raw) {
+        try {
+            URL u = new URL(raw);
+            return "https".equalsIgnoreCase(u.getProtocol()) && u.getUserInfo() == null
+                && (u.getPort() == -1 || u.getPort() == 443)
+                && "github.com".equalsIgnoreCase(u.getHost())
+                && u.getPath() != null && u.getPath().startsWith("/RavenmireLAbs/Mikozora-anime/releases/");
+        } catch (Exception ignored) { return false; }
+    }
     // Exact host-to-source mapping is also used to validate offline selections.
     static String sourceBase(String source) {
         if(source==null)return "";
