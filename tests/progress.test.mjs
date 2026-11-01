@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeProgress, recordWatch, refreshSnapshot, removeProgressTitle, watchedUrlSet, titleProgress, nextUp, continueWatching, progressByTitle } from '../src/progress.js';
+import { normalizeProgress, recordWatch, refreshSnapshot, removeProgressTitle, setEpisodesWatched, watchedUrlSet, titleProgress, nextUp, continueWatching, progressByTitle } from '../src/progress.js';
 
 const item = (id = 'a') => ({ source: 'sogo', url: `https://example.com/${id}`, title: `Title ${id}`, image: '', type: 'TV', badge: 'SUB', status: 'Ongoing', genres: [], aired: '', year: '2024', rating: null, nsfw: false });
 const ep = (t, n) => ({ number: String(n), url: `https://example.com/${t}/ep-${n}`, title: `Episode ${n}`, ids: `${t}-${n}` });
@@ -108,4 +108,26 @@ test('normalizeProgress tolerates junk and dedupes titles', () => {
   assert.deepEqual(clean[0].watched, ['x']);
   assert.equal(clean[0].episodes.length, 1);
   assert.equal(clean[0].updatedAt, 0);
+});
+
+test('snapshots are stored in story order even when a source lists newest first', () => {
+  const entries = recordWatch([], item('a'), ep('a', 4), eps('a', 4).reverse(), 100);
+  assert.deepEqual(entries[0].episodes.map(e => e.number), ['1', '2', '3', '4']);
+  const refreshed = refreshSnapshot(entries, item('a'), eps('a', 6).reverse());
+  assert.deepEqual(refreshed[0].episodes.map(e => e.number), ['1', '2', '3', '4', '5', '6']);
+  assert.equal(nextUp(refreshed[0], watchedUrlSet(refreshed, [], item('a'))).episode.number, '5');
+});
+
+test('setEpisodesWatched marks and unmarks without playing', () => {
+  const all = eps('a', 5);
+  let entries = setEpisodesWatched([], item('a'), all, [ep('a', 1).url, ep('a', 2).url], true, 100);
+  assert.equal(entries.length, 1);
+  assert.deepEqual([...entries[0].watched].sort(), [ep('a', 1).url, ep('a', 2).url].sort());
+  assert.equal(continueWatching(entries, [])[0].episode.number, '3');
+  entries = setEpisodesWatched(entries, item('a'), all, [ep('a', 2).url], false, 200);
+  assert.deepEqual(entries[0].watched, [ep('a', 1).url]);
+  assert.equal(entries[0].updatedAt, 200);
+  assert.equal(continueWatching(entries, [])[0].episode.number, '2');
+  // No targets: no-op beyond normalization.
+  assert.deepEqual(setEpisodesWatched(entries, item('a'), all, [], true, 300), entries);
 });

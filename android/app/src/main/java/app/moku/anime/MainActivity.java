@@ -25,6 +25,9 @@ import android.widget.Toast;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
@@ -54,11 +57,16 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
     private volatile boolean closed = false;
     private static final int PICK_DOWNLOAD_FOLDER = 3181;
     private String pendingFolderRequest;
+    private static final int CREATE_BACKUP_FILE = 3182;
+    private static final int OPEN_BACKUP_FILE = 3183;
+    private String pendingBackupSave;
+    private String pendingBackupText;
+    private String pendingBackupOpen;
     private static final String HOME = "https://" + Network.APP_HOST + "/index.html";
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        if(state!=null){pendingFolderRequest=state.getString("folderRequestId");openUpdates.set(state.getBoolean("openUpdates",false));}
+        if(state!=null){pendingFolderRequest=state.getString("folderRequestId");pendingBackupSave=state.getString("backupSaveRequestId");pendingBackupOpen=state.getString("backupOpenRequestId");openUpdates.set(state.getBoolean("openUpdates",false));}
         if(getIntent()!=null&&getIntent().getBooleanExtra(EpisodeNotifier.EXTRA_OPEN,false)){openUpdates.set(true);getIntent().removeExtra(EpisodeNotifier.EXTRA_OPEN);}
         EpisodeNotifier.ensureChannel(this);
         EpisodeStore.preferences(this).registerOnSharedPreferenceChangeListener(updatesListener);
@@ -348,6 +356,33 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
                 }catch(Exception e){pendingFolderRequest=null;sendChunks(id,"","No folder picker is available on this device.");}
             });
         }
+        @JavascriptInterface public void saveBackupFile(String id,String name,String text) {
+            if(id==null||!id.matches("[0-9]{1,12}"))return;
+            runOnUiThread(()->{
+                if(pendingBackupSave!=null){sendChunks(id,"","A file picker is already open.");return;}
+                try {
+                    pendingBackupSave=id;pendingBackupText=text==null?"":text;
+                    Intent picker=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                    picker.addCategory(Intent.CATEGORY_OPENABLE);
+                    picker.setType("application/json");
+                    picker.putExtra(Intent.EXTRA_TITLE,name==null||name.trim().isEmpty()?"mikozora-backup.json":name);
+                    startActivityForResult(picker,CREATE_BACKUP_FILE);
+                }catch(Exception e){pendingBackupSave=null;pendingBackupText=null;sendChunks(id,"","No file picker is available on this device.");}
+            });
+        }
+        @JavascriptInterface public void openBackupFile(String id) {
+            if(id==null||!id.matches("[0-9]{1,12}"))return;
+            runOnUiThread(()->{
+                if(pendingBackupOpen!=null){sendChunks(id,"","A file picker is already open.");return;}
+                try {
+                    pendingBackupOpen=id;
+                    Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                    picker.addCategory(Intent.CATEGORY_OPENABLE);
+                    picker.setType("*/*");
+                    startActivityForResult(picker,OPEN_BACKUP_FILE);
+                }catch(Exception e){pendingBackupOpen=null;sendChunks(id,"","No file picker is available on this device.");}
+            });
+        }
         @JavascriptInterface public void clearDownloadFolder(String id) {
             if(id==null||!id.matches("[0-9]{1,12}"))return;
             requests.execute(()->{try{sendChunks(id,ExportStore.clearFolder(MainActivity.this).toString(),null);}
@@ -429,10 +464,14 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
     @Override protected void onSaveInstanceState(Bundle out) {
         super.onSaveInstanceState(out);
         if(pendingFolderRequest!=null)out.putString("folderRequestId",pendingFolderRequest);
+        if(pendingBackupSave!=null)out.putString("backupSaveRequestId",pendingBackupSave);
+        if(pendingBackupOpen!=null)out.putString("backupOpenRequestId",pendingBackupOpen);
         out.putBoolean("openUpdates",openUpdates.get());
     }
     @Override protected void onActivityResult(int requestCode,int resultCode,Intent data) {
         super.onActivityResult(requestCode,resultCode,data);
+        if(requestCode==CREATE_BACKUP_FILE){finishBackupSave(resultCode,data);return;}
+        if(requestCode==OPEN_BACKUP_FILE){finishBackupOpen(resultCode,data);return;}
         if(requestCode!=PICK_DOWNLOAD_FOLDER)return;
         String request=pendingFolderRequest;pendingFolderRequest=null;
         if(request==null)return;
@@ -450,6 +489,43 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
             requests.execute(()->{try{sendChunks(request,ExportStore.saveFolder(this,tree).toString(),null);}
                 catch(Exception e){sendChunks(request,"",ExportStore.safeMessage(e));}});
         }catch(Exception e){sendChunks(request,"","Could not keep access to this folder. Try another folder.");}
+    }
+    private void finishBackupSave(int resultCode,Intent data) {
+        String request=pendingBackupSave;String text=pendingBackupText;
+        pendingBackupSave=null;pendingBackupText=null;
+        if(request==null)return;
+        if(resultCode!=RESULT_OK||data==null||data.getData()==null){sendChunks(request,"{\"canceled\":true}",null);return;}
+        if(text==null){sendChunks(request,"","The backup was interrupted. Please export again.");return;}
+        Uri uri=data.getData();
+        requests.execute(()->{
+            try(OutputStream out=getContentResolver().openOutputStream(uri,"wt")) {
+                if(out==null)throw new IOException("No output stream");
+                out.write(text.getBytes(StandardCharsets.UTF_8));
+                out.flush();
+                sendChunks(request,"{\"saved\":true}",null);
+            }catch(Exception e){sendChunks(request,"","Could not save the backup file.");}
+        });
+    }
+    private void finishBackupOpen(int resultCode,Intent data) {
+        String request=pendingBackupOpen;pendingBackupOpen=null;
+        if(request==null)return;
+        if(resultCode!=RESULT_OK||data==null||data.getData()==null){sendChunks(request,"{\"canceled\":true}",null);return;}
+        Uri uri=data.getData();
+        requests.execute(()->{
+            try(InputStream in=getContentResolver().openInputStream(uri)) {
+                if(in==null)throw new IOException("No input stream");
+                ByteArrayOutputStream out=new ByteArrayOutputStream();
+                byte[] buffer=new byte[16384];int count;int total=0;
+                while((count=in.read(buffer))!=-1){
+                    total+=count;
+                    if(total>8*1024*1024)throw new IOException("Backup file is too large");
+                    out.write(buffer,0,count);
+                }
+                JSONObject result=new JSONObject();
+                result.put("text",new String(out.toByteArray(),StandardCharsets.UTF_8));
+                sendChunks(request,result.toString(),null);
+            }catch(Exception e){sendChunks(request,"","Could not read that file. Choose a Mikozora backup (.json).");}
+        });
     }
     private void sendChunks(String id, String body, String error) {
         if (closed) return;

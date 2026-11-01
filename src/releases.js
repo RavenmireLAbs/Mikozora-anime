@@ -1,13 +1,23 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; older entries remain available.
-export const APP_VERSION = '0.19.0';
+export const APP_VERSION = '0.20.0';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.19.0',
+    version: '0.20.0',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Back up everything, restore anywhere', description: 'Settings → Your data can now export your library, collections, history, watch progress and settings to a single backup file — and restore that file again on this device or a new one. Downloaded videos stay where they are; they are not part of the backup.' },
+      { title: 'Mark episodes watched by hand', description: 'Watched somewhere else first? Tap the circle beside any episode to mark it watched (tap again to undo), or select a run of episodes and choose Mark watched or Mark unwatched. Continue Watching and your progress counts follow immediately.' },
+      { title: 'Blue is the new default look', description: 'Fresh installs now start with the dark theme and a blue accent. If you have already chosen an appearance it is kept exactly as it is, and the original green remains one tap away in Settings → Appearance.' },
+      { title: 'The right next episode, from every source', description: 'Some sources list episodes newest-first, which could throw off next-up suggestions. Mikozora now keeps every series in story order, so Continue Watching always offers the right next episode.' },
+    ],
+  },
+  {
+    version: '0.19.0',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Watched checks reach the Android player', description: 'Episodes you have already opened now carry a check and a dimmer label in the Android player’s episode rail, matching the markers on series pages and in the browser player.' },
       { title: 'Always current while you watch', description: 'The marks update as you move through a series with Previous, Next or the episode rail, so you always know exactly where you are without leaving the player.' },

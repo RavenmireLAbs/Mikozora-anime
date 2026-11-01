@@ -36,7 +36,7 @@ function bridgeCall(method, ...args) {
   return new Promise((resolve, reject) => {
     if (!isAndroid() || typeof window.MokuBridge[method] !== 'function') { reject(new Error('Downloads are available in the Android app.')); return; }
     const id = String(++nextRequest);
-    const timeout = method === 'chooseDownloadFolder' ? 300000 : method === 'downloadOptions' ? 90000 : method === 'request' ? 120000 : 30000;
+    const timeout = (method === 'chooseDownloadFolder' || method === 'saveBackupFile' || method === 'openBackupFile') ? 300000 : method === 'downloadOptions' ? 90000 : method === 'request' ? 120000 : 30000;
     const timer = setTimeout(() => { pending.delete(id); reject(new Error('The app took too long to respond.')); }, timeout);
     pending.set(id, { resolve, reject, timer, parts: [] });
     try { window.MokuBridge[method](id, ...args); }
@@ -63,6 +63,10 @@ export async function getExportSettings() { return JSON.parse(await bridgeCall('
 export async function chooseDownloadFolder() { return JSON.parse(await bridgeCall('chooseDownloadFolder')); }
 export async function clearDownloadFolder() { return JSON.parse(await bridgeCall('clearDownloadFolder')); }
 export async function exportDownload(id) { return JSON.parse(await bridgeCall('exportDownload', id)); }
+// Backup file pickers (Settings): resolves {saved:true}, {canceled:true} or
+// {text} from the native side; see backup.js for the file format itself.
+export async function exportBackupToFile(name, text) { return JSON.parse(await bridgeCall('saveBackupFile', name, text)); }
+export async function readBackupFromFile() { return JSON.parse(await bridgeCall('openBackupFile')); }
 export function openExport(id) {
   if (!isAndroid() || typeof window.MokuBridge.openExport !== 'function') throw new Error('Open the exported file in the Android app.');
   window.MokuBridge.openExport(id);
