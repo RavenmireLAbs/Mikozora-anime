@@ -188,6 +188,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write # dispatch the Windows build below
     steps:
       - uses: actions/download-artifact@v7
         with:
@@ -219,3 +220,9 @@ jobs:
               --target "$GITHUB_SHA" \
               --generate-notes
           fi
+      - name: Dispatch the Windows build for this release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.build.outputs.tag }}
+        run: gh workflow run desktop.yml -f release_tag="$RELEASE_TAG"

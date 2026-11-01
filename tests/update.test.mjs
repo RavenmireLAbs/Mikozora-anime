@@ -35,8 +35,8 @@ test('shapes the GitHub releases payload and prefers the Android APK', () => {
       { name: 'Mikozora-v0.16.0-Android.apk', browser_download_url: 'https://example.com/Mikozora.apk' },
     ],
   });
-  assert.deepEqual(info, { version:'0.16.0', pageUrl:'https://github.com/RavenmireLAbs/Mikozora-anime/releases/tag/v0.16.0', apkUrl:'https://example.com/Mikozora.apk' });
-  assert.deepEqual(releaseFromApi({ tag_name:'v1.0.0', html_url:'https://example.com/r' }), { version:'1.0.0', pageUrl:'https://example.com/r', apkUrl:'' });
+  assert.deepEqual(info, { version:'0.16.0', pageUrl:'https://github.com/RavenmireLAbs/Mikozora-anime/releases/tag/v0.16.0', apkUrl:'https://example.com/Mikozora.apk', downloadUrl:'https://example.com/Mikozora.apk' });
+  assert.deepEqual(releaseFromApi({ tag_name:'v1.0.0', html_url:'https://example.com/r' }), { version:'1.0.0', pageUrl:'https://example.com/r', apkUrl:'', downloadUrl:'' });
   const insecure = releaseFromApi({ tag_name:'v1.0.0', html_url:'http://example.com/r', assets:[{ name:'a.apk', browser_download_url:'http://example.com/a.apk' }] });
   assert.equal(insecure.pageUrl, '');
   assert.equal(insecure.apkUrl, '');
@@ -89,4 +89,18 @@ test('records check results and shows only un-dismissed newer releases', () => {
   assert.equal(visibleUpdate(dismissed, '0.15.0'), null);
   const newer = withCheckResult(dismissed, { ...info, version:'0.16.1' }, now);
   assert.equal(visibleUpdate(newer, '0.15.0')?.version, '0.16.1');
+});
+
+test('desktop update checks prefer the Windows Setup installer', () => {
+  const info = releaseFromApi({
+    tag_name: 'v0.21.0',
+    html_url: 'https://github.com/RavenmireLAbs/Mikozora-anime/releases/tag/v0.21.0',
+    assets: [
+      { name: 'Mikozora-v0.21.0-Android.apk', browser_download_url: 'https://example.com/Mikozora.apk' },
+      { name: 'Mikozora-v0.21.0-Windows-Portable.exe', browser_download_url: 'https://example.com/portable.exe' },
+      { name: 'Mikozora-v0.21.0-Windows-Setup.exe', browser_download_url: 'https://example.com/setup.exe' },
+    ],
+  }, 'desktop');
+  assert.equal(info.downloadUrl, 'https://example.com/setup.exe');
+  assert.equal(info.apkUrl, 'https://example.com/Mikozora.apk');
 });

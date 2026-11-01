@@ -1,13 +1,21 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; older entries remain available.
-export const APP_VERSION = '0.20.0';
+export const APP_VERSION = '0.21.0';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.20.0',
+    version: '0.21.0',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Mikozora comes to Windows', description: 'The same Mikozora now runs on Windows 10 and 11: download the Windows Setup (or portable) build from the GitHub release page. Browsing, streaming, library, collections, Continue Watching and themes all work just like on your phone — and a backup exported here imports straight into the Windows app, so your data comes with you. First launch may ask you to choose “More info” → “Run anyway”, as the installers are unsigned for now.' },
+      { title: 'On Windows, downloads and alerts are next', description: 'This first Windows release streams everything in the built-in player; episode downloads for offline viewing and background new-episode alerts are being ported next. On Android, this update only prepares the shared groundwork — nothing about the phone app changes.' },
+    ],
+  },
+  {
+    version: '0.20.0',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Back up everything, restore anywhere', description: 'Settings → Your data can now export your library, collections, history, watch progress and settings to a single backup file — and restore that file again on this device or a new one. Downloaded videos stay where they are; they are not part of the backup.' },
       { title: 'Mark episodes watched by hand', description: 'Watched somewhere else first? Tap the circle beside any episode to mark it watched (tap again to undo), or select a run of episodes and choose Mark watched or Mark unwatched. Continue Watching and your progress counts follow immediately.' },
