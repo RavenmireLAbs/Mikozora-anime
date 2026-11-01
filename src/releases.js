@@ -1,13 +1,22 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; older entries remain available.
-export const APP_VERSION = '0.15.0';
+export const APP_VERSION = '0.16.0';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.15.0',
+    version: '0.16.0',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Mikozora can spot its own updates', description: 'From now on, Mikozora quietly checks GitHub when it opens and shows a small banner when a newer version is ready — no more visiting the releases page just to find out.' },
+      { title: 'One tap to the new APK', description: 'The banner and Settings → About → App updates link straight to the download. New versions install over your current one, so your library, history and downloads stay put.' },
+      { title: 'Polite about it', description: 'Checks happen at most twice a day. Dismiss a version to skip it, check manually whenever you like, or turn automatic checks off in Settings → About.' },
+    ],
+  },
+  {
+    version: '0.15.0',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'A new dawn for Mikozora', description: 'Mikozora has a new app icon: a torii gate beneath the morning star, with the sun rising between its pillars — shrine and sky, just like the name.' },
       { title: 'At home on every launcher', description: 'The icon now adapts to your launcher’s shape and includes a themed monochrome version on Android 13 and newer.' },

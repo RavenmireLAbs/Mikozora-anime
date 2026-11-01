@@ -3,7 +3,8 @@ import react from '@vitejs/plugin-react';
 
 // Development-only bridge. The Android build performs these requests on-device;
 // it does not depend on this server.
-const documents = new Set(['animesogo.to', 'animesuge.cz', 'anikototv.to', 'animerulz.com.in', 'aniwaves.ru', 'animebash.in', 'animexin.dev', 'naruldonghua.com', 'donghuastream.org', 'donghuaworld.com']);
+// Source document hosts, plus api.github.com for the in-app update checker.
+const documents = new Set(['animesogo.to', 'animesuge.cz', 'anikototv.to', 'animerulz.com.in', 'aniwaves.ru', 'animebash.in', 'animexin.dev', 'naruldonghua.com', 'donghuastream.org', 'donghuaworld.com', 'api.github.com']);
 const hosts = new Set([...documents, 'static.aniwaves.ru', 'cdn.anipixcdn.co', 'image.tmdb.org', 'media.themoviedb.org', 's4.anilist.co', 's3.anilist.co']);
 const cache = new Map();
 const ua = 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36';
