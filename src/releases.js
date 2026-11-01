@@ -1,13 +1,22 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; older entries remain available.
-export const APP_VERSION = '0.16.0';
+export const APP_VERSION = '0.17.0';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.16.0',
+    version: '0.17.0',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Continue watching, right where you left off', description: 'Home now leads with a Continue watching rail: one tap plays the next unwatched episode of each series you are in the middle of, with your progress shown on every card.' },
+      { title: 'See what you have already watched', description: 'Opened episodes are marked WATCHED in episode lists and carry a check in the player’s episode rail, and Library cards show your progress — like 7/12 — with a slim progress bar.' },
+      { title: 'Your progress stays yours', description: 'Progress is saved only on this device, alongside your history, and episodes you opened before this update still count. Remove a series from the rail with its × button, or clear everything together with your history.' },
+    ],
+  },
+  {
+    version: '0.16.0',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Mikozora can spot its own updates', description: 'From now on, Mikozora quietly checks GitHub when it opens and shows a small banner when a newer version is ready — no more visiting the releases page just to find out.' },
       { title: 'One tap to the new APK', description: 'The banner and Settings → About → App updates link straight to the download. New versions install over your current one, so your library, history and downloads stay put.' },
