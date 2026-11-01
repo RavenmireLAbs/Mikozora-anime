@@ -6,6 +6,7 @@
 // array under PROGRESS_KEY. Watched identity is the episode URL, matching
 // the playback playlist rules.
 import { titleKey } from './collections.js';
+import { buildPlaybackPlaylist } from './playback.js';
 
 export const PROGRESS_KEY = 'moku.progress.v1';
 const MAX_TITLES = 40;
@@ -35,6 +36,13 @@ function cleanEpisodes(episodes) {
     if (ep && !seen.has(ep.url)) { seen.add(ep.url); out.push(ep); }
   }
   return out;
+}
+
+// Snapshots must stay in story order no matter how a source lists its
+// episodes (many list newest first); nextUp() reasons about positions.
+// Reuse the player's ordering rules so every writer stores the same order.
+function orderedSnapshot(episodes) {
+  return cleanEpisodes(buildPlaybackPlaylist(Array.isArray(episodes) ? episodes : [], null).episodes);
 }
 
 function cleanUrls(urls) {
@@ -77,7 +85,7 @@ export function recordWatch(entries, item, episode, episodes, now = Date.now()) 
   if (!summary || !episode?.url) return clean;
   const key = keyOf(summary);
   const prev = clean.find(e => e.key === key);
-  const snapshot = cleanEpisodes(episodes);
+  const snapshot = orderedSnapshot(episodes);
   const entry = {
     key,
     item: summary,
@@ -94,7 +102,7 @@ export function recordWatch(entries, item, episode, episodes, now = Date.now()) 
 export function refreshSnapshot(entries, item, episodes) {
   const clean = normalizeProgress(entries);
   const summary = cleanItem(item);
-  const snapshot = cleanEpisodes(episodes);
+  const snapshot = orderedSnapshot(episodes);
   if (!summary) return clean;
   if (!snapshot.length) return entries;
   const key = keyOf(summary);
@@ -110,6 +118,34 @@ export function refreshSnapshot(entries, item, episodes) {
 export function removeProgressTitle(entries, item) {
   const key = keyOf(item);
   return normalizeProgress(entries).filter(e => e.key !== key);
+}
+
+// Mark episodes watched or unwatched by hand, for viewing that happened
+// outside the player. `episodes` refreshes the snapshot like recordWatch;
+// `urls` are added to or removed from the title's watched set. History is
+// not touched here — when unmarking, the caller also drops matching history
+// entries so the merged watched set actually loses them.
+export function setEpisodesWatched(entries, item, episodes, urls, watched, now = Date.now()) {
+  const clean = normalizeProgress(entries);
+  const summary = cleanItem(item);
+  const targets = cleanUrls(urls);
+  if (!summary || !targets.length) return clean;
+  const key = keyOf(summary);
+  const prev = clean.find(e => e.key === key);
+  const set = new Set(prev?.watched || []);
+  for (const url of targets) {
+    if (watched) set.add(url);
+    else set.delete(url);
+  }
+  const snapshot = orderedSnapshot(episodes);
+  const entry = {
+    key,
+    item: summary,
+    watched: [...set],
+    episodes: snapshot.length ? snapshot : (prev?.episodes || []),
+    updatedAt: now,
+  };
+  return trimmed([entry, ...clean.filter(e => e.key !== key)]);
 }
 
 function historyUrls(history, key) {

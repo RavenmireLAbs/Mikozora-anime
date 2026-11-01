@@ -167,3 +167,8 @@
 .episode-row.watched .episode-number{background:#1d261e;color:#7d9377}
 .episode-row.watched .episode-open{opacity:.6}
 .player-episode-chip.watched{display:inline-flex;align-items:center;gap:4px;color:#9db894;border-color:#33402f}
+
+
+/* Manual watched toggle on episode rows (beside the download button). */
+.episode-watched-toggle{width:38px;height:38px;display:grid;place-items:center;border:1px solid #2a302b;border-radius:999px;background:#171b19;color:#909a8e;flex:none}
+.episode-watched-toggle.on{background:#c8ee99;border-color:#c8ee99;color:#101312}

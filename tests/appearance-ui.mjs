@@ -73,9 +73,9 @@ const nav=async(page,mobile,name)=>page.locator(mobile?'.bottom-nav':'.sidebar')
 try{
  for(const config of [{viewport:{width:320,height:568},mobile:true},{viewport:{width:1280,height:900},mobile:false}]){
   const {context,page,errors}=await setup(config);await open(page);await settings(page,config.mobile);
-  let value=await getTheme(page);assert.deepEqual(value.native,{mode:'dark',accent:'green'});assert.equal(value.mode,'dark');assert.equal(value.accent,'green');assert.equal(value.themed,'');
+  let value=await getTheme(page);assert.deepEqual(value.native,{mode:'dark',accent:'blue'});assert.equal(value.mode,'dark');assert.equal(value.accent,'blue');assert.equal(value.themed,'true');
   assert.equal(await page.getByRole('button',{name:'Dark mode'}).getAttribute('aria-pressed'),'true');
-  assert.equal(await page.getByRole('button',{name:'Green accent'}).getAttribute('aria-pressed'),'true');
+  assert.equal(await page.getByRole('button',{name:'Blue accent'}).getAttribute('aria-pressed'),'true');
   for(const mode of ['dark','light']){
    await page.getByRole('button',{name:`${mode==='dark'?'Dark':'Light'} mode`}).click();
    for(const accent of ACCENTS){
@@ -145,7 +145,7 @@ try{
  // Corrupt and partly invalid saved values cannot prevent startup.
  for(const raw of ['{bad',JSON.stringify({mode:'light',accent:'not-a-color'})]){
   const {context,page,errors}=await setup({viewport:{width:320,height:568},mobile:true,extra:{[APPEARANCE_KEY]:raw}});await open(page);await settings(page,true);
-  const state=await getTheme(page);assert.equal(state.accent,'green');assert.equal(state.mode,raw==='{bad'?'dark':'light');assert.deepEqual(errors,[]);await context.close();
+  const state=await getTheme(page);assert.equal(state.accent,'blue');assert.equal(state.mode,raw==='{bad'?'dark':'light');assert.deepEqual(errors,[]);await context.close();
  }
  console.log('PASS appearance UI: all 10 combinations, immediate native bridge + storage, keyboard, restart, desktop/320px, contrast, artwork, navigation, dialogs, release notes and preserved user data under production CSP.');
 }finally{await browser.close()}

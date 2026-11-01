@@ -1,6 +1,6 @@
 // Theme preference is deliberately separate from library, collections and downloads.
 export const APPEARANCE_KEY = 'moku.appearance.v1';
-export const DEFAULT_APPEARANCE = Object.freeze({ mode:'dark', accent:'green' });
+export const DEFAULT_APPEARANCE = Object.freeze({ mode:'dark', accent:'blue' });
 export const MODES = [
   { id:'dark', label:'Dark', detail:'A cozy, low-light look' },
   { id:'light', label:'Light', detail:'A brighter space' },

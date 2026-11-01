@@ -7,10 +7,10 @@ function storage(seed={}) {
  return {getItem:k=>map.has(k)?map.get(k):null,setItem:(k,v)=>map.set(k,String(v)),snapshot:()=>Object.fromEntries(map)};
 }
 test('dark green remains the default; malformed preferences safely fall back per field',()=>{
- assert.deepEqual(readAppearance(storage()),{mode:'dark',accent:'green'});
+ assert.deepEqual(readAppearance(storage()),{mode:'dark',accent:'blue'});
  for(const raw of ['{oops','null','[]','"light"','17','true','{}'])
   assert.deepEqual(readAppearance(storage({[APPEARANCE_KEY]:raw})),DEFAULT_APPEARANCE,raw);
- assert.deepEqual(normalizeAppearance({mode:'light',accent:'unknown',other:'ignored'}),{mode:'light',accent:'green'});
+ assert.deepEqual(normalizeAppearance({mode:'light',accent:'unknown',other:'ignored'}),{mode:'light',accent:'blue'});
  assert.deepEqual(normalizeAppearance({mode:'system',accent:'purple'}),{mode:'dark',accent:'purple'});
  assert.deepEqual(normalizeAppearance({mode:null,accent:42}),DEFAULT_APPEARANCE);
  assert.deepEqual(readAppearance({getItem(){throw new Error('blocked')}}),DEFAULT_APPEARANCE);
@@ -41,7 +41,7 @@ test('optional native bridge receives validated choices and bridge failures do n
  try{
   globalThis.window={MokuBridge:{setAppearance:(...x)=>calls.push(x)}};
   syncNativeAppearance({mode:'light',accent:'pink'});syncNativeAppearance({mode:'invalid',accent:'invalid'});
-  assert.deepEqual(calls,[['light','pink'],['dark','green']]);
+  assert.deepEqual(calls,[['light','pink'],['dark','blue']]);
   globalThis.window={MokuBridge:{setAppearance(){throw new Error('offline')}}};assert.doesNotThrow(()=>syncNativeAppearance(null));
   globalThis.window={};assert.doesNotThrow(()=>syncNativeAppearance(null));
  } finally {if(original===undefined)delete globalThis.window;else globalThis.window=original;}
