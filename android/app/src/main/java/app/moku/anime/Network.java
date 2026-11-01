@@ -14,7 +14,8 @@ import java.util.Set;
 final class Network {
     static final String APP_HOST = "app.moku.local";
     static final String UA = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36";
-    private static final Set<String> DOCUMENT_HOSTS = new HashSet<>(Arrays.asList("animesogo.to", "animesuge.cz", "anikototv.to", "animerulz.com.in", "aniwaves.ru", "animebash.in", "animexin.dev", "naruldonghua.com", "donghuastream.org", "donghuaworld.com"));
+    // Source document hosts, plus api.github.com for the in-app update checker.
+    private static final Set<String> DOCUMENT_HOSTS = new HashSet<>(Arrays.asList("animesogo.to", "animesuge.cz", "anikototv.to", "animerulz.com.in", "aniwaves.ru", "animebash.in", "animexin.dev", "naruldonghua.com", "donghuastream.org", "donghuaworld.com", "api.github.com"));
     private static final Set<String> IMAGE_HOSTS = new HashSet<>(Arrays.asList("animesogo.to", "animesuge.cz", "anikototv.to", "animerulz.com.in", "aniwaves.ru", "static.aniwaves.ru", "animebash.in", "animexin.dev", "naruldonghua.com", "donghuastream.org", "donghuaworld.com", "cdn.anipixcdn.co", "image.tmdb.org", "media.themoviedb.org", "s4.anilist.co", "s3.anilist.co"));
     private Network() {}
     static boolean allowedSource(String raw) {

@@ -1,5 +1,6 @@
 import { DOMParser as InertDOMParser } from 'linkedom/worker';
 import { findGenre, genreSlug, normalizeRating, findRatingInText, yearFromText, isNsfw as titleIsNsfw } from './content.js';
+import { RELEASES_API_URL, releaseFromApi } from './update.js';
 
 /** Independent source adapters. Titles, episodes and video servers come from the sites. */
 export const SOURCES = {
@@ -91,6 +92,14 @@ async function getText(url, cacheMs = 60000) {
   finally { if (inflight.get(url) === request) inflight.delete(url); }
 }
 export function clearNetworkCache() { cacheGeneration++; cache.clear(); inflight.clear(); }
+// Ask GitHub for the newest published release (the in-app update checker).
+// Rides the same document fetch path as source pages; api.github.com is on
+// the native document-host allowlist for exactly this call.
+export async function fetchLatestRelease() {
+  const info = releaseFromApi(JSON.parse(await getText(RELEASES_API_URL, 0)));
+  if (!info) throw new Error('GitHub did not return a recognizable release.');
+  return info;
+}
 export function imageUrl(url) {
   if (!url) return '';
   // Images are proxied with the source Referer. AnimeXin otherwise blocks hotlinks.

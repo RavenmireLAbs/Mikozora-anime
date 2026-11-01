@@ -149,3 +149,11 @@
 .content-settings .setting-row>button[aria-pressed=true]{color:#caeda7;border-color:#4d6442;background:#273724}
 @media(max-width:900px){.detail-facts{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:760px){.browse-filters{padding:13px;gap:12px;margin-bottom:22px}.filter-field-row{align-items:stretch;flex-direction:column;gap:12px}.year-field select{height:35px;font-size:10px;width:100%}.clear-filters{margin-left:0;padding-bottom:0}.card-rating{font-size:8px;padding:3px 5px}.content-settings .setting-row{gap:10px}}
+.update-banner-wrap{padding-top:18px;padding-bottom:0}
+.update-banner{display:flex;align-items:center;gap:13px;padding:13px 15px;border:1px solid #2a302b;border-left:3px solid #c8ee99;border-radius:14px;background:#171b19}
+.update-banner .setting-icon{flex:none}
+.update-banner-text{flex:1;min-width:0}
+.update-banner-text strong{display:block;font-size:14px}
+.update-banner-text p{margin:2px 0 0;font-size:12px;color:#909a8e}
+.update-banner-close{flex:none;width:30px;height:30px;display:grid;place-items:center;border:0;border-radius:8px;background:none;color:#a2b09e}
+@media(max-width:560px){.update-banner{flex-wrap:wrap}.update-banner .btn{order:4;width:100%}}
