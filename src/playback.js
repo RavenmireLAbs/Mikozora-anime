@@ -53,10 +53,11 @@ export function buildPlaybackPlaylist(episodes = [], current = null) {
 
 /** The Android player only needs to display and identify episodes; the web
  * layer keeps the full source objects (including private server tokens). */
-export function compactPlaybackEpisodes(episodes = [], { includeTitles = true } = {}) {
+export function compactPlaybackEpisodes(episodes = [], { includeTitles = true, watched = null } = {}) {
   return episodes.map(episode => {
     const number = String(episode?.number ?? '').slice(0, 40);
     const compact = { number, url: episode.url };
+    if (watched?.has(episode.url)) compact.watched = true;
     const title = String(episode?.title || '').trim();
     if (includeTitles && title && title !== `Episode ${number}`) compact.title = title.slice(0, 120);
     return compact;
@@ -68,12 +69,12 @@ export function compactPlaybackEpisodes(episodes = [], { includeTitles = true } 
  * are dropped first; as a last resort the current episode still plays even if
  * its complete episode rail cannot be sent to the native player.
  */
-export function compactPlaybackPlaylist(episodes = [], currentIndex = 0, maxChars = 260000) {
+export function compactPlaybackPlaylist(episodes = [], currentIndex = 0, maxChars = 260000, watched = null) {
   const index = Math.min(Math.max(0, currentIndex), Math.max(0, episodes.length - 1));
-  let compact = compactPlaybackEpisodes(episodes);
+  let compact = compactPlaybackEpisodes(episodes, { watched });
   if (JSON.stringify(compact).length <= maxChars) return { episodes: compact, episodeIndex: index };
 
-  compact = compactPlaybackEpisodes(episodes, { includeTitles: false });
+  compact = compactPlaybackEpisodes(episodes, { includeTitles: false, watched });
   if (JSON.stringify(compact).length <= maxChars) return { episodes: compact, episodeIndex: index };
 
   return { episodes: compact[index] ? [compact[index]] : [], episodeIndex: 0 };

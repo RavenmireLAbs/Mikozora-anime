@@ -42,11 +42,13 @@ public final class PlayerActivity extends Activity implements PlayerNavigation.E
         final String number;
         final String url;
         final String title;
+        final boolean watched;
 
-        EpisodeEntry(String number, String url, String title) {
+        EpisodeEntry(String number, String url, String title, boolean watched) {
             this.number = number;
             this.url = url;
             this.title = title;
+            this.watched = watched;
         }
     }
 
@@ -138,10 +140,11 @@ public final class PlayerActivity extends Activity implements PlayerNavigation.E
                     String number = entry.optString("number", "").trim();
                     String url = entry.optString("url", "");
                     String title = entry.optString("title", "").trim();
+                    boolean watched = entry.optBoolean("watched", false);
                     if (title.length() > 120) title = title.substring(0, 120);
                     if (number.isEmpty() || number.length() > 40 || url.length() > 4096
                             || !Network.matchesSource(payload.source, url)) return null;
-                    payload.episodes.add(new EpisodeEntry(number, url, title));
+                    payload.episodes.add(new EpisodeEntry(number, url, title, watched));
                 }
                 payload.episodeIndex = data.optInt("episodeIndex", -1);
                 if (payload.episodeIndex < 0 || payload.episodeIndex >= payload.episodes.size()
@@ -156,7 +159,7 @@ public final class PlayerActivity extends Activity implements PlayerNavigation.E
                     if (payload.episodeIndex < 0) return null;
                 }
             } else {
-                payload.episodes.add(new EpisodeEntry(payload.episodeNumber, payload.episodeUrl, ""));
+                payload.episodes.add(new EpisodeEntry(payload.episodeNumber, payload.episodeUrl, "", false));
                 payload.episodeIndex = 0;
             }
 
@@ -473,6 +476,8 @@ public final class PlayerActivity extends Activity implements PlayerNavigation.E
         EpisodeEntry episode = episodes.get(index);
         boolean current = index == episodeIndex;
         boolean pending = index == pendingEpisodeIndex;
+        boolean seen = episode.watched && !current;
+        chip.setText(seen ? "✓ " + episode.number : episode.number);
         chip.setEnabled(!switchingEpisode);
         chip.setAlpha(switchingEpisode && !current && !pending ? .55f : 1f);
         if (current) {
@@ -483,12 +488,13 @@ public final class PlayerActivity extends Activity implements PlayerNavigation.E
             chip.setTextColor(ACCENT);
         } else {
             chip.setBackground(shape(PANEL, 8, BORDER));
-            chip.setTextColor(LIGHT);
+            chip.setTextColor(seen ? MUTED : LIGHT);
         }
         String description = "Play episode " + episode.number;
         if (!episode.title.isEmpty()) description += ": " + episode.title;
         if (current) description += ", current episode";
         if (pending) description += ", loading";
+        if (seen) description += ", watched";
         chip.setContentDescription(description);
     }
 

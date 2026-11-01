@@ -794,7 +794,9 @@ function App() {
       remember(item,episode);
       setStoredProgress(prev=>recordWatch(prev,item,episode,playlist.episodes,Date.now()));
       const episodeIndex=Math.max(0,playlist.currentIndex);
-      const nativePlaylist=compactPlaybackPlaylist(playlist.episodes,episodeIndex);
+      const watchedSet=watchedUrlSet(progress,history,item);
+      watchedSet.add(episode.url);
+      const nativePlaylist=compactPlaybackPlaylist(playlist.episodes,episodeIndex,260000,watchedSet);
       const payload={
         item:{title:item.title,source:item.source},
         episode:{number:episode.number,url:episode.url},
