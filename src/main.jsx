@@ -14,7 +14,7 @@ import { COLLECTIONS_KEY, FAVOURITES_ID, titleKey, normalizeCollections, collect
 import { PROGRESS_KEY, normalizeProgress, recordWatch, refreshSnapshot, setEpisodesWatched, removeProgressTitle, watchedUrlSet, continueWatching, progressByTitle } from './progress';
 import { backupFileName, buildBackup, parseBackup, applyBackup, downloadBackupInBrowser, pickBackupInBrowser } from './backup';
 import { APP_VERSION, RELEASES, startupExperience, completeExperience } from './releases';
-import { DEFAULT_UPDATE_STATE, readUpdateState, saveUpdateState, shouldAutoCheck, withCheckResult, visibleUpdate, dismissUpdate, updateDownloadUrl } from './update';
+import { DEFAULT_UPDATE_STATE, readUpdateState, saveUpdateState, shouldCheckOnForeground, shouldCheckOnLaunch, withCheckResult, visibleUpdate, dismissUpdate, updateDownloadUrl } from './update';
 import { ACCENTS, MODES, DEFAULT_APPEARANCE, readAppearance, saveAppearance, applyAppearance, syncNativeAppearance } from './appearance';
 import { GENRES, DEFAULT_CONTENT_PREFS, readContentPrefs, saveContentPrefs, isNsfw, ratingOf, yearOf, filterTitles } from './content';
 import './style.css';
@@ -546,7 +546,7 @@ function SettingsPage({library,history,clearLibrary,clearHistory,openLicenses,op
     <div className="settings-group folder-settings"><div className="settings-title">DOWNLOAD LOCATION <span>EXTERNAL PLAYER</span></div><div className="setting-row"><div className="setting-icon"><FolderHeart size={19}/></div><div><strong>Playable copies</strong><p className="folder-name">{current}</p></div><button onClick={chooseFolder} disabled={!hasNativeDownloads()}>{folder?.configured?'Change':'Choose folder'}</button></div>
       <div className="folder-explainer"><p>New playable MP4 copies are organized into a folder for each anime or donghua. Existing downloads can be saved from Downloads; earlier exported files stay where they are.</p><p>After Mikozora verifies the saved video and subtitle files, it removes its private copy to free space. Mikozora then plays the file from your folder. If verification fails or subtitles cannot be safely copied, the private copy stays. Downloading and conversion still need extra storage temporarily.</p>{folder?.configured&&<button className="text-link" onClick={usePrivate}>Stop saving folder copies</button>}</div>
     </div>
-    <div className="settings-group"><div className="settings-title">YOUR DATA <span>ON THIS DEVICE</span></div><div className="setting-row"><div className="setting-icon"><Bookmark size={19}/></div><div><strong>Saved library</strong><p>{library.length} {library.length===1?'title':'titles'} saved locally</p></div><button onClick={clearLibrary} disabled={!library.length}>Clear</button></div><div className="setting-row"><div className="setting-icon"><History size={19}/></div><div><strong>Watch history</strong><p>{history.length} recently opened {history.length===1?'episode':'episodes'}</p></div><button onClick={clearHistory} disabled={!history.length}>Clear</button></div><div className="setting-row"><div className="setting-icon"><HardDrive size={19}/></div><div><strong>Back up your data</strong><p>Save your library, collections, history, watch progress and settings to a file you keep. Downloaded videos are not included.</p></div><button onClick={exportBackup}>Export</button></div><div className="setting-row"><div className="setting-icon"><RotateCcw size={19}/></div><div><strong>Restore a backup</strong><p>Replace this device's library, collections, history, progress and settings with a backup file.</p></div><button onClick={importBackup}>Import</button></div></div><div className="settings-group"><div className="settings-title">ABOUT <span>MIKOZORA {APP_VERSION}</span></div><div className="setting-row"><div className="setting-icon"><Download size={19}/></div><div><strong>App updates</strong><p>{updateText}</p></div>{pendingUpdate?<button onClick={downloadUpdate}>Download</button>:<button onClick={()=>checkUpdate(true)} disabled={updateStatus.phase==='checking'}>{updateStatus.phase==='checking'?'Checking…':updateStatus.phase==='error'?'Try again':'Check'}</button>}</div><div className="setting-row"><div className="setting-icon"><RefreshCw size={19}/></div><div><strong>Check automatically</strong><p>Look for new versions on GitHub when Mikozora opens, at most twice a day.</p></div><button aria-label="Automatic update checks" aria-pressed={!!appUpdate.autoCheck} onClick={()=>changeAutoCheck(!appUpdate.autoCheck)}>{appUpdate.autoCheck?'On':'Off'}</button></div><div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div><strong>Private by default</strong><p>Your library, collections and history stay on this device. No account is required.</p></div></div><div className="setting-row"><div className="setting-icon"><Film size={19}/></div><div><strong>Player availability</strong><p>Video hosts may restrict embedding or be unavailable. Try another server or open the source page.</p></div></div><div className="setting-row"><div className="setting-icon"><Sparkles size={19}/></div><div><strong>What’s new</strong><p>See the latest changes to Mikozora.</p></div><button onClick={openReleaseNotes}>View</button></div><div className="setting-row"><div className="setting-icon"><CircleHelp size={19}/></div><div><strong>Open source licenses</strong><p>Credits and licenses for Mikozora and its dependencies.</p></div><button onClick={openLicenses}>View</button></div></div></div>;
+    <div className="settings-group"><div className="settings-title">YOUR DATA <span>ON THIS DEVICE</span></div><div className="setting-row"><div className="setting-icon"><Bookmark size={19}/></div><div><strong>Saved library</strong><p>{library.length} {library.length===1?'title':'titles'} saved locally</p></div><button onClick={clearLibrary} disabled={!library.length}>Clear</button></div><div className="setting-row"><div className="setting-icon"><History size={19}/></div><div><strong>Watch history</strong><p>{history.length} recently opened {history.length===1?'episode':'episodes'}</p></div><button onClick={clearHistory} disabled={!history.length}>Clear</button></div><div className="setting-row"><div className="setting-icon"><HardDrive size={19}/></div><div><strong>Back up your data</strong><p>Save your library, collections, history, watch progress and settings to a file you keep. Downloaded videos are not included.</p></div><button onClick={exportBackup}>Export</button></div><div className="setting-row"><div className="setting-icon"><RotateCcw size={19}/></div><div><strong>Restore a backup</strong><p>Replace this device's library, collections, history, progress and settings with a backup file.</p></div><button onClick={importBackup}>Import</button></div></div><div className="settings-group"><div className="settings-title">ABOUT <span>MIKOZORA {APP_VERSION}</span></div><div className="setting-row"><div className="setting-icon"><Download size={19}/></div><div><strong>App updates</strong><p>{updateText}</p></div>{pendingUpdate?<button onClick={downloadUpdate}>Download</button>:<button onClick={()=>checkUpdate(true)} disabled={updateStatus.phase==='checking'}>{updateStatus.phase==='checking'?'Checking…':updateStatus.phase==='error'?'Try again':'Check'}</button>}</div><div className="setting-row"><div className="setting-icon"><RefreshCw size={19}/></div><div><strong>Check automatically</strong><p>Check GitHub when Mikozora starts, when you return to it, and periodically while it stays open.</p></div><button aria-label="Automatic update checks" aria-pressed={!!appUpdate.autoCheck} onClick={()=>changeAutoCheck(!appUpdate.autoCheck)}>{appUpdate.autoCheck?'On':'Off'}</button></div><div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div><strong>Private by default</strong><p>Your library, collections and history stay on this device. No account is required.</p></div></div><div className="setting-row"><div className="setting-icon"><Film size={19}/></div><div><strong>Player availability</strong><p>Video hosts may restrict embedding or be unavailable. Try another server or open the source page.</p></div></div><div className="setting-row"><div className="setting-icon"><Sparkles size={19}/></div><div><strong>What’s new</strong><p>See the latest changes to Mikozora.</p></div><button onClick={openReleaseNotes}>View</button></div><div className="setting-row"><div className="setting-icon"><CircleHelp size={19}/></div><div><strong>Open source licenses</strong><p>Credits and licenses for Mikozora and its dependencies.</p></div><button onClick={openLicenses}>View</button></div></div></div>;
 }
 function PlayerModal({player,close,onEpisode,watched}) {
   const [current,setCurrent]=useState(0);
@@ -681,28 +681,66 @@ function App() {
   const finishExperience=()=>{if(!experience?.manual)try{completeExperience(window.localStorage)}catch{} setExperience(null);};
   const [appUpdate,setAppUpdate]=useState(()=>{try{return readUpdateState(window.localStorage)}catch{return {...DEFAULT_UPDATE_STATE}}});
   const [updateStatus,setUpdateStatus]=useState({phase:'idle',message:''});
+  const updateCheckPromise=useRef(null);
+  const updateCheckAttempted=useRef(false);
+  const launchUpdateCheckStarted=useRef(false);
   const storeAppUpdate=next=>{setAppUpdate(next);try{saveUpdateState(window.localStorage,next)}catch{/* The current session still remembers the choice. */}};
-  const checkAppUpdate=async(manual=false)=>{
-    setUpdateStatus({phase:'checking',message:''});
-    try{
-      const info=await fetchLatestRelease();
-      setAppUpdate(prev=>{const next=withCheckResult(prev,info,Date.now());try{saveUpdateState(window.localStorage,next)}catch{}return next;});
-      setUpdateStatus({phase:'idle',message:''});
-    }catch(e){
-      setAppUpdate(prev=>{const next=withCheckResult(prev,null,Date.now());try{saveUpdateState(window.localStorage,next)}catch{}return next;});
-      setUpdateStatus(manual?{phase:'error',message:e?.message||'Could not check for updates.'}:{phase:'idle',message:''});
-    }
+  const checkAppUpdate=(manual=false)=>{
+    if(updateCheckPromise.current)return updateCheckPromise.current;
+    updateCheckAttempted.current=true;
+    const run=(async()=>{
+      setUpdateStatus({phase:'checking',message:''});
+      try{
+        const info=await fetchLatestRelease();
+        setAppUpdate(prev=>{const next=withCheckResult(prev,info,Date.now());try{saveUpdateState(window.localStorage,next)}catch{}return next;});
+        setUpdateStatus({phase:'idle',message:''});
+      }catch(e){
+        setAppUpdate(prev=>{const next=withCheckResult(prev,null,Date.now());try{saveUpdateState(window.localStorage,next)}catch{}return next;});
+        setUpdateStatus(manual?{phase:'error',message:e?.message||'Could not check for updates.'}:{phase:'idle',message:''});
+      }
+    })();
+    const tracked=run.finally(()=>{if(updateCheckPromise.current===tracked)updateCheckPromise.current=null;});
+    updateCheckPromise.current=tracked;
+    return tracked;
   };
   useEffect(()=>{
-    if(experience)return;
+    if(experience||launchUpdateCheckStarted.current)return;
     let stored=appUpdate;
     try{stored=readUpdateState(window.localStorage)}catch{}
-    if(shouldAutoCheck(stored,Date.now()))checkAppUpdate(false);
+    if(!shouldCheckOnLaunch(stored))return;
+    // Let the main shell and native bridge settle, then make the one launch
+    // check for this JS session. Manually replaying What's new later uses
+    // the same experience state but must not trigger this a second time.
+    const timer=setTimeout(()=>{
+      if(updateCheckAttempted.current){launchUpdateCheckStarted.current=true;return;}
+      let current=stored;
+      try{current=readUpdateState(window.localStorage)}catch{}
+      if(!shouldCheckOnLaunch(current))return;
+      launchUpdateCheckStarted.current=true;
+      void checkAppUpdate(false);
+    },800);
+    return ()=>clearTimeout(timer);
+  },[experience]);
+  useEffect(()=>{
+    if(experience)return;
+    const checkIfDue=()=>{
+      if(document.hidden)return;
+      let stored=appUpdate;
+      try{stored=readUpdateState(window.localStorage)}catch{}
+      if(shouldCheckOnForeground(stored,Date.now()))void checkAppUpdate(false);
+    };
+    const onVisible=()=>{if(!document.hidden)checkIfDue();};
+    window.addEventListener('focus',checkIfDue);
+    document.addEventListener('visibilitychange',onVisible);
+    // This local timer only evaluates the persisted timestamps; actual
+    // network checks remain gated by shouldCheckOnForeground above.
+    const timer=setInterval(checkIfDue,60000);
+    return ()=>{window.removeEventListener('focus',checkIfDue);document.removeEventListener('visibilitychange',onVisible);clearInterval(timer);};
   },[experience]);
   const pendingUpdate=visibleUpdate(appUpdate,APP_VERSION);
   const downloadAppUpdate=()=>{const target=updateDownloadUrl(pendingUpdate,isDesktopApp()?'desktop':'android');if(target)external(target);};
   const dismissAppUpdate=()=>storeAppUpdate(dismissUpdate(appUpdate));
-  const changeAutoCheck=enabled=>storeAppUpdate({...appUpdate,autoCheck:enabled});
+  const changeAutoCheck=enabled=>{storeAppUpdate({...appUpdate,autoCheck:enabled});if(enabled)void checkAppUpdate(false);};
   const [appearance,setAppearance]=useState(initialAppearance);
   const changeAppearance=patch=>{
     const root=document.documentElement;

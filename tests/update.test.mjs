@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { UPDATE_KEY, CHECK_INTERVAL_MS, DEFAULT_UPDATE_STATE, parseVersion, compareVersions, isNewerVersion, releaseFromApi, readUpdateState, saveUpdateState, shouldAutoCheck, withCheckResult, visibleUpdate, dismissUpdate, updateDownloadUrl } from '../src/update.js';
+import { UPDATE_KEY, CHECK_INTERVAL_MS, FOREGROUND_CHECK_INTERVAL_MS, FAILED_CHECK_RETRY_MS, DEFAULT_UPDATE_STATE, parseVersion, compareVersions, isNewerVersion, releaseFromApi, readUpdateState, saveUpdateState, shouldAutoCheck, shouldCheckOnForeground, shouldCheckOnLaunch, withCheckResult, visibleUpdate, dismissUpdate, updateDownloadUrl } from '../src/update.js';
 
 class Store {
   constructor(initial={}) { this.values=new Map(Object.entries(initial)); }
@@ -48,12 +48,15 @@ test('shapes the GitHub releases payload and prefers the Android APK', () => {
 test('persists update state and tolerates junk', () => {
   const store = new Store();
   assert.deepEqual(readUpdateState(store), DEFAULT_UPDATE_STATE);
-  saveUpdateState(store, { ...DEFAULT_UPDATE_STATE, autoCheck:false, lastCheck:123, latest:'0.16.0', dismissed:'0.15.0' });
+  saveUpdateState(store, { ...DEFAULT_UPDATE_STATE, autoCheck:false, lastCheck:123, lastAttempt:456, latest:'0.16.0', dismissed:'0.15.0' });
   const read = readUpdateState(store);
   assert.equal(read.autoCheck, false);
   assert.equal(read.lastCheck, 123);
+  assert.equal(read.lastAttempt, 456);
   assert.equal(read.latest, '0.16.0');
   assert.equal(read.dismissed, '0.15.0');
+  store.setItem(UPDATE_KEY, JSON.stringify({ autoCheck:true, lastCheck:789 }));
+  assert.equal(readUpdateState(store).lastAttempt, 789, 'legacy state uses lastCheck as its last attempt');
   store.setItem(UPDATE_KEY, '{not json');
   assert.deepEqual(readUpdateState(store), DEFAULT_UPDATE_STATE);
   store.setItem(UPDATE_KEY, JSON.stringify({ latest: 42, lastCheck: 'soon', autoCheck: 'yes' }));
@@ -63,12 +66,24 @@ test('persists update state and tolerates junk', () => {
   assert.equal(cleaned.autoCheck, true);
 });
 
-test('throttles automatic checks to twice a day', () => {
+test('checks once on every launch and throttles foreground/periodic repeats', () => {
   const now = 1_000_000_000_000;
-  assert.equal(shouldAutoCheck({ ...DEFAULT_UPDATE_STATE, lastCheck: 0 }, now), true);
-  assert.equal(shouldAutoCheck({ ...DEFAULT_UPDATE_STATE, lastCheck: now - CHECK_INTERVAL_MS + 1 }, now), false);
-  assert.equal(shouldAutoCheck({ ...DEFAULT_UPDATE_STATE, lastCheck: now - CHECK_INTERVAL_MS }, now), true);
-  assert.equal(shouldAutoCheck({ ...DEFAULT_UPDATE_STATE, autoCheck: false, lastCheck: 0 }, now), false);
+  // Launch deliberately ignores the old 12-hour gate: a release published
+  // after this morning's successful check must appear on the next app open.
+  assert.equal(shouldCheckOnLaunch({ ...DEFAULT_UPDATE_STATE, lastCheck: now, lastAttempt: now }), true);
+  assert.equal(shouldCheckOnLaunch({ ...DEFAULT_UPDATE_STATE, autoCheck: false, lastCheck: 0 }), false);
+
+  assert.equal(shouldCheckOnForeground({ ...DEFAULT_UPDATE_STATE, lastCheck: now - FOREGROUND_CHECK_INTERVAL_MS + 1, lastAttempt: now - FOREGROUND_CHECK_INTERVAL_MS + 1 }, now), false);
+  assert.equal(shouldCheckOnForeground({ ...DEFAULT_UPDATE_STATE, lastCheck: now - FOREGROUND_CHECK_INTERVAL_MS, lastAttempt: now - FOREGROUND_CHECK_INTERVAL_MS }, now), true);
+  // A failed attempt does not move lastCheck, but still gets a short cooldown.
+  assert.equal(shouldCheckOnForeground({ ...DEFAULT_UPDATE_STATE, lastCheck: 0, lastAttempt: now - FAILED_CHECK_RETRY_MS + 1 }, now), false);
+  assert.equal(shouldCheckOnForeground({ ...DEFAULT_UPDATE_STATE, lastCheck: 0, lastAttempt: now - FAILED_CHECK_RETRY_MS }, now), true);
+  assert.equal(shouldCheckOnForeground({ ...DEFAULT_UPDATE_STATE, autoCheck: false, lastCheck: 0, lastAttempt: 0 }, now), false);
+
+  assert.equal(shouldAutoCheck({ ...DEFAULT_UPDATE_STATE, lastCheck: 0, lastAttempt: 0 }, now), true);
+  assert.equal(shouldAutoCheck({ ...DEFAULT_UPDATE_STATE, lastCheck: 0, lastAttempt: now - CHECK_INTERVAL_MS + 1 }, now), false);
+  assert.equal(shouldAutoCheck({ ...DEFAULT_UPDATE_STATE, lastCheck: 0, lastAttempt: now - CHECK_INTERVAL_MS }, now), true);
+  assert.equal(shouldAutoCheck({ ...DEFAULT_UPDATE_STATE, autoCheck: false, lastCheck: 0, lastAttempt: 0 }, now), false);
 });
 
 test('records check results and shows only un-dismissed newer releases', () => {
@@ -76,14 +91,20 @@ test('records check results and shows only un-dismissed newer releases', () => {
   const info = { version:'0.16.0', pageUrl:'https://example.com/r', apkUrl:'https://example.com/a.apk', downloadUrl:'https://example.com/a.apk' };
   const checked = withCheckResult(DEFAULT_UPDATE_STATE, info, now);
   assert.equal(checked.lastCheck, now);
+  assert.equal(checked.lastAttempt, now);
   assert.equal(checked.latest, '0.16.0');
   assert.deepEqual(visibleUpdate(checked, '0.15.0'), info);
   assert.equal(visibleUpdate(checked, '0.16.0'), null);
   assert.equal(visibleUpdate(checked, '0.17.0'), null);
-  const failed = withCheckResult(DEFAULT_UPDATE_STATE, null, now);
+  const failedFresh = withCheckResult(DEFAULT_UPDATE_STATE, null, now);
+  assert.equal(failedFresh.lastCheck, 0, 'a failed check is not a successful check');
+  assert.equal(failedFresh.lastAttempt, now);
+  assert.equal(failedFresh.latest, '');
+  assert.equal(visibleUpdate(failedFresh, '0.15.0'), null);
+  const failed = withCheckResult(checked, null, now + 1000);
   assert.equal(failed.lastCheck, now);
-  assert.equal(failed.latest, '');
-  assert.equal(visibleUpdate(failed, '0.15.0'), null);
+  assert.equal(failed.lastAttempt, now + 1000);
+  assert.deepEqual(visibleUpdate(failed, '0.15.0'), info, 'a later failure does not erase a known update');
   const dismissed = dismissUpdate(checked);
   assert.equal(dismissed.dismissed, '0.16.0');
   assert.equal(visibleUpdate(dismissed, '0.15.0'), null);
