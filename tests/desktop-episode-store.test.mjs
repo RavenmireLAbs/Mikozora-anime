@@ -130,3 +130,73 @@ test('due ordering, run flags and persistence survive reload', async () => {
   assert.equal(reloaded.state().watchedCount, 2);
   assert.equal(reloaded.state().errors.length, 1);
 });
+
+test('object sync stores Smart settings, sanitized presets and watched episode URLs', async () => {
+  const { store, nowRef } = await makeStore();
+  const trackId = `s:${'b'.repeat(32)}`;
+  const payload = (enabled = true) => JSON.stringify({
+    titles: [{
+      ...SOGO,
+      smartDownload: true,
+      watchedEpisodes: [ep(1).url, ep(1).url, 'https://animexin.dev/not-this-series/', 'junk'],
+      downloadPreset: {
+        language: 'indonesian', server: 'sogo-hd-1', quality: 'v:1280x720', subtitleMode: 'custom',
+        subtitleTracks: [
+          { id: trackId, label: 'English SDH', language: 'en', url: 'https://expires.invalid/en.vtt' },
+          { id: trackId, label: 'Duplicate', language: 'en' },
+          { id: 'bad', label: 'Bad', language: 'en' },
+        ],
+      },
+    }],
+    smartDownloads: { enabled, wifiOnly: false, maxUnwatchedPerSeries: 99, notifyWhenReady: false },
+  });
+  await store.sync(payload());
+  const id = `${SOGO.source}|${SOGO.url}`;
+  assert.deepEqual(store.state().smartDownloads, {
+    enabled: true, wifiOnly: false, maxUnwatchedPerSeries: 10, notifyWhenReady: false,
+  });
+  const track = store.track(id);
+  assert.equal(track.smartDownload, true);
+  assert.deepEqual(track.watchedEpisodes, [ep(1).url]);
+  assert.deepEqual(track.downloadPreset, {
+    language: 'indonesian', server: 'sogo-hd-1', quality: 'v:1280x720', subtitleMode: 'custom',
+    subtitleTracks: [{ id: trackId, label: 'English SDH', language: 'en' }],
+  });
+
+  const [title] = store.due(nowRef.value + 1);
+  assert.deepEqual(await store.successEvents(title, [{ ...ep(1), ids: 'ep1-token' }], nowRef.value), []);
+  assert.deepEqual(store.pendingSmartDownloads(), [], 'baseline episodes are never queued retroactively');
+  const [event] = await store.successEvents(title, [{ ...ep(1), ids: 'ep1-token' }, { ...ep(2), ids: 'ep2-token' }], nowRef.value + 10);
+  assert.equal(event.smartDownloadStatus, 'pending');
+  assert.equal(event.episode.ids, 'ep2-token');
+  assert.deepEqual(store.pendingSmartDownloads().map((e) => e.episode.number), ['2']);
+
+  await store.sync(payload(false));
+  assert.equal(store.state().updates[0].smartDownloadStatus, 'skipped');
+  assert.deepEqual(store.pendingSmartDownloads(), []);
+  await store.sync(payload(true));
+  assert.equal(store.state().updates[0].smartDownloadStatus, 'skipped', 'turning Smart back on does not revive cancelled episodes');
+});
+
+test('Smart pending events are not created while disabled and failed events reset only on foreground sync', async () => {
+  const { store, nowRef } = await makeStore();
+  const payload = (enabled) => JSON.stringify({
+    titles: [{ ...SOGO, smartDownload: true, watchedEpisodes: [], downloadPreset: { language: 'english', server: 'auto', quality: 'best', subtitleMode: 'auto', subtitleTracks: [] } }],
+    smartDownloads: { enabled, wifiOnly: true, maxUnwatchedPerSeries: 3, notifyWhenReady: true },
+  });
+  await store.sync(payload(false));
+  const [title] = store.due(nowRef.value + 1);
+  await store.success(title, [ep(1)], nowRef.value);
+  const [disabledEvent] = await store.successEvents(title, [ep(1), ep(2)], nowRef.value + 10);
+  assert.equal(disabledEvent.smartDownloadStatus, undefined);
+
+  await store.sync(payload(true));
+  assert.deepEqual(store.pendingSmartDownloads(), [], 'older update events do not become downloads later');
+  const [event] = await store.successEvents(title, [ep(1), ep(2), ep(3)], nowRef.value + 20);
+  assert.equal(event.smartDownloadStatus, 'pending');
+  await store.markSmartDownload(event.id, 'failed', { now: nowRef.value + 30, error: 'temporary queue failure' });
+  assert.deepEqual(store.pendingSmartDownloads(), []);
+  await store.sync(payload(true));
+  assert.deepEqual(store.pendingSmartDownloads().map((e) => e.episode.number), ['3']);
+  assert.equal(store.state().updates.find((e) => e.id === event.id).smartDownloadError, undefined);
+});

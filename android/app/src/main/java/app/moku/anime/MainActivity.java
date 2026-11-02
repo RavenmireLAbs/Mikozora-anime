@@ -48,6 +48,7 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
     private final ExecutorService episodeCommands = Executors.newSingleThreadExecutor();
     private final AtomicInteger optionGeneration = new AtomicInteger();
     private final AtomicBoolean openUpdates = new AtomicBoolean(false);
+    private final AtomicBoolean openDownloads = new AtomicBoolean(false);
     private final SharedPreferences.OnSharedPreferenceChangeListener updatesListener=(prefs,key)->{
         if(EpisodeStore.DATA.equals(key))signalUpdates();
     };
@@ -66,8 +67,9 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        if(state!=null){pendingFolderRequest=state.getString("folderRequestId");pendingBackupSave=state.getString("backupSaveRequestId");pendingBackupOpen=state.getString("backupOpenRequestId");openUpdates.set(state.getBoolean("openUpdates",false));}
+        if(state!=null){pendingFolderRequest=state.getString("folderRequestId");pendingBackupSave=state.getString("backupSaveRequestId");pendingBackupOpen=state.getString("backupOpenRequestId");openUpdates.set(state.getBoolean("openUpdates",false));openDownloads.set(state.getBoolean("openDownloads",false));}
         if(getIntent()!=null&&getIntent().getBooleanExtra(EpisodeNotifier.EXTRA_OPEN,false)){openUpdates.set(true);getIntent().removeExtra(EpisodeNotifier.EXTRA_OPEN);}
+        if(getIntent()!=null&&getIntent().getBooleanExtra(DownloadWorker.EXTRA_OPEN_DOWNLOADS,false)){openDownloads.set(true);getIntent().removeExtra(DownloadWorker.EXTRA_OPEN_DOWNLOADS);}
         EpisodeNotifier.ensureChannel(this);
         EpisodeStore.preferences(this).registerOnSharedPreferenceChangeListener(updatesListener);
         Appearance.Palette appearance=Appearance.read(this);
@@ -201,6 +203,7 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
             if(!validBridgeId(id))return;
             episodeCommands.execute(()->{try{
                 JSONObject result=EpisodeStore.sync(MainActivity.this,payload);
+                SmartDownloads.queuePending(MainActivity.this);
                 if(onOpen)EpisodeScheduler.onOpen(MainActivity.this);
                 else if(result.optBoolean("added"))EpisodeScheduler.onNewTitles(MainActivity.this);
                 else EpisodeScheduler.ensure(MainActivity.this);
@@ -237,6 +240,7 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
                 catch(Exception e){sendChunks(id,"",episodeError(e));}});
         }
         @JavascriptInterface public boolean takeOpenUpdates(){return openUpdates.getAndSet(false);}
+        @JavascriptInterface public boolean takeOpenDownloads(){return openDownloads.getAndSet(false);}
         @JavascriptInterface public void episodeNotificationPermission(boolean automaticPrompt){runOnUiThread(()->notificationPermission(automaticPrompt));}
         @JavascriptInterface public void openPlayer(String payload) {
             if (payload == null || payload.length() > 300000) {
@@ -459,6 +463,10 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
             intent.removeExtra(EpisodeNotifier.EXTRA_OPEN);openUpdates.set(true);
             runOnUiThread(()->{if(!closed&&web!=null)web.evaluateJavascript("window.dispatchEvent(new Event('moku-open-updates'))",null);});
         }
+        if(intent!=null&&intent.getBooleanExtra(DownloadWorker.EXTRA_OPEN_DOWNLOADS,false)){
+            intent.removeExtra(DownloadWorker.EXTRA_OPEN_DOWNLOADS);openDownloads.set(true);
+            runOnUiThread(()->{if(!closed&&web!=null)web.evaluateJavascript("window.dispatchEvent(new Event('moku-open-downloads'))",null);});
+        }
     }
     @Override protected void onResume(){super.onResume();signalUpdates();}
     @Override protected void onSaveInstanceState(Bundle out) {
@@ -467,6 +475,7 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
         if(pendingBackupSave!=null)out.putString("backupSaveRequestId",pendingBackupSave);
         if(pendingBackupOpen!=null)out.putString("backupOpenRequestId",pendingBackupOpen);
         out.putBoolean("openUpdates",openUpdates.get());
+        out.putBoolean("openDownloads",openDownloads.get());
     }
     @Override protected void onActivityResult(int requestCode,int resultCode,Intent data) {
         super.onActivityResult(requestCode,resultCode,data);

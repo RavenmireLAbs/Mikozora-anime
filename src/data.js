@@ -58,7 +58,10 @@ export async function setPlayerReferer(episodeUrl) {
   try { await bridgeCall('setPlayerReferer', episodeUrl); } catch { /* still attempt playback */ }
 }
 export function hasEpisodeUpdates() { return isAndroid() && typeof window.MokuBridge.episodeUpdates === 'function'; }
-export async function syncEpisodeTitles(items, onOpen=false) { return JSON.parse(await bridgeCall('syncEpisodeTitles', JSON.stringify(items), !!onOpen)); }
+export async function syncEpisodeTitles(items, onOpen=false, smartDownloads=null) {
+  const payload = smartDownloads ? { titles: items, smartDownloads } : items;
+  return JSON.parse(await bridgeCall('syncEpisodeTitles', JSON.stringify(payload), !!onOpen));
+}
 export async function getEpisodeUpdates() { return JSON.parse(await bridgeCall('episodeUpdates')); }
 export async function checkEpisodes() { return JSON.parse(await bridgeCall('checkEpisodes')); }
 export async function setEpisodeAutomatic(enabled) { return JSON.parse(await bridgeCall('setEpisodeAutomatic', !!enabled)); }

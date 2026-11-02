@@ -30,7 +30,8 @@ final class EpisodeState {
                 event.put("id",digest(titleId+"\n"+ep.key));
                 event.put("titleId",titleId);
                 event.put("item",new JSONObject(item.toString()));
-                event.put("episode",new JSONObject().put("number",ep.number).put("title",ep.title).put("url",ep.url));
+                String ids=ep.ids==null?"":ep.ids.trim();if(ids.length()>1000)ids="";
+                event.put("episode",new JSONObject().put("number",ep.number).put("title",ep.title).put("url",ep.url).put("ids",ids));
                 event.put("discoveredAt",now);
                 event.put("read",false);
                 found.add(event);

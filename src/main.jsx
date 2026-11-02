@@ -9,6 +9,7 @@ import {
 import { SOURCES, getCatalog, getDetail, getFeatured, getTrending, getDiscoverAnime, getServers, imageUrl, isAndroid, clearNetworkCache, getDownloads, getDownloadOptions, enqueueDownloads, removeDownload, openDownload, getExportSettings, chooseDownloadFolder, clearDownloadFolder, exportDownload, openExport, hasEpisodeUpdates, syncEpisodeTitles, getEpisodeUpdates, checkEpisodes, setEpisodeAutomatic, setEpisodeAlerts, markEpisodeRead, fetchLatestRelease, exportBackupToFile, readBackupFromFile, isDesktopApp, hasNativeDownloads, setPlayerReferer } from './data';
 import { buildPlaybackPlaylist, compactPlaybackPlaylist } from './playback';
 import { monitoredTitles, unreadByTitle } from './episode-updates';
+import { readSmartDownloads, saveSmartDownloads, smartTitleSelection, smartDownloadsForSync, withDownloadPreset } from './smart-downloads';
 import { COLLECTIONS_KEY, FAVOURITES_ID, titleKey, normalizeCollections, collectionNameError, createCollection, renameCollection, deleteCollection, setCollectionItems, setTitleCollections, toggleFavourite, removeTitleFromCollections } from './collections';
 import { PROGRESS_KEY, normalizeProgress, recordWatch, refreshSnapshot, setEpisodesWatched, removeProgressTitle, watchedUrlSet, continueWatching, progressByTitle } from './progress';
 import { backupFileName, buildBackup, parseBackup, applyBackup, downloadBackupInBrowser, pickBackupInBrowser } from './backup';
@@ -277,7 +278,7 @@ function BrowsePage({open,has,toggle, query, setQuery, source, setSource, refres
     {data.loading && !data.items.length ? <div className="anime-grid">{Array.from({length:12}).map((_,i)=><div className="skeleton-card" key={i}><div className="skeleton shimmer"/><span className="skeleton shimmer"/><span className="skeleton shimmer"/></div>)}</div> : visibleItems.length ? <><div className="anime-grid">{visibleItems.map((item,i)=><AnimeCard key={identity(item)} item={item} index={i} onOpen={open} inLibrary={has(item)} toggle={toggle}/>)}</div>{moreButton}</> : data.items.length ? <><Empty icon={hideNsfw?EyeOff:SlidersHorizontal} title="No titles match these filters" body={hideNsfw?'Everything loaded so far is hidden by your filters, or marked NSFW while NSFW is turned off in Settings. Load more titles or clear a filter.':'Everything loaded so far is filtered out. Load more titles from the sources, or clear a filter to see more.'} action={activeFilterCount>0?clearFilters:undefined} actionLabel="Clear filters"/>{moreButton}</> : <Empty icon={Search} title={query?'No titles found':'Nothing to show yet'} body={query?'Try a different title or select another source.':'The source may be unavailable. Try refreshing.'} action={()=>{setQuery('');setDraft('');setSource('all');clearFilters();}} actionLabel="Browse everything"/>}
   </div>;
 }
-function DetailPage({item, openEpisode, has, toggle, organize, back, history, refreshKey, queueEpisodes, downloads, showDownloads, notify, hideNsfw = false, openSettings, watched, onEpisodesReady, markWatched}) {
+function DetailPage({item, openEpisode, has, toggle, organize, back, history, refreshKey, queueEpisodes, downloads, showDownloads, notify, hideNsfw = false, openSettings, watched, onEpisodesReady, markWatched, smartSelection, smartEnabled, toggleSmartDownload}) {
   const [state,setState]=useState({detail:null,loading:true,error:''});
   const [order,setOrder]=useState('newest'); const [filter,setFilter]=useState(''); const [visible,setVisible]=useState(40);
   const [selecting,setSelecting]=useState(false); const [selected,setSelected]=useState([]);
@@ -289,6 +290,7 @@ function DetailPage({item, openEpisode, has, toggle, organize, back, history, re
   const first=[...(state.detail?.episodes||[])].sort((a,b)=>(parseFloat(a.number)||0)-(parseFloat(b.number)||0))[0];
   const resume=recent && state.detail?.episodes.find(e=>String(e.number)===String(recent.episode.number));
   const watchedCount=(state.detail?.episodes||[]).filter(e=>watched?.has(e.url)).length;
+  const smartOn=!!smartEnabled&&!!smartSelection?.selected;
   const chooseEpisode=ep=>{
     if(!selected.includes(ep.url)&&selected.length>=50){notify('Choose up to 50 episodes in one batch');return;}
     setSelected(previous=>previous.includes(ep.url)?previous.filter(x=>x!==ep.url):[...previous,ep.url]);
@@ -301,7 +303,7 @@ function DetailPage({item, openEpisode, has, toggle, organize, back, history, re
   if (hideNsfw && isNsfw(detail)) return <div className="detail-page"><button className="back-link" onClick={back}><ChevronLeft size={17}/> Back <span>TO YOUR SPACE</span></button><div className="content page-content detail-blocked"><Empty icon={EyeOff} title="This title is hidden" body="This title is marked as NSFW (18+) content, and NSFW content is turned off in Settings. Your saved titles and downloads are unchanged; turn it back on there to view this title again." action={openSettings} actionLabel="Open content settings"/></div></div>;
   return <div className="detail-page"><button className="back-link" onClick={back}><ChevronLeft size={17}/> Back <span>TO YOUR SPACE</span></button>
     <div className="detail-banner" style={detail.banner?{backgroundImage:`linear-gradient(90deg,rgba(16,19,18,.88),rgba(16,19,18,.25)),linear-gradient(0deg,#101214,transparent 85%),url("${imageUrl(detail.banner)}")`}:undefined}><div className="banner-text">A STORY AWAITS <span>✦</span></div></div>
-    <div className="detail-body"><div className="detail-intro"><div className="detail-cover"><Cover item={detail}/></div><div className="detail-copy"><div className="detail-badges"><SourcePill source={detail.source}/><span className={'plain-badge rating-badge'+(rating?.adult?' rating-badge-adult':'')} title={rating?`Age rating reported by ${sourceName(detail.source)}`:'Not rated — the source does not provide an age rating'}>{rating?rating.label:'NR'}</span>{detail.type&&<span className="plain-badge">{detail.type}</span>}{detail.status&&<span className="plain-badge">{detail.status}</span>}{releasedYear>0&&<span className="plain-badge">{releasedYear}</span>}</div><h1>{detail.title}</h1><div className="genre-line">{detail.genres?.length?detail.genres.join('  ·  '):'Anime  ·  Adventure awaits'}</div><p>{detail.synopsis || (state.loading?'Loading the story...':'A title from your selected source. Open the source page for more information.')}</p><div className="detail-actions"><button className="btn primary" disabled={!first} onClick={()=>openEpisode(detail,resume||first)}><Play size={16} fill="currentColor"/>{resume?`Continue episode ${resume.number}`:'Watch first episode'}</button><button className={'btn secondary '+(has(detail)?'is-saved':'')} onClick={()=>toggle(detail)}><Bookmark size={17} fill={has(detail)?'currentColor':'none'}/>{has(detail)?'In your library':'Add to library'}</button><button className="btn secondary organize-detail" onClick={()=>organize(detail)} aria-label={`Organize ${detail.title} in collections`}><FolderPlus size={17}/> Collections</button><button className="icon-btn detail-external" onClick={()=>external(detail.url)} aria-label="Open original website" title="Open original website"><ExternalLink size={18}/></button></div></div></div>
+    <div className="detail-body"><div className="detail-intro"><div className="detail-cover"><Cover item={detail}/></div><div className="detail-copy"><div className="detail-badges"><SourcePill source={detail.source}/><span className={'plain-badge rating-badge'+(rating?.adult?' rating-badge-adult':'')} title={rating?`Age rating reported by ${sourceName(detail.source)}`:'Not rated — the source does not provide an age rating'}>{rating?rating.label:'NR'}</span>{detail.type&&<span className="plain-badge">{detail.type}</span>}{detail.status&&<span className="plain-badge">{detail.status}</span>}{releasedYear>0&&<span className="plain-badge">{releasedYear}</span>}</div><h1>{detail.title}</h1><div className="genre-line">{detail.genres?.length?detail.genres.join('  ·  '):'Anime  ·  Adventure awaits'}</div><p>{detail.synopsis || (state.loading?'Loading the story...':'A title from your selected source. Open the source page for more information.')}</p><div className="detail-actions"><button className="btn primary" disabled={!first} onClick={()=>openEpisode(detail,resume||first)}><Play size={16} fill="currentColor"/>{resume?`Continue episode ${resume.number}`:'Watch first episode'}</button><button className={'btn secondary '+(has(detail)?'is-saved':'')} onClick={()=>toggle(detail)}><Bookmark size={17} fill={has(detail)?'currentColor':'none'}/>{has(detail)?'In your library':'Add to library'}</button><button className="btn secondary organize-detail" onClick={()=>organize(detail)} aria-label={`Organize ${detail.title} in collections`}><FolderPlus size={17}/> Collections</button><button className={'btn secondary '+(smartOn?'is-saved':'')} onClick={()=>toggleSmartDownload?.(detail)} aria-pressed={smartOn} title={smartOn?'Automatically download new episodes of this series':'Automatically download new episodes of this series'}>{smartOn?<Check size={17}/> :<Download size={17}/>}{smartOn?'Smart downloads on':'Smart downloads'}</button><button className="icon-btn detail-external" onClick={()=>external(detail.url)} aria-label="Open original website" title="Open original website"><ExternalLink size={18}/></button></div>{smartOn&&<p className="smart-detail-note"><Sparkles size={14}/> New episodes will be downloaded automatically after Mikozora finds them.</p>}</div></div>
       {state.error && <div className="detail-error"><AlertCircle size={18}/><span>{state.error}</span><button onClick={()=>external(item.url)}>Open source <ExternalLink size={14}/></button></div>}
       {state.detail && <section className="detail-facts" aria-label="Source details"><div><span>STATUS</span><strong>{displayStatus(detail.status)}</strong>{detail.status && displayStatus(detail.status)!==detail.status && <small>Source: {detail.status}</small>}</div><div><span>{SOURCES[detail.source]?.category==='Donghua'?'RELEASED':'DATE AIRED'}</span><strong>{detail.aired || 'Not provided'}</strong></div><div><span>EPISODES REPORTED</span><strong>{detail.episodeCount || 'Not provided'}</strong></div><div><span>AGE RATING</span><strong>{rating ? rating.label : 'Not provided'}</strong>{rating?.adult&&<small>Marked as adult (NSFW) content</small>}{!rating&&<small>Shown as NR on cards</small>}</div><p>Reported by {sourceName(detail.source)} · Details may change.</p></section>}
       <div className="episode-section"><div className="episode-head"><div><span className="eyebrow">THE STORY SO FAR</span><h2>Episodes <small>{state.detail?.episodes.length ?? '—'}</small>{watchedCount>0&&<small>{watchedCount} watched</small>}</h2></div><div className="episode-tools"><label className="episode-search"><Search size={15}/><input value={filter} onChange={e=>{setFilter(e.target.value);setVisible(40)}} placeholder="Find episode" aria-label="Find episode"/></label><button className="sort-button" onClick={()=>setOrder(x=>x==='newest'?'oldest':'newest')}>{order==='newest'?'Newest first':'Oldest first'} <SlidersHorizontal size={15}/></button></div></div>
@@ -325,7 +327,7 @@ function DetailPage({item, openEpisode, has, toggle, organize, back, history, re
     </div>
   </div>;
 }
-function LibraryPage({items,open,has,toggle,browse,collections,activeCollection,setActiveCollection,onCreate,onRename,onDelete,onMembers,onFavourite,unreadTitles,progressByTitle,hideNsfw = false}) {
+function LibraryPage({items,open,has,toggle,browse,collections,activeCollection,setActiveCollection,onCreate,onRename,onDelete,onMembers,onFavourite,unreadTitles,progressByTitle,hideNsfw = false,smartCollections = [],onSmartCollection}) {
   const [filter,setFilter]=useState('all');
   useEffect(()=>setFilter('all'),[activeCollection]);
   const catalog = hideNsfw ? items.filter(item=>!isNsfw(item)) : items;
@@ -344,7 +346,7 @@ function LibraryPage({items,open,has,toggle,browse,collections,activeCollection,
       {collections.map(c=><button key={c.id} role="tab" aria-selected={activeCollection===c.id} className={'collection-tab '+(activeCollection===c.id?'selected':'')} onClick={()=>setActiveCollection(c.id)}>{c.id===FAVOURITES_ID?<Heart size={15}/>:<Folder size={15}/>} <span>{c.name}</span><b>{count(c)}</b></button>)}
     </div>
     <div className="collection-toolbar"><div><span className="eyebrow">YOUR LIBRARY</span><h2>{selected?.name || 'All titles'}</h2><p>{inCollection.length} {inCollection.length===1?'title':'titles'} · {activeCollection==='all'?'All saved stories':'A collection of saved stories'}</p></div>
-      {selected&&<div className="collection-tools"><button className="btn secondary" onClick={()=>onMembers(selected.id)} disabled={!catalog.length}><Plus size={15}/> Add titles</button>{selected.id!==FAVOURITES_ID&&<><button className="icon-btn" onClick={()=>onRename(selected.id)} aria-label={`Rename ${selected.name}`} title="Rename collection"><Pencil size={16}/></button><button className="icon-btn" onClick={()=>onDelete(selected.id)} aria-label={`Delete ${selected.name}`} title="Delete collection"><Trash2 size={16}/></button></>}</div>}
+      {selected&&<div className="collection-tools"><button className={'btn secondary '+(smartCollections.includes(selected.id)?'is-saved':'')} onClick={()=>onSmartCollection?.(selected)} aria-pressed={smartCollections.includes(selected.id)} title={`Automatically download new episodes for ${selected.name}`}>{smartCollections.includes(selected.id)?<Check size={15}/> :<Download size={15}/>} Smart downloads</button><button className="btn secondary" onClick={()=>onMembers(selected.id)} disabled={!catalog.length}><Plus size={15}/> Add titles</button>{selected.id!==FAVOURITES_ID&&<><button className="icon-btn" onClick={()=>onRename(selected.id)} aria-label={`Rename ${selected.name}`} title="Rename collection"><Pencil size={16}/></button><button className="icon-btn" onClick={()=>onDelete(selected.id)} aria-label={`Delete ${selected.name}`} title="Delete collection"><Trash2 size={16}/></button></>}</div>}
     </div>
     <div className="filter-row library-filters"><div className="tabs" role="group" aria-label="Filter library by source">{[['all','All sources'],...Object.values(SOURCES).filter(src=>inCollection.some(item=>item.source===src.id)).map(src=>[src.id,src.name])].map(([id,label])=><button key={id} className={filter===id?'selected':''} aria-pressed={filter===id} onClick={()=>setFilter(id)}>{label}</button>)}</div><span className="results-label">{list.length} {list.length===1?'TITLE':'TITLES'} SHOWN</span></div>
     {list.length ? <div className="anime-grid">{list.map((item,i)=><AnimeCard key={identity(item)} item={item} index={i} onOpen={open} inLibrary={has(item)} toggle={toggle} favourite={favourites.has(identity(item))} onFavourite={onFavourite} newCount={unreadTitles[identity(item)]||0} progress={progressByTitle?.[identity(item)]||null}/>)}</div> :
@@ -390,7 +392,9 @@ function bytesLabel(n) {
 function DownloadModal({request,close,submit}) {
   const englishOnly=['sogo','suge','anikoto','rulz','waves','bash'].includes(request.item.source);
   const sourceControlled=!englishOnly && request.item.source!=='xin';
-  const [language,setLanguage]=useState(englishOnly||sourceControlled?'english':request.language||'english');const [server,setServer]=useState('auto');const [quality,setQuality]=useState('best');
+  const initialChoice=request.initialChoice||{language:request.language||'english',server:request.serverChoice||'auto',quality:request.qualityChoice||'best',subtitleMode:request.subtitleMode||'auto',subtitleTracks:Array.isArray(request.subtitleSelection)?request.subtitleSelection:[]};
+  const [language,setLanguage]=useState(englishOnly||sourceControlled?'english':initialChoice.language||'english');const [server,setServer]=useState('auto');const [quality,setQuality]=useState('best');
+  const presetApplied=useRef(false);
   const [subtitleMode,setSubtitleMode]=useState('auto');const [subtitleSelection,setSubtitleSelection]=useState(()=>new Set());
   const [working,setWorking]=useState(false);const [attempt,setAttempt]=useState(0);
   const [options,setOptions]=useState({loading:true,servers:[],unavailable:0,error:''});
@@ -404,6 +408,17 @@ function DownloadModal({request,close,submit}) {
     }).catch(e=>{if(alive)setOptions({loading:false,servers:[],unavailable:0,error:e.message||'Could not check server qualities. You can retry or use Automatic.'})}),180);
     return()=>{alive=false;clearTimeout(timer)};
   },[request.item.source,sample.url,sample.ids,language,attempt]);
+  useEffect(()=>{
+    if(options.loading||presetApplied.current||!request.initialChoice||options.error)return;
+    presetApplied.current=true;
+    const wanted=initialChoice.server||'auto';
+    if(wanted==='auto')return;
+    const match=options.servers.find(x=>x.id===wanted);
+    if(!match)return;
+    changeServer(wanted);
+    const qualities=Array.isArray(match.qualities)?match.qualities:[];
+    if(initialChoice.quality&&qualities.some(x=>x.id===initialChoice.quality))setQuality(initialChoice.quality);
+  },[options.loading,options.servers]);
   const chosen=options.servers.find(x=>x.id===server);
   const qualityOptions=chosen?.qualities?.length?chosen.qualities:[{id:'best',label:'Best available (HLS up to 1080p)'}];
   const subtitleOptions=Array.isArray(chosen?.subtitles)?chosen.subtitles.filter(x=>x?.id&&x?.label):[];
@@ -417,9 +432,9 @@ function DownloadModal({request,close,submit}) {
     const next=options.servers.find(x=>x.id===value), reported=Array.isArray(next?.subtitles)?next.subtitles:[];
     const defaults=new Set(reported.filter(x=>x.defaultSelected).map(x=>x.id));
     const available=new Set(reported.map(x=>x.id));
-    const prior=request.serverChoice===value&&Array.isArray(request.subtitleSelection)?request.subtitleSelection.map(x=>x?.id).filter(id=>available.has(id)):[];
-    if(request.serverChoice===value&&request.subtitleMode==='custom'&&prior.length){setSubtitleMode('custom');setSubtitleSelection(new Set(prior));}
-    else if(request.serverChoice===value&&request.subtitleMode==='none'){setSubtitleMode('none');setSubtitleSelection(defaults);}
+    const prior=initialChoice.server===value&&Array.isArray(initialChoice.subtitleTracks)?initialChoice.subtitleTracks.map(x=>x?.id).filter(id=>available.has(id)):[];
+    if(initialChoice.server===value&&initialChoice.subtitleMode==='custom'&&prior.length){setSubtitleMode('custom');setSubtitleSelection(new Set(prior));}
+    else if(initialChoice.server===value&&initialChoice.subtitleMode==='none'){setSubtitleMode('none');setSubtitleSelection(defaults);}
     else{setSubtitleMode('auto');setSubtitleSelection(defaults);}
   }
   function chooseSubtitleMode(value){
@@ -429,7 +444,7 @@ function DownloadModal({request,close,submit}) {
   function toggleSubtitle(id){setSubtitleSelection(previous=>{const next=new Set(previous);next.has(id)?next.delete(id):next.add(id);return next;})}
   return <div className="modal-backdrop" onMouseDown={close}><div className="download-modal" role="dialog" aria-modal="true" aria-label="Download episodes" onMouseDown={e=>e.stopPropagation()}>
     <div className="player-header"><div><span className="eyebrow">SAVE FOR OFFLINE</span><h2>{count===1?`Download episode ${sample.number}`:`Download ${count} episodes`}</h2><p>{request.item.title} · {sourceName(request.item.source)}</p></div><button className="icon-btn" onClick={close} aria-label="Close download dialog"><X size={20}/></button></div>
-    <div className="download-dialog-body"><div className="download-fields">
+    <div className="download-dialog-body">{request.initialChoice&&<p className="remembered-choice-note"><Check size={14}/> Using this series’ remembered choices. You can change them for this download.</p>}<div className="download-fields">
       <label className="download-language">PREFERRED SUBTITLE LANGUAGE<select value={language} onChange={e=>changeLanguage(e.target.value)} disabled={englishOnly||sourceControlled}><option value="english">{sourceControlled?'Set by server':englishOnly?'English (automatic default)':'English'}</option>{!englishOnly&&!sourceControlled&&<option value="indonesian">Indonesian</option>}</select></label>
       <label className="download-language">DOWNLOAD SERVER<select value={server} onChange={e=>changeServer(e.target.value)}><option value="auto">Automatic · first compatible server</option>{options.servers.map(x=><option value={x.id} key={x.id}>{x.label}</option>)}</select></label>
       <label className="download-language">VIDEO QUALITY<select value={quality} onChange={e=>setQuality(e.target.value)}>{qualityOptions.map(x=><option value={x.id} key={x.id}>{x.label}</option>)}</select></label>
@@ -449,7 +464,7 @@ function DownloadModal({request,close,submit}) {
       <div className="download-dialog-actions"><button className="btn secondary" onClick={close}>Cancel</button><button className="btn primary" disabled={!hasNativeDownloads()||working||subtitleInvalid} onClick={confirm}>{working?<LoaderCircle size={16} className="spin"/>:<Download size={16}/>} Add to queue</button></div>
     </div></div></div>;
 }
-function DownloadsPage({items,loading,remove,retry,change,browse,folder,saveCopy,openSettings}) {
+function DownloadsPage({items,loading,remove,retry,change,browse,folder,saveCopy,openSettings,playOffline}) {
   const statusText={queued:'Waiting for network or a queue slot',resolving:'Finding a supported mirror',downloading:'Downloading',completed:'Ready to watch offline',failed:'Download failed',paused:'Waiting to resume',removing:'Removing'};
   return <div className="content page-content"><div className="page-heading"><div><div className="eyebrow">A LITTLE SOMETHING FOR LATER</div><h1>Ready when you are<span>.</span></h1><p>Your offline episodes and download queue, saved on this device.</p></div><div className="heading-art"><HardDrive size={32}/><span>✦</span></div></div>
     {!hasNativeDownloads()?<Empty icon={Download} title="Take your stories offline" body={isDesktopApp()?"Downloads are unavailable in this Windows build. Episodes still stream in the built-in player.":"Open Mikozora on Android to download individual episodes or select a batch. The browser preview cannot store episodes."} action={()=>browse('all')} actionLabel="Browse titles"/>:
@@ -460,7 +475,7 @@ function DownloadsPage({items,loading,remove,retry,change,browse,folder,saveCopy
         const savedFolder=[d.exportFolder,d.exportSeriesFolder].filter(Boolean).join(' / ');
         return <article className="download-card" key={d.id}><div className="download-card-art"><Cover item={d.item||{}}/></div><div className="download-card-main"><div className="download-card-top"><SourcePill source={d.item?.source} compact/><span className={'download-status '+(d.status||'queued')}><i/>{statusText[d.status]||'Preparing'}</span></div><h3>{d.item?.title||'Episode'}</h3><p>Episode {d.episode?.number} {d.serverLabel?`· ${d.serverLabel}`:d.host?`· ${d.host}`:''} {d.qualityLabel?`· ${d.qualityLabel}`:''} {d.bytes?`· ${bytesLabel(d.bytes)}`:''}</p>
           {d.status==='downloading'&&<div className="download-progress"><div><span style={{width:progress==null?'38%':`${progress}%`}} className={progress==null?'indeterminate':''}/></div><small>{progress==null?'In progress':`${progress}%`}</small></div>}
-          <p className="subtitle-status"><Check size={13}/> {d.subtitleDescription||'Preparing subtitles'}</p>{d.status==='failed'&&<p className="download-error"><AlertCircle size={14}/> {d.error||'This host did not provide a downloadable stream.'}</p>}
+          <p className="subtitle-status"><Check size={13}/> {d.subtitleDescription||'Preparing subtitles'}</p>{d.autoDownload&&<p className="export-status"><Sparkles size={13}/> Smart download{d.smartWifiOnly&&!isDesktopApp()?' · Wi‑Fi only':''}</p>}{d.status==='failed'&&<p className="download-error"><AlertCircle size={14}/> {d.error||'This host did not provide a downloadable stream.'}</p>}
           {d.exportStatus==='queued'&&<p className="export-status"><Clock3 size={13}/> Playable copy queued{d.exportNextFolder?` · ${d.exportNextFolder}`:''}</p>}
           {d.exportStatus==='exporting'&&<p className="export-status"><LoaderCircle size={13} className="spin"/> Saving playable copy{d.exportNextFolder?` · ${d.exportNextFolder}`:''}…</p>}
           {d.exportStatus==='verifying'&&<p className="export-status"><LoaderCircle size={13} className="spin"/> Verifying video and subtitles before freeing app space…</p>}
@@ -468,7 +483,7 @@ function DownloadsPage({items,loading,remove,retry,change,browse,folder,saveCopy
           {d.cleanupStatus==='pending'&&<p className="export-status"><LoaderCircle size={13} className="spin"/> Freeing private app storage…</p>}
           {(d.cleanupStatus==='waiting'||d.cleanupStatus==='retained')&&<p className="download-error"><AlertCircle size={14}/> {d.cleanupMessage||'The private copy is being kept for safety.'}</p>}
           {d.exportStatus==='failed'&&<p className="download-error"><AlertCircle size={14}/> Folder copy failed: {d.exportError||'Try again.'}</p>}
-          <div className="download-card-actions">{d.status==='completed'&&<><button className="btn primary" onClick={()=>openDownload(d.id)}><Play size={14} fill="currentColor"/> Play offline</button>{d.exportUri&&<button className="text-link" onClick={()=>openExport(d.id)}><ExternalLink size={14}/> Open file</button>}{folder?.granted?<button className="text-link" disabled={exporting} onClick={()=>saveCopy(d)}><FolderHeart size={14}/> {exporting?'Saving…':d.exportUri?'Save another copy':'Save to folder'}</button>:<button className="text-link" onClick={openSettings}><FolderHeart size={14}/> Choose folder</button>}</>}{d.status==='failed'&&<><button className="btn secondary" onClick={()=>retry(d)}><RotateCcw size={14}/> Retry</button><button className="text-link" onClick={()=>change(d)}><SlidersHorizontal size={14}/> Change server</button></>}<button className="text-link muted" onClick={()=>remove(d)}><Trash2 size={14}/> Remove</button></div>
+          <div className="download-card-actions">{d.status==='completed'&&<><button className="btn primary" onClick={()=>playOffline?playOffline(d):openDownload(d.id)}><Play size={14} fill="currentColor"/> Play offline</button>{d.exportUri&&<button className="text-link" onClick={()=>openExport(d.id)}><ExternalLink size={14}/> Open file</button>}{folder?.granted?<button className="text-link" disabled={exporting} onClick={()=>saveCopy(d)}><FolderHeart size={14}/> {exporting?'Saving…':d.exportUri?'Save another copy':'Save to folder'}</button>:<button className="text-link" onClick={openSettings}><FolderHeart size={14}/> Choose folder</button>}</>}{d.status==='failed'&&<><button className="btn secondary" onClick={()=>retry(d)}><RotateCcw size={14}/> Retry</button><button className="text-link" onClick={()=>change(d)}><SlidersHorizontal size={14}/> Change server</button></>}<button className="text-link muted" onClick={()=>remove(d)}><Trash2 size={14}/> Remove</button></div>
         </div></article>;
       })}</div>:<Empty icon={Download} title="Your offline shelf is empty" body="Open a series, then download one episode or select a batch to watch later." action={()=>browse('all')} actionLabel="Find a series"/>}
     <p className="privacy-footnote"><ShieldCheck size={15}/> Mikozora uses private space during downloading and conversion. After a verified folder save, it removes the private copy; folder files stay if you remove an episode or uninstall Mikozora.</p>
@@ -507,16 +522,27 @@ function AppearanceSettings({appearance,changeAppearance}) {
     </div>
   </section>;
 }
-function SettingsPage({library,history,clearLibrary,clearHistory,openLicenses,openReleaseNotes,folder,chooseFolder,usePrivate,updates,updatesAvailable,changeAutomatic,changeAlerts,notificationPermission,appearance,changeAppearance,contentPrefs,changeContentPrefs,appUpdate,pendingUpdate,updateStatus,checkUpdate,changeAutoCheck,downloadUpdate,exportBackup,importBackup}) {
+function SettingsPage({library,history,clearLibrary,clearHistory,openLicenses,openReleaseNotes,folder,chooseFolder,usePrivate,updates,updatesAvailable,changeAutomatic,changeAlerts,notificationPermission,appearance,changeAppearance,contentPrefs,changeContentPrefs,appUpdate,pendingUpdate,updateStatus,checkUpdate,changeAutoCheck,downloadUpdate,exportBackup,importBackup,smartDownloads,changeSmartDownloads}) {
   const current=!hasNativeDownloads()?(isDesktopApp()?'Unavailable in this Windows build':'Available in the Android app'):!folder?.configured?'Mikozora only · no external folder selected':folder.granted?folder.name||'Selected folder':'Folder access lost · choose it again';
   const notificationText=!updatesAvailable?'Available in the Android app':updates.notificationStatus==='allowed'?(isDesktopApp()?'Allowed in Windows':'Allowed in Android'):updates.notificationStatus==='permission'?'Android notification permission is needed':updates.notificationStatus==='channel-blocked'?'New episode channel is blocked in Android':(isDesktopApp()?'Notifications are blocked in Windows':'Notifications are blocked in Android');
   const updateText=pendingUpdate?`Mikozora ${pendingUpdate.version} is ready — you’re on ${APP_VERSION}.`:updateStatus.phase==='checking'?'Checking GitHub for a newer version…':updateStatus.phase==='error'?(updateStatus.message||'Could not check just now. Try again in a moment.'):appUpdate.lastCheck?`You’re up to date · Checked ${prettyTime(appUpdate.lastCheck)}`:`You’re on Mikozora ${APP_VERSION} · Not checked yet`;
+  const smart=smartDownloads||{enabled:false,wifiOnly:true,maxUnwatchedPerSeries:3,notifyWhenReady:true,titleKeys:[],collectionIds:[],presets:{}};
+  const smartAvailable=updatesAvailable&&hasNativeDownloads();
+  const smartSelectionText=`${smart.titleKeys.length} ${smart.titleKeys.length===1?'series':'series'} · ${smart.collectionIds.length} ${smart.collectionIds.length===1?'collection':'collections'} selected`;
   return <div className="content page-content"><div className="page-heading"><div><div className="eyebrow">MAKE YOURSELF AT HOME</div><h1>Your space, your way<span>.</span></h1><p>A simple little place for your anime.</p></div><div className="heading-art"><Settings2 size={32}/><span>✦</span></div></div>
     <AppearanceSettings appearance={appearance} changeAppearance={changeAppearance}/>
     <div className="settings-group content-settings"><div className="settings-title">CONTENT <span>AGE RATINGS &amp; NSFW</span></div><div className="setting-row"><div className="setting-icon"><EyeOff size={19}/></div><div><strong>Hide NSFW content</strong><p>{contentPrefs.hideNsfw?'On · Adult-marked titles are hidden':'Off · Adult-marked titles can appear'}</p></div><button aria-label="Hide NSFW content" aria-pressed={!!contentPrefs.hideNsfw} onClick={()=>changeContentPrefs({hideNsfw:!contentPrefs.hideNsfw})}>{contentPrefs.hideNsfw?'On':'Off'}</button></div>
       <div className="folder-explainer content-explainer"><p>When on, titles a source marks 18+ or with adult genres such as Ecchi or Hentai are completely hidden — from Discover, Browse, search results, your Library and History — and cannot be opened. This is separate from the Browse content filter and stays on until you turn it off.</p><p>Nothing is deleted: your library, collections, history and downloads stay exactly as they are. Every card shows the age rating its source provides, or NR when it provides none. Sources do not label every title, so hiding NSFW cannot guarantee everything shown is suitable for all ages.</p></div>
     </div>
     <div className="settings-group episode-settings"><div className="settings-title">EPISODE UPDATES <span>YOUR COLLECTIONS</span></div><div className="setting-row"><div className="setting-icon"><RefreshCw size={19}/></div><div><strong>Automatic checks</strong><p>{isDesktopApp()?'On open and about every 6 hours while Mikozora is open or resting in the system tray. Closing the window keeps checks running in the tray.':'On open and about every 6 hours while connected. Android can delay checks or pause them after a force-stop.'}</p></div><button aria-label="Automatic episode checks" aria-pressed={!!updates.automatic} disabled={!updatesAvailable} onClick={()=>changeAutomatic(!updates.automatic)}>{updates.automatic?'On':'Off'}</button></div><div className="setting-row"><div className="setting-icon"><Bell size={19}/></div><div><strong>{isDesktopApp()?'Windows':'Android'} episode alerts</strong><p>{updates.alerts?'On in Mikozora':'Off in Mikozora'} · New episodes still appear in Updates.</p></div><button aria-label={isDesktopApp()?'Windows episode alerts':'Android episode alerts'} aria-pressed={!!updates.alerts} disabled={!updatesAvailable} onClick={()=>changeAlerts(!updates.alerts)}>{updates.alerts?'On':'Off'}</button></div><div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div><strong>{isDesktopApp()?'Windows':'Android'} notification access</strong><p>{notificationText}</p></div><button disabled={!updatesAvailable} onClick={notificationPermission}>{updates.notificationStatus==='permission'?'Allow':'Manage'}</button></div></div>
+    <div className="settings-group smart-download-settings"><div className="settings-title">SMART DOWNLOADS <span>NEW EPISODES</span></div>
+      <div className="setting-row"><div className="setting-icon"><Sparkles size={19}/></div><div><strong>Download new episodes automatically</strong><p>{isDesktopApp()?'For selected series while Mikozora is open or resting in the system tray.':'For selected series after episode checks, including Android background checks.'}</p></div><button aria-label="Smart downloads" aria-pressed={!!smart.enabled} disabled={!smartAvailable} onClick={()=>changeSmartDownloads({enabled:!smart.enabled})}>{smart.enabled?'On':'Off'}</button></div>
+      <div className="setting-row"><div className="setting-icon"><FolderHeart size={19}/></div><div><strong>Selected stories</strong><p>{smartSelectionText}. Choose a series from its page, or a whole collection in Library.</p></div></div>
+      <div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div><strong>Wi‑Fi only on Android</strong><p>{isDesktopApp()?'Applies on Android. Windows cannot reliably report a metered connection, so Smart downloads may use any connection here.':'Automatic downloads wait for an unmetered connection and pause if you switch to mobile data. Manual downloads are unchanged.'}</p></div><button aria-label="Smart downloads on Wi-Fi only" aria-pressed={!!smart.wifiOnly} disabled={!smartAvailable} onClick={()=>changeSmartDownloads({wifiOnly:!smart.wifiOnly})}>{smart.wifiOnly?'On':'Off'}</button></div>
+      <div className="setting-row"><div className="setting-icon"><HardDrive size={19}/></div><div><strong>Unwatched limit per series</strong><p>Keep at most this many unwatched auto-downloaded episodes. Newer episodes wait until you watch one.</p></div><select className="smart-select" aria-label="Maximum unwatched Smart downloads per series" value={smart.maxUnwatchedPerSeries} disabled={!smartAvailable} onChange={e=>changeSmartDownloads({maxUnwatchedPerSeries:Number(e.target.value)})}>{[1,2,3,5,10].map(value=><option key={value} value={value}>{value} {value===1?'episode':'episodes'}</option>)}</select></div>
+      <div className="setting-row"><div className="setting-icon"><Bell size={19}/></div><div><strong>Ready notifications</strong><p>Tell me when an automatically downloaded episode is ready offline.{smart.notifyWhenReady&&updates.notificationStatus!=='allowed'?' Notification access is needed above.':''}</p></div><button aria-label="Smart download ready notifications" aria-pressed={!!smart.notifyWhenReady} disabled={!smartAvailable} onClick={()=>changeSmartDownloads({notifyWhenReady:!smart.notifyWhenReady})}>{smart.notifyWhenReady?'On':'Off'}</button></div>
+      <div className="folder-explainer smart-explainer"><p>Use <strong>Smart downloads</strong> on a series page or in a collection’s Library toolbar. A standalone series is added to Favourites so Mikozora can follow its episodes. The first check quietly records what already exists, so Smart downloads never fetch a backlog.</p><p>Each series reuses the server, quality and subtitle choices from the last manual download Mikozora successfully queued for it. Invalid saved choices fall back to Automatic and Best; a valid server that is unavailable for a particular episode fails clearly rather than silently switching, just like a manual download.</p></div>
+    </div>
     <div className="settings-group folder-settings"><div className="settings-title">DOWNLOAD LOCATION <span>EXTERNAL PLAYER</span></div><div className="setting-row"><div className="setting-icon"><FolderHeart size={19}/></div><div><strong>Playable copies</strong><p className="folder-name">{current}</p></div><button onClick={chooseFolder} disabled={!hasNativeDownloads()}>{folder?.configured?'Change':'Choose folder'}</button></div>
       <div className="folder-explainer"><p>New playable MP4 copies are organized into a folder for each anime or donghua. Existing downloads can be saved from Downloads; earlier exported files stay where they are.</p><p>After Mikozora verifies the saved video and subtitle files, it removes its private copy to free space. Mikozora then plays the file from your folder. If verification fails or subtitles cannot be safely copied, the private copy stays. Downloading and conversion still need extra storage temporarily.</p>{folder?.configured&&<button className="text-link" onClick={usePrivate}>Stop saving folder copies</button>}</div>
     </div>
@@ -634,7 +660,7 @@ function WelcomeScreen({mode,manual,onContinue}) {
         </section>
         <section className="release-card" aria-labelledby="release-title">
           <div className="release-heading"><div><span className="intro-eyebrow">THE LITTLE DETAILS</span><h2 id="release-title">What’s new<span>.</span></h2></div><span className="release-spark"><Sparkles size={19}/></span></div>
-          {RELEASES.map((release,index)=><div className={'release-group '+(index?'previous-release':'')} key={release.version}>
+          {RELEASES.slice(0,1).map((release)=><div className="release-group" key={release.version}>
             <div className="release-group-heading"><span>{release.label}</span><strong>v{release.version}</strong></div>
             <ul>{release.entries.map(entry=><li key={entry.title}><span className="release-bullet"><Check size={13}/></span><div><strong>{entry.title}</strong><p>{entry.description}</p></div></li>)}</ul>
           </div>)}
@@ -704,11 +730,13 @@ function App() {
     try{saveContentPrefs(window.localStorage,next)}catch{/* The current session still uses the choice. */}
     setToast(next.hideNsfw?'NSFW content is now hidden':'NSFW content can now appear');
   };
+  const [smartDownloads,setSmartDownloadsState]=useState(()=>readSmartDownloads(window.localStorage));
   const [folder,setFolder]=useState({configured:false,granted:false,name:''});
   const updatesAvailable=hasEpisodeUpdates();
   const [updates,setUpdates]=useState({automatic:true,alerts:true,watchedCount:0,initializedCount:0,unreadCount:0,updates:[],errors:[],checking:false,queued:false,notificationStatus:'unknown'});
   const [updatesSyncError,setUpdatesSyncError]=useState(''); const [updatesActionError,setUpdatesActionError]=useState('');
   const [notificationRoute,setNotificationRoute]=useState(false);
+  const [downloadsRoute,setDownloadsRoute]=useState(false);
   const firstEpisodeSync=useRef(true);
   const playbackSession=useRef(null);
   const playbackRequest=useRef(0);
@@ -716,13 +744,13 @@ function App() {
   const playRef=useRef(null);
   const downloadsRef=useRef([]);
   useEffect(()=>{downloadsRef.current=downloads;},[downloads]);
-  const monitored=useMemo(()=>monitoredTitles(library,collections),[library,collections]);
+  const monitored=useMemo(()=>monitoredTitles(library,collections,smartDownloads,progress,history),[library,collections,smartDownloads,progress,history]);
   const unreadTitles=useMemo(()=>unreadByTitle(updates.updates),[updates.updates]);
   useEffect(()=>{ window.history.replaceState({page:'home'},'',location.pathname+location.search+'#home'); const listener=e=>setRoute(e.state||{page:'home'});window.addEventListener('popstate',listener);return()=>window.removeEventListener('popstate',listener); },[]);
   useEffect(()=>{
     if(!updatesAvailable)return;
     let active=true;const onOpen=firstEpisodeSync.current;firstEpisodeSync.current=false;
-    syncEpisodeTitles(monitored,onOpen).then(value=>{if(active){setUpdates(value);setUpdatesSyncError('')}}).catch(e=>{if(active)setUpdatesSyncError(e.message||'Could not update collection checks. Previous data is unchanged.')});
+    syncEpisodeTitles(monitored,onOpen,smartDownloadsForSync(smartDownloads)).then(value=>{if(active){setUpdates(value);setUpdatesSyncError('')}}).catch(e=>{if(active)setUpdatesSyncError(e.message||'Could not update collection checks. Previous data is unchanged.')});
     return()=>{active=false};
   },[updatesAvailable,monitored]);
   useEffect(()=>{
@@ -743,6 +771,16 @@ function App() {
     if(experience||!notificationRoute)return;
     const next={page:'updates'};window.history.pushState(next,'','#updates');setRoute(next);setNotificationRoute(false);window.scrollTo({top:0,behavior:'instant'});
   },[experience,notificationRoute]);
+  useEffect(()=>{
+    if(!updatesAvailable)return;
+    const requestRoute=()=>{try{if(window.MokuBridge.takeOpenDownloads?.())setDownloadsRoute(true)}catch{}};
+    window.addEventListener('moku-open-downloads',requestRoute);requestRoute();
+    return()=>window.removeEventListener('moku-open-downloads',requestRoute);
+  },[updatesAvailable]);
+  useEffect(()=>{
+    if(experience||!downloadsRoute)return;
+    const next={page:'downloads'};window.history.pushState(next,'','#downloads');setRoute(next);setDownloadsRoute(false);window.scrollTo({top:0,behavior:'instant'});
+  },[experience,downloadsRoute]);
   useEffect(()=>{
     if(!experience&&updatesAvailable&&updates.watchedCount>0&&updates.alerts&&updates.notificationStatus==='permission'&&!updates.permissionAsked)
       try{window.MokuBridge.episodeNotificationPermission(true)}catch{}
@@ -838,6 +876,42 @@ function App() {
     setCollections(previous=>toggleFavourite(previous,identity(item)));
     setToast(exists?'Removed from Favourites':'Added to Favourites');
   };
+  const applySmartDownloads=next=>{
+    const wasEnabled=smartDownloads.enabled;
+    const normalized=saveSmartDownloads(window.localStorage,next);
+    setSmartDownloadsState(normalized);
+    if(!wasEnabled&&normalized.enabled&&updatesAvailable&&!updates.automatic)void updateAction(()=>setEpisodeAutomatic(true));
+    return normalized;
+  };
+  const changeSmartDownloads=patch=>applySmartDownloads({...smartDownloads,...patch});
+  useEffect(()=>{
+    const valid=new Set(collections.map(c=>c.id));
+    if(smartDownloads.collectionIds.some(id=>!valid.has(id)))applySmartDownloads({...smartDownloads,collectionIds:smartDownloads.collectionIds.filter(id=>valid.has(id))});
+  },[collections,smartDownloads]);
+  const ensureFollowedForSmart=item=>{
+    const key=identity(item);let followed=false;
+    if(!has(item))setLibrary(previous=>previous.some(x=>identity(x)===key)?previous:[savedSummary(item),...previous]);
+    if(!collections.some(c=>Array.isArray(c.items)&&c.items.includes(key))){setCollections(previous=>toggleFavourite(previous,key));followed=true;}
+    return followed;
+  };
+  const toggleSmartTitle=item=>{
+    const key=identity(item);const selection=smartTitleSelection(smartDownloads,key,collections);
+    const active=smartDownloads.enabled&&selection.selected;
+    if(active&&selection.direct){
+      applySmartDownloads({...smartDownloads,titleKeys:smartDownloads.titleKeys.filter(x=>x!==key)});
+      setToast(selection.collections.length?`Smart downloads are still on through ${selection.collections[0].name}`:'Smart downloads off for this series');
+      return;
+    }
+    if(active&&selection.collections.length){setToast(`Smart downloads are on through ${selection.collections[0].name}; turn that collection off in Library to stop them`);return;}
+    const followed=selection.collections.length?false:ensureFollowedForSmart(item);
+    applySmartDownloads({...smartDownloads,enabled:true,titleKeys:selection.direct||selection.collections.length?smartDownloads.titleKeys:[...smartDownloads.titleKeys,key]});
+    setToast(followed?'Smart downloads on · Added to Favourites so Mikozora can follow it':'Smart downloads on for this series');
+  };
+  const toggleSmartCollection=collection=>{
+    const on=smartDownloads.collectionIds.includes(collection.id);
+    applySmartDownloads({...smartDownloads,enabled:on?smartDownloads.enabled:true,collectionIds:on?smartDownloads.collectionIds.filter(id=>id!==collection.id):[...smartDownloads.collectionIds,collection.id]});
+    setToast(on?`Smart downloads off for ${collection.name}`:`Smart downloads on for ${collection.name}`);
+  };
   const saveTitleCollectionChoices=(item,selected)=>{
     if(selected.length)setLibrary(previous=>previous.some(x=>identity(x)===identity(item))?previous:[savedSummary(item),...previous]);
     setCollections(previous=>setTitleCollections(previous,identity(item),selected));
@@ -870,6 +944,13 @@ function App() {
   const submitSearch=value=>{setQuery(value);setBrowseSource('all');if(route.page!=='browse')go('browse');};
   const refresh=()=>{clearNetworkCache();setRefreshKey(x=>x+1);setToast('Refreshing your sources');};
   const remember=(item,episode)=>setHistory(prev=>[{item:{source:item.source,url:item.url,title:item.title,image:item.image,type:item.type,badge:item.badge,status:item.status,genres:item.genres,aired:item.aired,year:item.year,rating:item.rating,nsfw:item.nsfw},episode:{number:episode.number,url:episode.url,title:episode.title},time:Date.now()},...prev.filter(x=>!(identity(x.item)===identity(item)&&String(x.episode.number)===String(episode.number)))].slice(0,100));
+  const playOffline=download=>{
+    if(download?.item&&download?.episode?.url){
+      remember(download.item,download.episode);
+      setStoredProgress(prev=>recordWatch(prev,download.item,download.episode,[],Date.now()));
+    }
+    openDownload(download.id);
+  };
   const play=async(item,episode,options={})=>{
     const request=++playbackRequest.current;
     setBusy(`Finding servers for episode ${episode.number}...`);
@@ -954,7 +1035,7 @@ function App() {
   const resume=async entry=>{setBusy('Finding your episode...');try{const d=await getDetail(entry.item);const ep=d.episodes.find(e=>String(e.number)===String(entry.episode.number));if(!ep)throw new Error('Episode not found. Open the series or original source.');setBusy('');await play(d,ep);}catch(e){setBusy('');setToast(e.message||'Could not open this episode.')}};
   const clearHistory=()=>{if(window.confirm('Clear recently opened episodes from this device?')){setHistory([]);setStoredProgress([]);setToast('History cleared');}};
   const clearLibrary=()=>{if(window.confirm('Remove all saved titles from this device and their collection memberships? Your collections, downloads and folder files will remain.')){setLibrary([]);setCollections(previous=>previous.map(c=>({...c,items:[]})));setToast('Library cleared');}};
-  const queueEpisodes=(item,episodes)=>{if(!episodes.length)return;setDownloadModal({item,episodes});};
+  const queueEpisodes=(item,episodes)=>{if(!episodes.length)return;setDownloadModal({item,episodes,initialChoice:smartDownloads.presets[identity(item)]||null});};
   const submitDownload=async ({language,server,quality,subtitleMode='auto',subtitleTracks=[]})=>{
     if(!downloadModal)return;
     try{
@@ -962,6 +1043,7 @@ function App() {
       const summary={source:item.source,url:item.url,title:item.title,image:item.image,type:item.type};
       const episodes=downloadModal.episodes.map(ep=>({item:summary,episode:{url:ep.url,number:ep.number,title:ep.title,ids:ep.ids||''}}));
       const result=await enqueueDownloads(episodes,language,server,quality,subtitleMode,subtitleTracks);
+      if(result.added)applySmartDownloads(withDownloadPreset(smartDownloads,identity(item),{language,server,quality,subtitleMode,subtitleTracks}));
       setDownloadModal(null);setToast(result.added?`${result.added} episode${result.added===1?'':'s'} added to the queue`:'Already in your downloads');
       try{setDownloads(await getDownloads())}catch{} go('downloads');
     }catch(e){setToast(e.message||'Could not add episodes to the queue');}
@@ -994,13 +1076,13 @@ function App() {
   return <div className="app-shell"><SideNav page={route.page} go={go} unread={updates.unreadCount}/><div className="main-shell"><TopBar page={route.page} go={go} submitSearch={submitSearch} refresh={refresh} unread={updates.unreadCount}/>{pendingUpdate&&<UpdateBanner info={pendingUpdate} download={downloadAppUpdate} dismiss={dismissAppUpdate}/>}<main key={route.page==='detail'?identity(route.item):route.page}>
     {route.page==='home'&&<HomePage {...common} recent={history} refreshKey={refreshKey} hideNsfw={hideNsfw} continueItems={continueItems} resumeNext={resumeNext} removeContinue={removeContinue}/>}
     {route.page==='browse'&&<BrowsePage {...common} query={query} setQuery={setQuery} source={browseSource} setSource={setBrowseSource} refreshKey={refreshKey} hideNsfw={hideNsfw} openSettings={()=>go('settings')}/>}
-    {route.page==='detail'&&<DetailPage item={route.item} openEpisode={play} has={has} toggle={toggle} organize={item=>setCollectionDialog({kind:'title',item})} back={back} history={history} refreshKey={refreshKey} queueEpisodes={queueEpisodes} downloads={downloads} showDownloads={()=>go('downloads')} notify={setToast} hideNsfw={hideNsfw} openSettings={()=>go('settings')} watched={watchedUrlSet(progress,history,route.item)} onEpisodesReady={syncProgress} markWatched={markWatched}/>}
-    {route.page==='library'&&<LibraryPage {...common} items={library} collections={collections} activeCollection={activeCollection} setActiveCollection={setActiveCollection} onCreate={()=>setCollectionDialog({kind:'new'})} onRename={id=>setCollectionDialog({kind:'rename',id})} onDelete={removeCollection} onMembers={id=>setCollectionDialog({kind:'members',id})} onFavourite={favourite} unreadTitles={unreadTitles} progressByTitle={libraryProgress} hideNsfw={hideNsfw}/>}
+    {route.page==='detail'&&<DetailPage item={route.item} openEpisode={play} has={has} toggle={toggle} organize={item=>setCollectionDialog({kind:'title',item})} back={back} history={history} refreshKey={refreshKey} queueEpisodes={queueEpisodes} downloads={downloads} showDownloads={()=>go('downloads')} notify={setToast} hideNsfw={hideNsfw} openSettings={()=>go('settings')} watched={watchedUrlSet(progress,history,route.item)} onEpisodesReady={syncProgress} markWatched={markWatched} smartSelection={smartTitleSelection(smartDownloads,identity(route.item),collections)} smartEnabled={smartDownloads.enabled} toggleSmartDownload={toggleSmartTitle}/>}
+    {route.page==='library'&&<LibraryPage {...common} items={library} collections={collections} activeCollection={activeCollection} setActiveCollection={setActiveCollection} onCreate={()=>setCollectionDialog({kind:'new'})} onRename={id=>setCollectionDialog({kind:'rename',id})} onDelete={removeCollection} onMembers={id=>setCollectionDialog({kind:'members',id})} onFavourite={favourite} unreadTitles={unreadTitles} progressByTitle={libraryProgress} hideNsfw={hideNsfw} smartCollections={smartDownloads.collectionIds} onSmartCollection={toggleSmartCollection}/>}
     {route.page==='updates'&&<UpdatesPage state={updates} available={updatesAvailable} syncError={updatesSyncError} actionError={updatesActionError} check={checkNow} readAll={readAllUpdates} openUpdate={viewUpdate} openLibrary={()=>go('library')} openSettings={()=>go('settings')}/>}
-    {route.page==='downloads'&&<DownloadsPage items={downloads} loading={downloadsLoading} remove={deleteDownload} retry={retryDownload} change={d=>setDownloadModal({item:d.item,episodes:[d.episode],language:d.language||'english',serverChoice:d.serverChoice||'auto',subtitleMode:d.subtitleMode||'auto',subtitleSelection:Array.isArray(d.subtitleSelection)?d.subtitleSelection:[]})} browse={browse} folder={folder} saveCopy={saveCopy} openSettings={()=>go('settings')}/>}
+    {route.page==='downloads'&&<DownloadsPage items={downloads} loading={downloadsLoading} remove={deleteDownload} retry={retryDownload} change={d=>setDownloadModal({item:d.item,episodes:[d.episode],language:d.language||'english',serverChoice:d.serverChoice||'auto',subtitleMode:d.subtitleMode||'auto',subtitleSelection:Array.isArray(d.subtitleSelection)?d.subtitleSelection:[]})} browse={browse} folder={folder} saveCopy={saveCopy} openSettings={()=>go('settings')} playOffline={playOffline}/>}
     {route.page==='history'&&<HistoryPage items={history.filter(entry=>!hideNsfw||!isNsfw(entry.item))} resume={resume} open={open} clear={clearHistory} browse={browse}/>}
     {route.page==='sources'&&<SourcesPage browse={browse}/>}
-    {route.page==='settings'&&<SettingsPage library={library} history={history} clearLibrary={clearLibrary} clearHistory={clearHistory} openLicenses={()=>setLicenses(true)} openReleaseNotes={()=>setExperience({mode:'update',manual:true})} folder={folder} chooseFolder={chooseFolder} usePrivate={usePrivate} updates={updates} updatesAvailable={updatesAvailable} changeAutomatic={changeAutomatic} changeAlerts={changeAlerts} notificationPermission={notificationPermission} appearance={appearance} changeAppearance={changeAppearance} contentPrefs={contentPrefs} changeContentPrefs={changeContentPrefs} appUpdate={appUpdate} pendingUpdate={pendingUpdate} updateStatus={updateStatus} checkUpdate={checkAppUpdate} changeAutoCheck={changeAutoCheck} downloadUpdate={downloadAppUpdate} exportBackup={exportBackup} importBackup={importBackup}/>}
+    {route.page==='settings'&&<SettingsPage library={library} history={history} clearLibrary={clearLibrary} clearHistory={clearHistory} openLicenses={()=>setLicenses(true)} openReleaseNotes={()=>setExperience({mode:'update',manual:true})} folder={folder} chooseFolder={chooseFolder} usePrivate={usePrivate} updates={updates} updatesAvailable={updatesAvailable} changeAutomatic={changeAutomatic} changeAlerts={changeAlerts} notificationPermission={notificationPermission} appearance={appearance} changeAppearance={changeAppearance} contentPrefs={contentPrefs} changeContentPrefs={changeContentPrefs} appUpdate={appUpdate} pendingUpdate={pendingUpdate} updateStatus={updateStatus} checkUpdate={checkAppUpdate} changeAutoCheck={changeAutoCheck} downloadUpdate={downloadAppUpdate} exportBackup={exportBackup} importBackup={importBackup} smartDownloads={smartDownloads} changeSmartDownloads={changeSmartDownloads}/>}
   </main></div><BottomNav page={route.page} go={go}/>{collectionDialog?.kind==='new'&&<CollectionNameDialog close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='rename'&&<CollectionNameDialog editing value={collections.find(c=>c.id===collectionDialog.id)?.name||''} close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='title'&&<TitleCollectionsDialog item={collectionDialog.item} collections={collections} close={()=>setCollectionDialog(null)} submit={selected=>saveTitleCollectionChoices(collectionDialog.item,selected)}/>}{collectionDialog?.kind==='members'&&collections.find(c=>c.id===collectionDialog.id)&&<CollectionMembersDialog collection={collections.find(c=>c.id===collectionDialog.id)} items={hideNsfw?library.filter(item=>!isNsfw(item)):library} close={()=>setCollectionDialog(null)} submit={keys=>saveCollectionMembers(collectionDialog.id,keys)}/>} {offlinePlayer&&<OfflinePlayerModal entry={offlinePlayer} close={()=>setOfflinePlayer(null)}/>}{player&&<PlayerModal key={player.episode.url} player={player} close={()=>setPlayer(null)} onEpisode={episode=>play(player.item,episode,{playlist:player.episodes})} watched={watchedUrlSet(progress,history,player.item)}/>}{licenses&&<LicenseModal close={()=>setLicenses(false)}/>}{downloadModal&&<DownloadModal request={downloadModal} close={()=>setDownloadModal(null)} submit={submitDownload}/>}{busy&&<div className="busy-overlay"><div><LoaderCircle size={20} className="spin"/><span>{busy}</span></div></div>}{toast&&<div className="toast"><Check size={16}/>{toast}</div>}</div>;
 }
 

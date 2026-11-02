@@ -1,18 +1,25 @@
 package app.moku.anime;
 
+import android.Manifest;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import androidx.annotation.NonNull;
 import androidx.annotation.OptIn;
 import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
+import androidx.core.content.ContextCompat;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.C;
 import androidx.media3.common.Format;
@@ -47,7 +54,21 @@ import java.util.concurrent.atomic.AtomicReference;
 
 @OptIn(markerClass = UnstableApi.class)
 public final class DownloadWorker extends Worker {
+    static final String EXTRA_OPEN_DOWNLOADS="open_downloads";
+    private static final String READY_CHANNEL="moku_downloads_ready";
+    private static final int SMART_METERED_STOP_REASON=731;
     public DownloadWorker(@NonNull Context context,@NonNull WorkerParameters params) { super(context,params); }
+    @Override public void onStopped() {
+        try {
+            Context c=getApplicationContext();String id=getInputData().getString("id");
+            if(id!=null&&id.matches("[a-f0-9]{32}")) {
+                JSONObject meta=OfflineStore.get(c,id);
+                Download download=OfflineStore.getDownload(c,id);
+                if(smartWifiOnly(meta)&&(download==null||(download.state!=Download.STATE_COMPLETED&&download.state!=Download.STATE_FAILED&&download.state!=Download.STATE_REMOVING)))OfflineStore.manager(c).setStopReason(id,SMART_METERED_STOP_REASON);
+            }
+        }catch(Exception ignored){}
+        super.onStopped();
+    }
     @NonNull @Override public Result doWork() {
         Context c=getApplicationContext();String id=getInputData().getString("id");
         if(id==null || !id.matches("[a-f0-9]{32}"))return Result.failure();
@@ -57,15 +78,17 @@ public final class DownloadWorker extends Worker {
             setForegroundAsync(foregroundInfo(meta,id)).get();
             Download prior=OfflineStore.getDownload(c,id);
             if(prior!=null && prior.state==Download.STATE_COMPLETED) {
-                OfflineStore.update(c,id,"status","completed");ExportStore.maybeAutoExport(c,id);return Result.success();
+                OfflineStore.update(c,id,"status","completed");ExportStore.maybeAutoExport(c,id);notifyReady(c,id);return Result.success();
             }
             if(prior!=null && prior.state!=Download.STATE_FAILED && prior.state!=Download.STATE_REMOVING) {
+                applySmartNetworkGate(c,id,meta);
                 DownloadService.sendResumeDownloads(c,MokuDownloadService.class,true);
                 return waitForDownload(c,id,false);
             }
             OfflineStore.update(c,id,"status","resolving");
             OfflineStore.update(c,id,"error","");
             meta=OfflineStore.get(c,id);if(meta==null || isStopped())return Result.success();
+            if(smartWifiOnly(meta)&&!isUnmetered(c)){OfflineStore.update(c,id,"status","queued");return Result.retry();}
             String server=meta.optString("serverChoice","auto"),quality=meta.optString("qualityChoice","best");
             JSONObject item=meta.getJSONObject("item");String source=item.optString("source");
             String language=SubtitlePolicy.languageFor(source,meta.optString("language","english"));
@@ -102,6 +125,8 @@ public final class DownloadWorker extends Worker {
             }
             final String summary=description;
             if(!OfflineStore.change(c,id,current->{current.put("language",language);current.put("tracks",savedTracks);current.put("host",resolved.host);current.put("serverLabel",resolved.serverLabel);current.put("subtitleDescription",summary);}))return Result.success();
+            meta=OfflineStore.get(c,id);if(meta==null || isStopped())return Result.success();
+            if(smartWifiOnly(meta)&&!isUnmetered(c)){OfflineStore.update(c,id,"status","queued");return Result.retry();}
             Prepared prepared=prepare(c,id,resolved,language,quality,englishOnly,subtitleSelection);
             if(isStopped()||OfflineStore.get(c,id)==null)return Result.success();
             if(subtitleSelection.custom()&&savedTracks.length()==0&&!prepared.subtitleSelected)
@@ -118,7 +143,10 @@ public final class DownloadWorker extends Worker {
                 OfflineStore.update(c,id,"subtitleDescription",hlsDescription);
             }
             OfflineStore.update(c,id,"qualityLabel",prepared.qualityLabel);
+            meta=OfflineStore.get(c,id);if(meta==null || isStopped())return Result.success();
+            if(smartWifiOnly(meta)&&!isUnmetered(c)){OfflineStore.update(c,id,"status","queued");return Result.retry();}
             DownloadService.sendAddDownload(c,MokuDownloadService.class,prepared.request,true);
+            applySmartNetworkGate(c,id,meta);
             if(OfflineStore.get(c,id)==null) {
                 DownloadService.sendRemoveDownload(c,MokuDownloadService.class,id,true);
                 return Result.success();
@@ -133,6 +161,55 @@ public final class DownloadWorker extends Worker {
             return Result.success();
         }
     }
+    private static boolean smartWifiOnly(JSONObject meta) {
+        return meta!=null&&meta.optBoolean("autoDownload",false)&&meta.optBoolean("smartWifiOnly",false);
+    }
+    private static boolean isUnmetered(Context c) {
+        try {
+            ConnectivityManager manager=(ConnectivityManager)c.getSystemService(Context.CONNECTIVITY_SERVICE);
+            if(manager==null)return false;
+            Network network=manager.getActiveNetwork();if(network==null)return false;
+            NetworkCapabilities capabilities=manager.getNetworkCapabilities(network);
+            return capabilities!=null&&capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED);
+        }catch(Exception ignored){return false;}
+    }
+    private static boolean applySmartNetworkGate(Context c,String id,JSONObject meta) {
+        if(!smartWifiOnly(meta))return true;
+        boolean unmetered=isUnmetered(c);
+        try {
+            Download download=OfflineStore.getDownload(c,id);
+            if(download==null||(download.state!=Download.STATE_COMPLETED&&download.state!=Download.STATE_FAILED&&download.state!=Download.STATE_REMOVING))
+                OfflineStore.manager(c).setStopReason(id,unmetered?Download.STOP_REASON_NONE:SMART_METERED_STOP_REASON);
+        }catch(Exception ignored){}
+        return unmetered;
+    }
+    static void notifyReady(Context c,String id) {
+        try {
+            JSONObject meta=OfflineStore.claimReadyNotification(c,id);if(meta==null)return;
+            if(Build.VERSION.SDK_INT>=33&&ContextCompat.checkSelfPermission(c,Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)return;
+            if(!NotificationManagerCompat.from(c).areNotificationsEnabled())return;
+            if(Build.VERSION.SDK_INT>=26) {
+                NotificationManager manager=(NotificationManager)c.getSystemService(Context.NOTIFICATION_SERVICE);
+                if(manager!=null)manager.createNotificationChannel(new NotificationChannel(READY_CHANNEL,"Downloads ready",NotificationManager.IMPORTANCE_DEFAULT));
+            }
+            JSONObject item=meta.optJSONObject("item"),episode=meta.optJSONObject("episode");
+            String series=item==null?"Your series":item.optString("title","Your series");
+            String number=episode==null?"":episode.optString("number");
+            String episodeText=number.isEmpty()?(episode==null?"New episode":episode.optString("title","New episode")):"Episode "+number;
+            Intent intent=new Intent(c,MainActivity.class).putExtra(EXTRA_OPEN_DOWNLOADS,true)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            int notificationId=12000+(id.hashCode()&0x3fff);
+            PendingIntent open=PendingIntent.getActivity(c,notificationId,intent,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
+            Notification notification=new NotificationCompat.Builder(c,READY_CHANNEL)
+                .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                .setContentTitle("Ready to watch offline")
+                .setContentText(series+" · "+episodeText)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(series+" · "+episodeText))
+                .setContentIntent(open).setAutoCancel(true).setCategory(NotificationCompat.CATEGORY_STATUS)
+                .setColor(0xffbfe88d).build();
+            NotificationManagerCompat.from(c).notify(notificationId,notification);
+        }catch(Exception ignored){ /* A ready alert must never change a completed download. */ }
+    }
     private Result waitForDownload(Context c,String id,boolean justSubmitted) throws Exception {
         // A previous FAILED record can remain visible briefly while Media3 processes a retry.
         long staleFailureDeadline=justSubmitted?System.currentTimeMillis()+12000:0;
@@ -141,8 +218,9 @@ public final class DownloadWorker extends Worker {
         while(!isStopped() && OfflineStore.get(c,id)!=null) {
             JSONObject current=OfflineStore.get(c,id);
             if(current!=null&&"folder".equals(current.optString("storageMode"))&&current.optBoolean("exportVerified",false))return Result.success();
+            applySmartNetworkGate(c,id,current);
             Download d=OfflineStore.getDownload(c,id);
-            if(d!=null && d.state==Download.STATE_COMPLETED) { OfflineStore.update(c,id,"status","completed");ExportStore.maybeAutoExport(c,id);return Result.success(); }
+            if(d!=null && d.state==Download.STATE_COMPLETED) { OfflineStore.update(c,id,"status","completed");ExportStore.maybeAutoExport(c,id);notifyReady(c,id);return Result.success(); }
             if(d!=null && d.state==Download.STATE_FAILED && System.currentTimeMillis()>=staleFailureDeadline) {
                 OfflineStore.update(c,id,"status","failed");
                 OfflineStore.update(c,id,"error","The host or network interrupted the download. Try again.");

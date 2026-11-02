@@ -5,7 +5,7 @@ import { mkdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, extname } from 'node:path';
 import { chromium } from 'playwright';
-import { APP_VERSION, EXPERIENCE_KEY } from '../src/releases.js';
+import { APP_VERSION, EXPERIENCE_KEY, RELEASES } from '../src/releases.js';
 
 const ROOT=resolve('dist');
 const SCREENSHOTS=resolve(process.env.MOKU_TEST_SCREENSHOTS || `${tmpdir()}/moku-startup-ui`);
@@ -45,13 +45,22 @@ async function setup({seed={},viewport={width:320,height:568},mobile=true,root=R
 const go=page=>page.goto('https://app.moku.local/index.html',{waitUntil:'domcontentloaded'});
 const record=page=>page.evaluate(key=>JSON.parse(localStorage.getItem(key)),EXPERIENCE_KEY);
 const noOverflow=async page=>assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'no horizontal overflow');
+async function assertLatestReleaseOnly(page){
+ assert.equal(await page.locator('.release-group').count(),1,'only the latest release group is shown');
+ assert.ok(await page.getByText(`v${APP_VERSION}`,{exact:true}).isVisible(),'latest release version is shown');
+ assert.ok(await page.getByText(RELEASES[0].entries[0].title,{exact:true}).isVisible(),'latest release entry is shown');
+ if(RELEASES[1]){
+  assert.equal(await page.getByText(`v${RELEASES[1].version}`,{exact:true}).count(),0,'previous release version is hidden');
+  assert.equal(await page.getByText(RELEASES[1].entries[0].title,{exact:true}).count(),0,'previous release entries are hidden');
+ }
+}
 try{
  // New installation: welcome is not marked seen until the user actually leaves it.
  {
   const {context,page,errors}=await setup();await go(page);
   await page.getByRole('heading',{name:/Welcome to your space/i}).waitFor();
   assert.ok(await page.getByRole('heading',{name:/What’s new/i}).isVisible());
-  assert.ok(await page.getByText('A little welcome',{exact:true}).isVisible());
+  await assertLatestReleaseOnly(page);
   assert.equal((await record(page)).status,'pending');
   assert.equal(await page.evaluate(()=>window.__sourceRequests.length),0,'intro is available before source requests');
   await noOverflow(page);
@@ -77,6 +86,7 @@ try{
   const notes=page.locator('.setting-row').filter({hasText:'What’s new'});
   await notes.getByRole('button',{name:'View'}).click();
   await page.getByRole('button',{name:'Back to settings'}).waitFor();
+  await assertLatestReleaseOnly(page);
   assert.equal((await record(page)).status,'seen');
   await page.getByRole('button',{name:'Back to settings'}).click();
   assert.ok(await page.getByRole('heading',{name:'Your space, your way.'}).isVisible());
@@ -87,6 +97,7 @@ try{
   const {context,page,errors}=await setup({seed:legacy});await go(page);
   await page.getByRole('heading',{name:/Welcome back/i}).waitFor();
   assert.equal((await record(page)).mode,'update');
+  await assertLatestReleaseOnly(page);
   const releaseHeading=await page.locator('#release-title').boundingBox();
   assert.ok(releaseHeading.y<568-95,'update notes are visible above the fixed action at startup');
   await page.screenshot({path:resolve(SCREENSHOTS,'update-mobile.png')});await noOverflow(page);
@@ -128,5 +139,5 @@ try{
   assert.equal(await page.locator('.intro-screen').count(),0);assert.deepEqual(errors,[]);await context.close();
   console.log('PASS actual previous APK UI -> current UI: same origin/localStorage, preserved data and one update screen.');
  }
- console.log('PASS startup UI: first launch, interrupted intro, legacy upgrade, once-per-version, Android back, Settings replay, data preservation, mobile CTA and desktop.');
+ console.log('PASS startup UI: first launch, interrupted intro, legacy upgrade, latest-release-only notes, once-per-version, Android back, Settings replay, data preservation, mobile CTA and desktop.');
 } finally {await browser.close();}

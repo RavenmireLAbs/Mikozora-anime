@@ -1,13 +1,24 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
-// Append a new entry at the front for each release; older entries remain available.
-export const APP_VERSION = '0.24.5';
+// Append a new entry at the front for each release; the app shows only that newest entry.
+export const APP_VERSION = '0.25.0';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.24.5',
+    version: '0.25.0',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Smart Downloads for series and collections', description: 'Turn on Smart Downloads for an individual series or a whole collection, and Mikozora automatically queues genuinely new episodes when its episode checker finds them. The first check still establishes a quiet starting point, so turning it on never downloads the existing backlog. Android can check and download in the background; on Windows, keep Mikozora open or resting in the system tray.' },
+      { title: 'Your download choices are remembered', description: 'Each series reuses the language, server, quality and separate subtitle tracks from the last manual download Mikozora successfully queued for it, and the download dialog preselects those choices when they are still offered. If you have never downloaded that series manually, Smart Downloads uses Automatic and Best.' },
+      { title: 'Storage and mobile-data safeguards', description: 'Choose how many unwatched automatically downloaded episodes Mikozora may keep waiting per series; newer episodes wait until you watch or mark one watched. Android can also restrict Smart Downloads to Wi‑Fi or another unmetered connection. Windows cannot reliably tell whether a connection is metered, so it does not pretend to offer that switch.' },
+      { title: 'Ready-to-watch alerts', description: 'Smart downloads are labelled in Downloads, and Mikozora can notify you once when one is ready offline; tapping the notification opens Downloads. Playing a downloaded episode now counts it as watched, matching online playback and freeing space under the Smart Download limit.' },
+      { title: 'What’s new stays focused', description: 'After a first install or an update, Mikozora now shows only the newest version’s changes instead of repeating the older release history. Settings → What’s new uses the same latest-only view.' },
+    ],
+  },
+  {
+    version: '0.24.5',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Windows downloads work from image-disguised servers', description: 'Some servers, including HD-1, hide each video segment behind a tiny image. Android sees through that disguise, but the Windows converter treated the combined download as a 1×1 picture and stopped with “Could not convert this downloaded stream to MP4”. Mikozora now removes the image disguise from every segment before the episode is combined and converted. Retry an episode that failed this way and the parts already on your computer are cleaned and reused instead of downloading again. Android is unchanged.' },
     ],

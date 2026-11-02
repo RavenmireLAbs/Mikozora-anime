@@ -13,6 +13,81 @@ import { matchesSource } from './allowlist.js';
 export const EPISODE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_TITLES = 2000;
 const MAX_EVENTS = 500;
+const MAX_WATCHED_EPISODES = 5000;
+const MAX_SUBTITLE_TRACKS = 60;
+const SMART_PENDING_STATUSES = new Set(['pending', 'pendingCap']);
+const SMART_STATUSES = new Set(['pending', 'pendingCap', 'queued', 'existing', 'watched', 'skipped', 'failed']);
+const SERVER_ID = /^(?:auto|(?:sogo|suge|anikoto|rulz|waves|bash|xin|narul|stream|world)-[a-z0-9-]{1,90})$/;
+const QUALITY_ID = /^(?:best|v:[0-9]{2,5}x[0-9]{2,5}|f:[0-9]{3,4})$/;
+const SUBTITLE_TRACK_ID = /^s:[a-f0-9]{32}$/;
+
+function cleanText(value, max) {
+  return String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+function sameJson(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+export function normalizeSmartSettings(raw) {
+  const value = raw && typeof raw === 'object' ? raw : {};
+  const cap = Math.floor(Number(value.maxUnwatchedPerSeries));
+  return {
+    enabled: value.enabled === true,
+    wifiOnly: value.wifiOnly !== false,
+    maxUnwatchedPerSeries: Number.isFinite(cap) ? Math.max(1, Math.min(10, cap)) : 3,
+    notifyWhenReady: value.notifyWhenReady !== false,
+  };
+}
+
+export function sanitizeDownloadPreset(raw) {
+  const value = raw && typeof raw === 'object' ? raw : {};
+  const server = cleanText(value.server, 120);
+  const quality = cleanText(value.quality, 24);
+  let subtitleMode = ['auto', 'custom', 'none'].includes(value.subtitleMode) ? value.subtitleMode : 'auto';
+  let subtitleTracks = [];
+  const safeServer = SERVER_ID.test(server) ? server : 'auto';
+  if (subtitleMode === 'custom') {
+    if (safeServer === 'auto' || !Array.isArray(value.subtitleTracks)) {
+      subtitleMode = 'auto';
+    } else {
+      const seen = new Set();
+      for (const rawTrack of value.subtitleTracks) {
+        const id = cleanText(rawTrack?.id, 40);
+        const label = cleanText(rawTrack?.label, 160);
+        if (!SUBTITLE_TRACK_ID.test(id) || !label || seen.has(id)) continue;
+        seen.add(id);
+        subtitleTracks.push({ id, label, language: cleanText(rawTrack?.language, 35) || 'und' });
+        if (subtitleTracks.length >= MAX_SUBTITLE_TRACKS) break;
+      }
+      if (!subtitleTracks.length) subtitleMode = 'auto';
+    }
+  }
+  return {
+    language: value.language === 'indonesian' ? 'indonesian' : 'english',
+    server: safeServer,
+    quality: QUALITY_ID.test(quality) ? quality : 'best',
+    subtitleMode,
+    subtitleTracks,
+  };
+}
+
+function cleanWatchedEpisodes(raw, source) {
+  const seen = new Set();
+  const result = [];
+  for (const value of Array.isArray(raw) ? raw : []) {
+    const url = cleanText(value, 2500);
+    if (!url || seen.has(url) || !matchesSource(source, url)) continue;
+    seen.add(url);
+    result.push(url);
+    if (result.length >= MAX_WATCHED_EPISODES) break;
+  }
+  return result;
+}
+
+export function isSmartPending(event) {
+  return SMART_PENDING_STATUSES.has(event?.smartDownloadStatus);
+}
 
 export function digest(input) {
   return createHash('sha256').update(String(input), 'utf8').digest('hex');
@@ -40,7 +115,7 @@ export function applyEpisodes(track, episodes, now) {
         id: digest(`${titleId}\n${ep.key}`),
         titleId,
         item: JSON.parse(JSON.stringify(item)),
-        episode: { number: ep.number, title: ep.title, url: ep.url },
+        episode: { number: ep.number, title: ep.title, url: ep.url, ids: cleanText(ep.ids, 1000) },
         discoveredAt: now,
         read: false,
       });
@@ -70,7 +145,7 @@ function safeError(error) {
 }
 
 function freshDb() {
-  return { titles: {}, events: [], automatic: true, alerts: true };
+  return { titles: {}, events: [], automatic: true, alerts: true, smartDownloads: normalizeSmartSettings(null) };
 }
 
 export class EpisodeStore {
@@ -93,6 +168,15 @@ export class EpisodeStore {
       if (parsed && typeof parsed === 'object'
         && parsed.titles && typeof parsed.titles === 'object' && Array.isArray(parsed.events)) {
         this.db = { ...freshDb(), ...parsed };
+        this.db.smartDownloads = normalizeSmartSettings(this.db.smartDownloads);
+        for (const track of Object.values(this.db.titles)) {
+          if (!track || typeof track !== 'object') continue;
+          track.smartDownload = track.smartDownload === true;
+          track.downloadPreset = sanitizeDownloadPreset(track.downloadPreset);
+          track.watchedEpisodes = track.smartDownload
+            ? cleanWatchedEpisodes(track.watchedEpisodes, track.item?.source)
+            : [];
+        }
       }
     } catch { /* first run or unreadable snapshot: rebuild from scratch */ }
     return this;
@@ -142,12 +226,17 @@ export class EpisodeStore {
   async sync(payload) {
     await this.ready;
     if (payload == null || String(payload).length > 6_000_000) throw new Error('Collection snapshot is too large');
-    const input = JSON.parse(String(payload));
+    const parsed = JSON.parse(String(payload));
+    const legacy = Array.isArray(parsed);
+    const input = legacy ? parsed : parsed?.titles;
     if (!Array.isArray(input) || input.length > MAX_TITLES) throw new Error('Too many collection titles to check');
+    const nextSmartSettings = legacy
+      ? normalizeSmartSettings(this.db.smartDownloads)
+      : normalizeSmartSettings(parsed?.smartDownloads);
     const old = this.db.titles;
     const next = {};
     let added = false;
-    let changed = false;
+    let changed = !sameJson(nextSmartSettings, normalizeSmartSettings(this.db.smartDownloads));
     const ids = new Set();
     for (const x of input) {
       const source = this.bounded(x, 'source', 30);
@@ -169,10 +258,25 @@ export class EpisodeStore {
         track = { id, token: this.randomUUID(), baseline: false, known: {}, maxNumber: -1, lastAttempt: 0 };
         added = true;
         changed = true;
-      } else if (JSON.stringify(item) !== JSON.stringify(track.item)) {
+      } else if (!sameJson(item, track.item)) {
+        changed = true;
+      }
+      const smartDownload = legacy ? track.smartDownload === true : x?.smartDownload === true;
+      const downloadPreset = legacy && track.downloadPreset
+        ? sanitizeDownloadPreset(track.downloadPreset)
+        : sanitizeDownloadPreset(x?.downloadPreset);
+      const watchedEpisodes = smartDownload
+        ? (legacy ? cleanWatchedEpisodes(track.watchedEpisodes, source) : cleanWatchedEpisodes(x?.watchedEpisodes, source))
+        : [];
+      if (track.smartDownload !== smartDownload
+        || !sameJson(downloadPreset, sanitizeDownloadPreset(track.downloadPreset))
+        || !sameJson(watchedEpisodes, Array.isArray(track.watchedEpisodes) ? track.watchedEpisodes : [])) {
         changed = true;
       }
       track.item = item;
+      track.smartDownload = smartDownload;
+      track.downloadPreset = downloadPreset;
+      track.watchedEpisodes = watchedEpisodes;
       next[id] = track;
     }
     if (Object.keys(old).length !== Object.keys(next).length) changed = true;
@@ -180,11 +284,25 @@ export class EpisodeStore {
     // Its old alerts are also removed; downloads and library data are separate.
     const kept = [];
     for (const e of this.db.events) {
-      if (e && ids.has(e.titleId)) kept.push(e);
-      else changed = true;
+      if (e && ids.has(e.titleId)) {
+        if (SMART_PENDING_STATUSES.has(e.smartDownloadStatus)
+          && (!nextSmartSettings.enabled || !next[e.titleId]?.smartDownload)) {
+          e.smartDownloadStatus = 'skipped';
+          changed = true;
+        } else if (!legacy && e.smartDownloadStatus === 'failed'
+          && nextSmartSettings.enabled && next[e.titleId]?.smartDownload) {
+          // A foreground sync is a natural, bounded retry point after the
+          // user watches an episode or changes a series/cloud setting.
+          e.smartDownloadStatus = 'pending';
+          delete e.smartDownloadError;
+          changed = true;
+        }
+        kept.push(e);
+      } else changed = true;
     }
     this.db.titles = next;
     this.db.events = kept;
+    this.db.smartDownloads = nextSmartSettings;
     if (changed) await this.markDirty('now');
     return { added, changed, watchedCount: Object.keys(next).length };
   }
@@ -192,6 +310,45 @@ export class EpisodeStore {
   automatic() { return this.db.automatic !== false; }
   alerts() { return this.db.alerts !== false; }
   count() { return Object.keys(this.db.titles).length; }
+
+  smartSettings() {
+    return normalizeSmartSettings(this.db.smartDownloads);
+  }
+
+  track(id) {
+    const track = this.db.titles[id];
+    return track ? JSON.parse(JSON.stringify(track)) : null;
+  }
+
+  pendingSmartDownloads() {
+    const numeric = (event) => {
+      const value = Number.parseFloat(event?.episode?.number);
+      return Number.isFinite(value) ? value : Number.MAX_SAFE_INTEGER;
+    };
+    return this.db.events
+      .filter((event) => event && isSmartPending(event) && this.db.titles[event.titleId])
+      .sort((a, b) => (Number(a.discoveredAt) || 0) - (Number(b.discoveredAt) || 0)
+        || String(a.titleId).localeCompare(String(b.titleId))
+        || numeric(a) - numeric(b)
+        || String(a.episode?.url || '').localeCompare(String(b.episode?.url || '')))
+      .map((event) => JSON.parse(JSON.stringify(event)));
+  }
+
+  async markSmartDownload(id, status, details = {}) {
+    await this.ready;
+    if (!SMART_STATUSES.has(status)) return false;
+    const event = this.db.events.find((entry) => entry?.id === id);
+    if (!event) return false;
+    event.smartDownloadStatus = status;
+    event.smartDownloadUpdatedAt = Number(details.now) || this.now();
+    if (status === 'queued') delete event.smartDownloadError;
+    if (status === 'failed') {
+      event.smartDownloadAttempts = (Number(event.smartDownloadAttempts) || 0) + 1;
+      event.smartDownloadError = cleanText(details.error || 'Could not queue this episode automatically', 220);
+    }
+    await this.markDirty('now');
+    return true;
+  }
 
   async setAutomatic(value) {
     await this.ready;
@@ -256,17 +413,28 @@ export class EpisodeStore {
     return out;
   }
 
-  async success(title, episodes, now) {
+  async successEvents(title, episodes, now) {
     await this.ready;
     const track = this.db.titles[title.id];
-    if (!track || track.token !== title.token) return 0;
+    if (!track || track.token !== title.token) return [];
     const found = applyEpisodes(track, episodes, now);
+    const settings = this.smartSettings();
+    if (settings.enabled && track.smartDownload) {
+      for (const event of found) {
+        event.smartDownloadStatus = 'pending';
+        event.smartDownloadUpdatedAt = now;
+      }
+    }
+    const inserted = [];
     const nextEvents = [];
     const seen = new Set();
     for (const e of found) {
       if (seen.has(e.id)) continue;
       seen.add(e.id);
-      if (nextEvents.length < MAX_EVENTS) nextEvents.push(e);
+      if (nextEvents.length < MAX_EVENTS) {
+        nextEvents.push(e);
+        inserted.push(e);
+      }
     }
     for (const e of this.db.events) {
       if (nextEvents.length >= MAX_EVENTS) break;
@@ -276,7 +444,11 @@ export class EpisodeStore {
     }
     this.db.events = nextEvents;
     await this.markDirty('now');
-    return found.length;
+    return JSON.parse(JSON.stringify(inserted));
+  }
+
+  async success(title, episodes, now) {
+    return (await this.successEvents(title, episodes, now)).length;
   }
 
   async failure(title, error, now) {
@@ -316,6 +488,7 @@ export class EpisodeStore {
     return {
       automatic: this.automatic(),
       alerts: this.alerts(),
+      smartDownloads: this.smartSettings(),
       watchedCount: titles.length,
       initializedCount: initialized,
       unreadCount: unread,

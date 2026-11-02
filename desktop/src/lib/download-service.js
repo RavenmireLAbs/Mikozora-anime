@@ -133,6 +133,7 @@ export class DownloadService {
     now = Date.now,
     randomUUID = nodeRandomUUID,
     maxConcurrentDownloads = 2,
+    onDownloadReady = null,
   } = {}) {
     if (!baseDir) throw new Error('A downloads folder is required');
     this.baseDir = baseDir;
@@ -149,6 +150,7 @@ export class DownloadService {
     this.now = now;
     this.randomUUID = randomUUID;
     this.maxConcurrentDownloads = Math.max(1, maxConcurrentDownloads);
+    this.onDownloadReady = typeof onDownloadReady === 'function' ? onDownloadReady : null;
 
     this.records = new Map();
     this.activeDownloads = new Map();
@@ -317,6 +319,22 @@ export class DownloadService {
     return record ? this.publicRecord(record) : null;
   }
 
+  async claimReadyNotification(id) {
+    await this.ready;
+    const record = this.records.get(String(id || ''));
+    if (!record || record.autoDownload !== true || record.smartNotify === false || record.readyNotifiedAt) return null;
+    record.readyNotifiedAt = this.now();
+    await this.markDirty('now');
+    return this.records.has(record.id) ? this.publicRecord(record) : null;
+  }
+
+  async notifyDownloadReady(id) {
+    const record = await this.claimReadyNotification(id);
+    if (!record || !this.onDownloadReady) return false;
+    try { await this.onDownloadReady(record); } catch { /* Notification failure never changes download state. */ }
+    return true;
+  }
+
   cleanSelectionPair(pair, server) {
     const item = pair?.item;
     const episode = pair?.episode;
@@ -340,7 +358,7 @@ export class DownloadService {
     return { item: cleanItem, episode: cleanEpisode, source };
   }
 
-  async enqueue(rawPayload) {
+  async enqueue(rawPayload, internalOptions = {}) {
     await this.ready;
     if (typeof rawPayload === 'string' && rawPayload.length > 350000) throw new Error('Selection is too large');
     const input = typeof rawPayload === 'string' ? JSON.parse(rawPayload || '{}') : rawPayload;
@@ -355,6 +373,17 @@ export class DownloadService {
     validateSelection(server, quality);
     if (server === 'auto' && quality !== 'best') throw new Error('Choose a server before selecting a specific quality');
     const subtitleSelection = normalizeSubtitleSelection(input.subtitleMode, input.subtitleTracks, server);
+    const smart = internalOptions?.autoDownload === true ? {
+      autoDownload: true,
+      smartWifiOnly: internalOptions.wifiOnly === true,
+      smartNotify: internalOptions.notifyWhenReady !== false,
+      readyNotifiedAt: 0,
+    } : {
+      autoDownload: false,
+      smartWifiOnly: false,
+      smartNotify: false,
+      readyNotifiedAt: 0,
+    };
 
     let added = 0;
     let skipped = 0;
@@ -379,6 +408,7 @@ export class DownloadService {
         subtitleMode: subtitleSelection.mode,
         subtitleSelection: subtitleSelection.tracks,
         preferredSubtitleLanguage: subtitleSelection.tracks[0]?.language || '',
+        ...smart,
         status: 'queued',
         error: '',
         subtitleDescription: 'Preparing subtitles',
@@ -397,6 +427,17 @@ export class DownloadService {
       this.scheduleDownloads();
     }
     return { added, skipped };
+  }
+
+  async enqueueSmart({ item, episode, preset = {}, wifiOnly = false, notifyWhenReady = true } = {}) {
+    return this.enqueue({
+      episodes: [{ item, episode }],
+      language: preset.language || 'english',
+      server: preset.server || 'auto',
+      quality: preset.quality || 'best',
+      subtitleMode: preset.subtitleMode || 'auto',
+      subtitleTracks: Array.isArray(preset.subtitleTracks) ? preset.subtitleTracks : [],
+    }, { autoDownload: true, wifiOnly, notifyWhenReady });
   }
 
   async downloadOptions(rawPayload) {
@@ -507,6 +548,7 @@ export class DownloadService {
         if (trustworthy) {
           this.patch(id, { status: 'completed', bytes: alreadyDownloaded, progress: 100, error: '' }, 'now');
           await this.maybeAutoExport(id);
+          await this.notifyDownloadReady(id);
           return;
         }
         await rm(this.privateFile(id), { force: true }).catch(() => {});
@@ -721,6 +763,7 @@ export class DownloadService {
         downloadedAt: this.now(),
       }, 'now');
       await this.maybeAutoExport(id);
+      await this.notifyDownloadReady(id);
     } catch (error) {
       if (processingFile) await rm(processingFile, { force: true }).catch(() => {});
       if (!signal.aborted && this.records.has(id)) {
