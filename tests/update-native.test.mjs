@@ -18,3 +18,15 @@ test('native layer permits the GitHub endpoints the update checker uses', async 
   assert.match(network, /\/RavenmireLAbs\/Mikozora-anime\/releases\//);
   assert.match(main, /allowedSource\(url\) && !Network\.allowedProjectRelease\(url\)/);
 });
+
+// Regression: the banner used to appear only after Settings -> Check because
+// startup reused the 12-hour periodic throttle. The shared Android/Windows
+// shell must keep an explicit launch check and a foreground recheck.
+test('shared shell schedules update checks on launch and foreground return', async () => {
+  const app = await readFile('src/main.jsx', 'utf8');
+  assert.match(app, /shouldCheckOnLaunch\(current\)/);
+  assert.match(app, /launchUpdateCheckStarted\.current=true/);
+  assert.match(app, /shouldCheckOnForeground\(stored,Date\.now\(\)\)/);
+  assert.match(app, /addEventListener\('visibilitychange',onVisible\)/);
+  assert.match(app, /if\(updateCheckPromise\.current\)return updateCheckPromise\.current/);
+});

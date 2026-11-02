@@ -1,13 +1,21 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; the app shows only that newest entry.
-export const APP_VERSION = '0.25.0';
+export const APP_VERSION = '0.25.1';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.25.0',
+    version: '0.25.1',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'App updates are checked when Mikozora opens', description: 'Mikozora now checks GitHub once on every launch after the startup screen, again when you return to an already-running copy, and periodically during long sessions. You no longer need to visit Settings and press Check before the update banner can appear. Automatic checks can still be turned off in Settings → About, and the manual Check button remains available.' },
+      { title: 'Failed checks no longer hide the next retry', description: 'A launch made without a working connection is no longer remembered as a successful update check. Mikozora keeps the last successful check time, retries after a short cooldown, and preserves an already-known update if a later check fails.' },
+    ],
+  },
+  {
+    version: '0.25.0',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Smart Downloads for series and collections', description: 'Turn on Smart Downloads for an individual series or a whole collection, and Mikozora automatically queues genuinely new episodes when its episode checker finds them. The first check still establishes a quiet starting point, so turning it on never downloads the existing backlog. Android can check and download in the background; on Windows, keep Mikozora open or resting in the system tray.' },
       { title: 'Your download choices are remembered', description: 'Each series reuses the language, server, quality and separate subtitle tracks from the last manual download Mikozora successfully queued for it, and the download dialog preselects those choices when they are still offered. If you have never downloaded that series manually, Smart Downloads uses Automatic and Best.' },

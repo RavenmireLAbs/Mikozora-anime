@@ -1,12 +1,15 @@
 // In-app update checker state and helpers. Mikozora ships from GitHub
 // Releases (a signed APK on Android, installers on Windows), so the app
-// asks GitHub (politely, at most twice a day) whether a newer release
-// exists and points the user at the build for their platform. The
-// helpers are pure so they can be unit-tested without DOM or network.
+// asks GitHub when it starts, again when it returns to the foreground,
+// and periodically during long sessions whether a newer release exists.
+// It then points the user at the build for their platform. The helpers
+// are pure so they can be unit-tested without DOM or network.
 export const UPDATE_KEY = 'moku.update.v1';
 export const RELEASES_API_URL = 'https://api.github.com/repos/RavenmireLAbs/Mikozora-anime/releases/latest';
 export const CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000;
-export const DEFAULT_UPDATE_STATE = { autoCheck: true, lastCheck: 0, latest: '', pageUrl: '', apkUrl: '', downloadUrl: '', dismissed: '' };
+export const FOREGROUND_CHECK_INTERVAL_MS = 15 * 60 * 1000;
+export const FAILED_CHECK_RETRY_MS = 5 * 60 * 1000;
+export const DEFAULT_UPDATE_STATE = { autoCheck: true, lastCheck: 0, lastAttempt: 0, latest: '', pageUrl: '', apkUrl: '', downloadUrl: '', dismissed: '' };
 
 // "v0.15.0" -> [0, 15, 0]. Missing parts default to 0; anything that does not
 // start with digits is not a version Mikozora would ship.
@@ -64,9 +67,13 @@ export function readUpdateState(storage) {
   try {
     const raw = JSON.parse(storage.getItem(UPDATE_KEY) || 'null');
     if (!raw || typeof raw !== 'object') return { ...DEFAULT_UPDATE_STATE };
+    const lastCheck = Number.isFinite(raw.lastCheck) ? raw.lastCheck : 0;
     return {
       autoCheck: raw.autoCheck !== false,
-      lastCheck: Number.isFinite(raw.lastCheck) ? raw.lastCheck : 0,
+      lastCheck,
+      // Older state had no separate attempt timestamp; its lastCheck was
+      // stamped for both successes and failures, so use it as the attempt.
+      lastAttempt: Number.isFinite(raw.lastAttempt) ? raw.lastAttempt : lastCheck,
       latest: typeof raw.latest === 'string' ? raw.latest : '',
       pageUrl: typeof raw.pageUrl === 'string' ? raw.pageUrl : '',
       apkUrl: typeof raw.apkUrl === 'string' ? raw.apkUrl : '',
@@ -80,15 +87,39 @@ export function saveUpdateState(storage, state) {
   storage.setItem(UPDATE_KEY, JSON.stringify({ ...DEFAULT_UPDATE_STATE, ...state }));
 }
 
-export function shouldAutoCheck(state, now = Date.now()) {
-  return !!state?.autoCheck && now - (state.lastCheck || 0) >= CHECK_INTERVAL_MS;
+function lastAttemptOf(state) {
+  return Math.max(0, Number(state?.lastAttempt) || 0, Number(state?.lastCheck) || 0);
 }
 
-// Record a check attempt. On success `info` replaces the remembered release;
-// on failure pass null to only stamp the time, so an offline device does not
-// retry on every single app open.
+// Each cold app launch gets one automatic check when the setting is on.
+// The old 12-hour gate could hide a release published shortly after the
+// previous successful check until the user visited Settings and checked
+// manually.
+export function shouldCheckOnLaunch(state) {
+  return !!state?.autoCheck;
+}
+
+// Returning to an already-running app (Android recents or the Windows tray)
+// should also surface a new release promptly, but repeated focus changes
+// should not hammer GitHub. A failed attempt may retry after five minutes;
+// a successful check is fresh for fifteen minutes.
+export function shouldCheckOnForeground(state, now = Date.now()) {
+  if (!state?.autoCheck) return false;
+  return now - (state.lastCheck || 0) >= FOREGROUND_CHECK_INTERVAL_MS
+    && now - lastAttemptOf(state) >= FAILED_CHECK_RETRY_MS;
+}
+
+// Long-running sessions retain the polite periodic interval, measured from
+// the latest attempt rather than only the latest success.
+export function shouldAutoCheck(state, now = Date.now()) {
+  return !!state?.autoCheck && now - lastAttemptOf(state) >= CHECK_INTERVAL_MS;
+}
+
+// Record a check attempt. `lastAttempt` always advances, but `lastCheck`
+// means the last *successful* check: an offline launch must not make the
+// app claim it checked successfully or suppress the next launch's retry.
 export function withCheckResult(state, info, now = Date.now()) {
-  const next = { ...DEFAULT_UPDATE_STATE, ...state, lastCheck: now };
+  const next = { ...DEFAULT_UPDATE_STATE, ...state, lastAttempt: now, lastCheck: info ? now : (Number(state?.lastCheck) || 0) };
   if (info) {
     next.latest = info.version || '';
     next.pageUrl = info.pageUrl || '';
