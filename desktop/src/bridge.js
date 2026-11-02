@@ -4,7 +4,7 @@
 // window.__mokuNativeChunk(id, chunk, done, error) in the page, exactly
 // like the Android bridge. The implemented surface covers networking,
 // backup files, appearance, external links, downloads/offline playback,
-// folder export, and episode-update checks/alerts.
+// folder export, episode-update checks/alerts, and folder-based device sync.
 import { dialog, shell } from 'electron';
 import { readFile, writeFile, stat } from 'node:fs/promises';
 import { allowedSource, allowedProjectRelease } from './lib/allowlist.js';
@@ -70,6 +70,24 @@ async function chooseDownloadFolder(win, service) {
   }
 }
 
+async function chooseDeviceSyncFolder(win, service) {
+  if (!service) throw new Error('Device sync is unavailable in this Windows build.');
+  if (folderPickerOpen) throw new Error('A folder picker is already open.');
+  folderPickerOpen = true;
+  try {
+    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+      title: 'Choose the folder your sync service keeps on both devices',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (canceled || !filePaths?.length) {
+      return JSON.stringify({ ...(await service.settings()), canceled: true });
+    }
+    return JSON.stringify(await service.setFolder(filePaths[0]));
+  } finally {
+    folderPickerOpen = false;
+  }
+}
+
 function downloadOptionsError(error) {
   const message = String(error?.message || '');
   const known = message.length < 180 && (
@@ -102,7 +120,7 @@ function fromApp(event) {
   return typeof url === 'string' && url.startsWith('mikozora://');
 }
 
-export function registerBridge(ipcMain, getWindow, store, setPlayerReferer = () => {}, downloadService = null, episodeService = null) {
+export function registerBridge(ipcMain, getWindow, store, setPlayerReferer = () => {}, downloadService = null, episodeService = null, deviceSyncService = null) {
   const requireDownloads = () => {
     if (!downloadService) throw new Error('Downloads are unavailable in this Windows build.');
     return downloadService;
@@ -110,6 +128,10 @@ export function registerBridge(ipcMain, getWindow, store, setPlayerReferer = () 
   const requireEpisodes = () => {
     if (!episodeService) throw new Error('Episode updates are unavailable in this Windows build.');
     return episodeService;
+  };
+  const requireDeviceSync = () => {
+    if (!deviceSyncService) throw new Error('Device sync is unavailable in this Windows build.');
+    return deviceSyncService;
   };
   // Episode methods mirror MainActivity.episodeError: only the known
   // user-facing messages reach the UI; everything else is generic.
@@ -148,6 +170,11 @@ export function registerBridge(ipcMain, getWindow, store, setPlayerReferer = () 
       else if (method === 'markEpisodeRead') out = await episodeCall((svc) => svc.markRead(String(args?.[0] ?? '')));
       else if (method === 'saveBackupFile') out = await saveBackupFile(getWindow(), args?.[0], args?.[1]);
       else if (method === 'openBackupFile') out = await openBackupFile(getWindow());
+      else if (method === 'deviceSyncSettings') out = JSON.stringify(await requireDeviceSync().settings());
+      else if (method === 'chooseDeviceSyncFolder') out = await chooseDeviceSyncFolder(getWindow(), requireDeviceSync());
+      else if (method === 'clearDeviceSyncFolder') out = JSON.stringify(await requireDeviceSync().clearFolder());
+      else if (method === 'readDeviceSyncFolder') out = JSON.stringify(await requireDeviceSync().readFolder());
+      else if (method === 'writeDeviceSyncFile') out = JSON.stringify(await requireDeviceSync().writeFile(String(args?.[0] ?? ''), String(args?.[1] ?? '')));
       else throw new Error('Not available in the Windows app yet.');
       sendChunks(event.sender, id, out, null);
     } catch (err) {

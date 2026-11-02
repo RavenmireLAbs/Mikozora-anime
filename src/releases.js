@@ -1,13 +1,23 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; the app shows only that newest entry.
-export const APP_VERSION = '0.25.1';
+export const APP_VERSION = '0.26.0';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.25.1',
+    version: '0.26.0',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Sync Android and Windows through a folder you already trust', description: 'Settings → Device Sync can now connect Mikozora on Android and Windows through the same folder kept by Syncthing, OneDrive, Dropbox, Google Drive, a NAS, or another file-sync service. Choose that folder on both devices; each copy of Mikozora writes only its own small sync file and your chosen service carries it. No Mikozora account is needed, and the devices do not need to be online at the same time.' },
+      { title: 'Your space comes with you', description: 'Library titles, collections, history, watch progress, appearance, content preferences and Smart Downloads settings merge in both directions when Mikozora opens, when you return to it, and shortly after something changes; Sync now is there whenever you want it. Later deletions, collection changes and episodes marked unwatched sync too, while a fresh device’s untouched default settings will not overwrite choices you already made on the other device.' },
+      { title: 'Downloads still belong to each device', description: 'Downloaded episodes and queues, the folder used for playable copies, episode-alert state, offline playback positions and app-update choices remain device-local. Connecting or disconnecting device sync never moves your videos, and disconnecting leaves sync files already in the shared folder untouched.' },
+      { title: 'Use a folder you trust', description: 'Anyone or any service that can read the chosen folder can see the title and watch metadata in Mikozora’s sync files. If that is a concern, use a private folder or leave device sync off—manual backup export and import remain available exactly as before.' },
+    ],
+  },
+  {
+    version: '0.25.1',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'App updates are checked when Mikozora opens', description: 'Mikozora now checks GitHub once on every launch after the startup screen, again when you return to an already-running copy, and periodically during long sessions. You no longer need to visit Settings and press Check before the update banner can appear. Automatic checks can still be turned off in Settings → About, and the manual Check button remains available.' },
       { title: 'Failed checks no longer hide the next retry', description: 'A launch made without a working connection is no longer remembered as a successful update check. Mikozora keeps the last successful check time, retries after a short cooldown, and preserves an already-known update if a later check fails.' },

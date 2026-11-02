@@ -39,9 +39,16 @@ export function isDesktopApp() { return typeof window !== 'undefined' && window.
 export function hasNativeDownloads() { return isAndroid() && typeof window.MokuBridge.downloads === 'function' && typeof window.MokuBridge.enqueueDownloads === 'function'; }
 function bridgeCall(method, ...args) {
   return new Promise((resolve, reject) => {
-    if (!isAndroid() || typeof window.MokuBridge[method] !== 'function') { reject(new Error('Downloads are available in the Android app.')); return; }
+    if (!isAndroid() || typeof window.MokuBridge[method] !== 'function') {
+      reject(new Error(method.startsWith('deviceSync') || method.endsWith('DeviceSyncFolder') || method.endsWith('DeviceSyncFile')
+        ? 'Device sync is available in the Android and Windows apps.'
+        : 'Downloads are available in the Android app.'));
+      return;
+    }
     const id = String(++nextRequest);
-    const timeout = (method === 'chooseDownloadFolder' || method === 'saveBackupFile' || method === 'openBackupFile') ? 300000 : method === 'downloadOptions' ? 90000 : method === 'request' ? 120000 : 30000;
+    const timeout = ['chooseDownloadFolder', 'chooseDeviceSyncFolder', 'saveBackupFile', 'openBackupFile'].includes(method) ? 300000
+      : ['readDeviceSyncFolder', 'writeDeviceSyncFile'].includes(method) ? 120000
+        : method === 'downloadOptions' ? 90000 : method === 'request' ? 120000 : 30000;
     const timer = setTimeout(() => { pending.delete(id); reject(new Error('The app took too long to respond.')); }, timeout);
     pending.set(id, { resolve, reject, timer, parts: [] });
     try { window.MokuBridge[method](id, ...args); }
@@ -83,6 +90,25 @@ export async function exportDownload(id) { return JSON.parse(await bridgeCall('e
 // {text} from the native side; see backup.js for the file format itself.
 export async function exportBackupToFile(name, text) { return JSON.parse(await bridgeCall('saveBackupFile', name, text)); }
 export async function readBackupFromFile() { return JSON.parse(await bridgeCall('openBackupFile')); }
+// Device-sync folder bridge: the native side only handles the user-chosen
+// folder and whitelisted mikozora-sync-*.json files. Device-sync.js owns
+// validation and merging, so a damaged or hostile file cannot write storage.
+export function hasDeviceSync() {
+  return isAndroid()
+    && typeof window.MokuBridge.deviceSyncSettings === 'function'
+    && typeof window.MokuBridge.chooseDeviceSyncFolder === 'function'
+    && typeof window.MokuBridge.clearDeviceSyncFolder === 'function'
+    && typeof window.MokuBridge.readDeviceSyncFolder === 'function'
+    && typeof window.MokuBridge.writeDeviceSyncFile === 'function';
+}
+export async function getDeviceSyncSettings() { return JSON.parse(await bridgeCall('deviceSyncSettings')); }
+export async function chooseDeviceSyncFolder() { return JSON.parse(await bridgeCall('chooseDeviceSyncFolder')); }
+export async function clearDeviceSyncFolder() { return JSON.parse(await bridgeCall('clearDeviceSyncFolder')); }
+export async function readDeviceSyncFolder() {
+  const result = JSON.parse(await bridgeCall('readDeviceSyncFolder'));
+  return { files: Array.isArray(result?.files) ? result.files : [] };
+}
+export async function writeDeviceSyncFile(name, text) { return JSON.parse(await bridgeCall('writeDeviceSyncFile', name, text)); }
 export function openExport(id) {
   if (!isAndroid() || typeof window.MokuBridge.openExport !== 'function') throw new Error('Open the exported file in the Android app.');
   window.MokuBridge.openExport(id);

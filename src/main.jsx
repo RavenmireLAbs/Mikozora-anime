@@ -6,17 +6,18 @@ import {
   ExternalLink, Sparkles, SlidersHorizontal, Film, LoaderCircle, AlertCircle,
   Trash2, RotateCcw, FolderHeart, CircleHelp, ShieldCheck, Plus, ListVideo, Download, HardDrive, ListChecks, CheckCircle2, Heart, FolderPlus, Pencil, Folder, Flame, Bell, Sun, Moon, EyeOff
 } from 'lucide-react';
-import { SOURCES, getCatalog, getDetail, getFeatured, getTrending, getDiscoverAnime, getServers, imageUrl, isAndroid, clearNetworkCache, getDownloads, getDownloadOptions, enqueueDownloads, removeDownload, openDownload, getExportSettings, chooseDownloadFolder, clearDownloadFolder, exportDownload, openExport, hasEpisodeUpdates, syncEpisodeTitles, getEpisodeUpdates, checkEpisodes, setEpisodeAutomatic, setEpisodeAlerts, markEpisodeRead, fetchLatestRelease, exportBackupToFile, readBackupFromFile, isDesktopApp, hasNativeDownloads, setPlayerReferer } from './data';
+import { SOURCES, getCatalog, getDetail, getFeatured, getTrending, getDiscoverAnime, getServers, imageUrl, isAndroid, clearNetworkCache, getDownloads, getDownloadOptions, enqueueDownloads, removeDownload, openDownload, getExportSettings, chooseDownloadFolder, clearDownloadFolder, exportDownload, openExport, hasEpisodeUpdates, syncEpisodeTitles, getEpisodeUpdates, checkEpisodes, setEpisodeAutomatic, setEpisodeAlerts, markEpisodeRead, fetchLatestRelease, exportBackupToFile, readBackupFromFile, isDesktopApp, hasNativeDownloads, setPlayerReferer, hasDeviceSync, getDeviceSyncSettings, chooseDeviceSyncFolder, clearDeviceSyncFolder, readDeviceSyncFolder, writeDeviceSyncFile } from './data';
 import { buildPlaybackPlaylist, compactPlaybackPlaylist } from './playback';
 import { monitoredTitles, unreadByTitle } from './episode-updates';
-import { readSmartDownloads, saveSmartDownloads, smartTitleSelection, smartDownloadsForSync, withDownloadPreset } from './smart-downloads';
+import { SMART_DOWNLOADS_KEY, readSmartDownloads, saveSmartDownloads, smartTitleSelection, smartDownloadsForSync, withDownloadPreset } from './smart-downloads';
 import { COLLECTIONS_KEY, FAVOURITES_ID, titleKey, normalizeCollections, collectionNameError, createCollection, renameCollection, deleteCollection, setCollectionItems, setTitleCollections, toggleFavourite, removeTitleFromCollections } from './collections';
 import { PROGRESS_KEY, normalizeProgress, recordWatch, refreshSnapshot, setEpisodesWatched, removeProgressTitle, watchedUrlSet, continueWatching, progressByTitle } from './progress';
 import { backupFileName, buildBackup, parseBackup, applyBackup, downloadBackupInBrowser, pickBackupInBrowser } from './backup';
 import { APP_VERSION, RELEASES, startupExperience, completeExperience } from './releases';
 import { DEFAULT_UPDATE_STATE, readUpdateState, saveUpdateState, shouldCheckOnForeground, shouldCheckOnLaunch, withCheckResult, visibleUpdate, dismissUpdate, updateDownloadUrl } from './update';
-import { ACCENTS, MODES, DEFAULT_APPEARANCE, readAppearance, saveAppearance, applyAppearance, syncNativeAppearance } from './appearance';
-import { GENRES, DEFAULT_CONTENT_PREFS, readContentPrefs, saveContentPrefs, isNsfw, ratingOf, yearOf, filterTitles } from './content';
+import { APPEARANCE_KEY, ACCENTS, MODES, DEFAULT_APPEARANCE, readAppearance, saveAppearance, applyAppearance, syncNativeAppearance } from './appearance';
+import { CONTENT_KEY, GENRES, DEFAULT_CONTENT_PREFS, readContentPrefs, saveContentPrefs, isNsfw, ratingOf, yearOf, filterTitles } from './content';
+import { markDeviceSyncPublished, prepareDeviceSync, publicDeviceSyncMeta, readDeviceSyncMeta, setDeviceSyncAuto, stableStringify } from './device-sync';
 import './style.css';
 import './theme-generated.css';
 import './appearance.css';
@@ -522,7 +523,35 @@ function AppearanceSettings({appearance,changeAppearance}) {
     </div>
   </section>;
 }
-function SettingsPage({library,history,clearLibrary,clearHistory,openLicenses,openReleaseNotes,folder,chooseFolder,usePrivate,updates,updatesAvailable,changeAutomatic,changeAlerts,notificationPermission,appearance,changeAppearance,contentPrefs,changeContentPrefs,appUpdate,pendingUpdate,updateStatus,checkUpdate,changeAutoCheck,downloadUpdate,exportBackup,importBackup,smartDownloads,changeSmartDownloads}) {
+function DeviceSyncSettings({available=false,folder={},meta={},status={},choose=()=>{},disconnect=()=>{},syncNow=()=>{},changeAuto=()=>{}}) {
+  const busy=['syncing','choosing','disconnecting'].includes(status.phase);
+  const otherDevice=isDesktopApp()?'Android phone or tablet':'Windows PC';
+  const folderText=!available?(isDesktopApp()?'Update Mikozora for Windows to use device sync':'Available in the Android app')
+    :!folder.configured?'No shared folder selected'
+      :folder.granted?(folder.name||'Selected folder'):'Folder access lost · choose it again';
+  const peerText=`${status.peerCount||0} other ${status.peerCount===1?'device':'devices'} found`;
+  const deviceText=meta.deviceName||(isDesktopApp()?'This Windows PC':'This Android device');
+  const statusText=status.phase==='syncing'?'Syncing now…'
+    :status.phase==='choosing'?'Waiting for a folder choice…'
+      :status.phase==='disconnecting'?'Disconnecting…'
+        :meta.lastSyncAt?`Last synced ${prettyTime(meta.lastSyncAt)}`
+          :folder.granted?'Not synced yet':`Choose the same shared folder here and on your ${otherDevice}.`;
+  const ignoredText=status.ignoredPeerFiles?` · ${status.ignoredPeerFiles} unreadable sync ${status.ignoredPeerFiles===1?'file':'files'} ignored`:'';
+  return <div className="settings-group device-sync-settings">
+    <div className="settings-title">DEVICE SYNC <span>ANDROID ↔ WINDOWS</span></div>
+    <div className="setting-row"><div className="setting-icon"><FolderHeart size={19}/></div><div><strong>Shared sync folder</strong><p className="folder-name">{folderText}</p></div><button onClick={choose} disabled={!available||busy}>{status.phase==='choosing'?'Choosing…':folder.configured?'Change':'Choose folder'}</button></div>
+    <div className="setting-row"><div className="setting-icon"><RefreshCw size={19} className={status.phase==='syncing'?'spin':''}/></div><div><strong>Sync now</strong><p>{statusText}{folder.configured?<> · {peerText} · This device: {deviceText}{ignoredText}</>:''}</p></div><button onClick={syncNow} disabled={!available||!folder.granted||busy}>{status.phase==='syncing'?'Syncing…':'Sync'}</button></div>
+    <div className="setting-row"><div className="setting-icon"><CheckCircle2 size={19}/></div><div><strong>Automatic sync</strong><p>When Mikozora opens, when you return to it, and shortly after your library or settings change.</p></div><button aria-label="Automatic device sync" aria-pressed={meta.autoSync!==false} disabled={!available||busy} onClick={()=>changeAuto(meta.autoSync===false)}>{meta.autoSync===false?'Off':'On'}</button></div>
+    {status.phase==='error'&&status.message&&<div className="updates-error" role="alert"><AlertCircle size={16}/><span>{status.message}</span></div>}
+    <div className="folder-explainer device-sync-explainer">
+      <p>Choose a folder that Syncthing, OneDrive, Dropbox, Google Drive, a NAS, or another service already keeps on both devices. Mikozora writes only its own small JSON sync file there; your chosen service carries it between devices, so they do not need to be online at the same time. Choose that same folder on your {otherDevice} too.</p>
+      <p>Library titles, collections, history, watch progress, appearance, content preferences and Smart Downloads settings merge both ways—including later deletions, collection changes and episodes marked unwatched. Downloaded episodes and queues, download/export folder choices, app-update choices, offline playback positions, and episode-alert state stay on each device.</p>
+      <p><strong>Privacy:</strong> anyone or any service that can read this folder can see the title and watch metadata in Mikozora’s sync files. Use only a folder and sync service you trust. Disconnecting stops future reads and writes, but leaves files already in the folder untouched.</p>
+      {folder.configured&&<button className="text-link" onClick={disconnect} disabled={busy}>{status.phase==='disconnecting'?'Disconnecting…':'Disconnect this device'}</button>}
+    </div>
+  </div>;
+}
+function SettingsPage({library,history,clearLibrary,clearHistory,openLicenses,openReleaseNotes,folder,chooseFolder,usePrivate,updates,updatesAvailable,changeAutomatic,changeAlerts,notificationPermission,appearance,changeAppearance,contentPrefs,changeContentPrefs,appUpdate,pendingUpdate,updateStatus,checkUpdate,changeAutoCheck,downloadUpdate,exportBackup,importBackup,smartDownloads,changeSmartDownloads,deviceSync}) {
   const current=!hasNativeDownloads()?(isDesktopApp()?'Unavailable in this Windows build':'Available in the Android app'):!folder?.configured?'Mikozora only · no external folder selected':folder.granted?folder.name||'Selected folder':'Folder access lost · choose it again';
   const notificationText=!updatesAvailable?'Available in the Android app':updates.notificationStatus==='allowed'?(isDesktopApp()?'Allowed in Windows':'Allowed in Android'):updates.notificationStatus==='permission'?'Android notification permission is needed':updates.notificationStatus==='channel-blocked'?'New episode channel is blocked in Android':(isDesktopApp()?'Notifications are blocked in Windows':'Notifications are blocked in Android');
   const updateText=pendingUpdate?`Mikozora ${pendingUpdate.version} is ready — you’re on ${APP_VERSION}.`:updateStatus.phase==='checking'?'Checking GitHub for a newer version…':updateStatus.phase==='error'?(updateStatus.message||'Could not check just now. Try again in a moment.'):appUpdate.lastCheck?`You’re up to date · Checked ${prettyTime(appUpdate.lastCheck)}`:`You’re on Mikozora ${APP_VERSION} · Not checked yet`;
@@ -546,6 +575,7 @@ function SettingsPage({library,history,clearLibrary,clearHistory,openLicenses,op
     <div className="settings-group folder-settings"><div className="settings-title">DOWNLOAD LOCATION <span>EXTERNAL PLAYER</span></div><div className="setting-row"><div className="setting-icon"><FolderHeart size={19}/></div><div><strong>Playable copies</strong><p className="folder-name">{current}</p></div><button onClick={chooseFolder} disabled={!hasNativeDownloads()}>{folder?.configured?'Change':'Choose folder'}</button></div>
       <div className="folder-explainer"><p>New playable MP4 copies are organized into a folder for each anime or donghua. Existing downloads can be saved from Downloads; earlier exported files stay where they are.</p><p>After Mikozora verifies the saved video and subtitle files, it removes its private copy to free space. Mikozora then plays the file from your folder. If verification fails or subtitles cannot be safely copied, the private copy stays. Downloading and conversion still need extra storage temporarily.</p>{folder?.configured&&<button className="text-link" onClick={usePrivate}>Stop saving folder copies</button>}</div>
     </div>
+    <DeviceSyncSettings {...deviceSync}/>
     <div className="settings-group"><div className="settings-title">YOUR DATA <span>ON THIS DEVICE</span></div><div className="setting-row"><div className="setting-icon"><Bookmark size={19}/></div><div><strong>Saved library</strong><p>{library.length} {library.length===1?'title':'titles'} saved locally</p></div><button onClick={clearLibrary} disabled={!library.length}>Clear</button></div><div className="setting-row"><div className="setting-icon"><History size={19}/></div><div><strong>Watch history</strong><p>{history.length} recently opened {history.length===1?'episode':'episodes'}</p></div><button onClick={clearHistory} disabled={!history.length}>Clear</button></div><div className="setting-row"><div className="setting-icon"><HardDrive size={19}/></div><div><strong>Back up your data</strong><p>Save your library, collections, history, watch progress and settings to a file you keep. Downloaded videos are not included.</p></div><button onClick={exportBackup}>Export</button></div><div className="setting-row"><div className="setting-icon"><RotateCcw size={19}/></div><div><strong>Restore a backup</strong><p>Replace this device's library, collections, history, progress and settings with a backup file.</p></div><button onClick={importBackup}>Import</button></div></div><div className="settings-group"><div className="settings-title">ABOUT <span>MIKOZORA {APP_VERSION}</span></div><div className="setting-row"><div className="setting-icon"><Download size={19}/></div><div><strong>App updates</strong><p>{updateText}</p></div>{pendingUpdate?<button onClick={downloadUpdate}>Download</button>:<button onClick={()=>checkUpdate(true)} disabled={updateStatus.phase==='checking'}>{updateStatus.phase==='checking'?'Checking…':updateStatus.phase==='error'?'Try again':'Check'}</button>}</div><div className="setting-row"><div className="setting-icon"><RefreshCw size={19}/></div><div><strong>Check automatically</strong><p>Check GitHub when Mikozora starts, when you return to it, and periodically while it stays open.</p></div><button aria-label="Automatic update checks" aria-pressed={!!appUpdate.autoCheck} onClick={()=>changeAutoCheck(!appUpdate.autoCheck)}>{appUpdate.autoCheck?'On':'Off'}</button></div><div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div><strong>Private by default</strong><p>Your library, collections and history stay on this device. No account is required.</p></div></div><div className="setting-row"><div className="setting-icon"><Film size={19}/></div><div><strong>Player availability</strong><p>Video hosts may restrict embedding or be unavailable. Try another server or open the source page.</p></div></div><div className="setting-row"><div className="setting-icon"><Sparkles size={19}/></div><div><strong>What’s new</strong><p>See the latest changes to Mikozora.</p></div><button onClick={openReleaseNotes}>View</button></div><div className="setting-row"><div className="setting-icon"><CircleHelp size={19}/></div><div><strong>Open source licenses</strong><p>Credits and licenses for Mikozora and its dependencies.</p></div><button onClick={openLicenses}>View</button></div></div></div>;
 }
 function PlayerModal({player,close,onEpisode,watched}) {
@@ -770,6 +800,25 @@ function App() {
   };
   const [smartDownloads,setSmartDownloadsState]=useState(()=>readSmartDownloads(window.localStorage));
   const [folder,setFolder]=useState({configured:false,granted:false,name:''});
+  const deviceSyncPlatform=isDesktopApp()?'windows':'android';
+  const deviceSyncAvailable=hasDeviceSync();
+  const [deviceSyncFolder,setDeviceSyncFolder]=useState({configured:false,granted:false,name:''});
+  const [deviceSyncMeta,setDeviceSyncMeta]=useState(()=>{
+    const fallback={deviceId:'',deviceName:'',platform:deviceSyncPlatform,autoSync:true,revision:0,lastSyncAt:0,lastPublishedAt:0};
+    if(!deviceSyncAvailable)return fallback;
+    try{return publicDeviceSyncMeta(readDeviceSyncMeta(window.localStorage,deviceSyncPlatform,{create:true}));}catch{return fallback;}
+  });
+  const [deviceSyncStatus,setDeviceSyncStatus]=useState({phase:'idle',message:'',peerCount:0,ignoredPeerFiles:0});
+  const deviceSyncPromise=useRef(null);
+  const deviceSyncQueued=useRef(false);
+  const deviceSyncAction=useRef(false);
+  const deviceSyncStartedAt=useRef(0);
+  const deviceSyncError=useRef('');
+  const deviceSyncRun=useRef(null);
+  const deviceSyncChangeReady=useRef(false);
+  const syncInputsRef=useRef({library,history,storedProgress,progress,collections,appearance,contentPrefs,smartDownloads});
+  useEffect(()=>{syncInputsRef.current={library,history,storedProgress,progress,collections,appearance,contentPrefs,smartDownloads};},[library,history,storedProgress,progress,collections,appearance,contentPrefs,smartDownloads]);
+  useEffect(()=>{if(activeCollection!=='all'&&!collections.some(c=>c.id===activeCollection))setActiveCollection('all');},[activeCollection,collections]);
   const updatesAvailable=hasEpisodeUpdates();
   const [updates,setUpdates]=useState({automatic:true,alerts:true,watchedCount:0,initializedCount:0,unreadCount:0,updates:[],errors:[],checking:false,queued:false,notificationStatus:'unknown'});
   const [updatesSyncError,setUpdatesSyncError]=useState(''); const [updatesActionError,setUpdatesActionError]=useState('');
@@ -926,6 +975,206 @@ function App() {
     const valid=new Set(collections.map(c=>c.id));
     if(smartDownloads.collectionIds.some(id=>!valid.has(id)))applySmartDownloads({...smartDownloads,collectionIds:smartDownloads.collectionIds.filter(id=>valid.has(id))});
   },[collections,smartDownloads]);
+  const flushDeviceSyncState=()=>{
+    const current=syncInputsRef.current;
+    try{
+      window.localStorage.setItem(LIBRARY_KEY,JSON.stringify(current.library||[]));
+      window.localStorage.setItem(HISTORY_KEY,JSON.stringify(current.history||[]));
+      window.localStorage.setItem(PROGRESS_KEY,JSON.stringify(current.storedProgress||[]));
+      window.localStorage.setItem(COLLECTIONS_KEY,JSON.stringify(current.collections||[]));
+      // Do not materialize these stores here: prepareDeviceSync treats a
+      // never-written scalar store as an implicit default rather than a
+      // competing user choice during a first cross-device merge.
+      if(window.localStorage.getItem(APPEARANCE_KEY)!=null)saveAppearance(window.localStorage,current.appearance);
+      if(window.localStorage.getItem(CONTENT_KEY)!=null)saveContentPrefs(window.localStorage,current.contentPrefs);
+      if(window.localStorage.getItem(SMART_DOWNLOADS_KEY)!=null)saveSmartDownloads(window.localStorage,current.smartDownloads);
+    }catch{/* prepareDeviceSync will surface storage failures when it saves metadata. */}
+  };
+  const applyDeviceSyncSnapshot=data=>{
+    if(!data)return;
+    const current=syncInputsRef.current;
+    if(stableStringify(current.library)!==stableStringify(data.library))setLibrary(data.library);
+    if(stableStringify(current.collections)!==stableStringify(data.collections))setCollections(normalizeCollections(data.collections));
+    if(stableStringify(current.history)!==stableStringify(data.history))setHistory(data.history);
+    if(stableStringify(current.progress)!==stableStringify(data.progress))setStoredProgress(data.progress);
+    if(stableStringify(current.appearance)!==stableStringify(data.appearance)){
+      const nextAppearance=applyAppearance(document,data.appearance);
+      setAppearance(nextAppearance);
+      syncNativeAppearance(nextAppearance);
+    }
+    if(stableStringify(current.contentPrefs)!==stableStringify(data.content))setContentPrefs(data.content);
+    if(stableStringify(current.smartDownloads)!==stableStringify(data.smartDownloads)){
+      const wasEnabled=!!current.smartDownloads?.enabled;
+      const normalized=saveSmartDownloads(window.localStorage,data.smartDownloads);
+      setSmartDownloadsState(normalized);
+      if(!wasEnabled&&normalized.enabled&&updatesAvailable&&!updates.automatic)void updateAction(()=>setEpisodeAutomatic(true));
+    }
+  };
+  const runDeviceSync=async({manual=false,reason='auto'}={})=>{
+    if(!deviceSyncAvailable)return null;
+    if(deviceSyncPromise.current){
+      if(manual||reason==='change')deviceSyncQueued.current=true;
+      return deviceSyncPromise.current;
+    }
+    if(deviceSyncAction.current){
+      if(manual||reason==='change')deviceSyncQueued.current=true;
+      return null;
+    }
+    const startedAt=Date.now();
+    if(!manual&&reason==='focus'&&startedAt-deviceSyncStartedAt.current<30000)return null;
+    if(!manual&&reason==='periodic'&&startedAt-deviceSyncStartedAt.current<60000)return null;
+    deviceSyncStartedAt.current=startedAt;
+    deviceSyncQueued.current=false;
+    const task=(async()=>{
+      setDeviceSyncStatus(previous=>({...previous,phase:'syncing',message:''}));
+      try{
+        const settings=await getDeviceSyncSettings();
+        setDeviceSyncFolder(settings);
+        const identity=publicDeviceSyncMeta(readDeviceSyncMeta(window.localStorage,deviceSyncPlatform,{create:true}));
+        setDeviceSyncMeta(identity);
+        if(!settings.configured){
+          const message='Choose a sync folder first.';
+          if(manual){
+            deviceSyncError.current=message;
+            setDeviceSyncStatus(previous=>({...previous,phase:'error',message}));
+          }else{
+            setDeviceSyncStatus(previous=>({...previous,phase:'idle',message:''}));
+          }
+          return null;
+        }
+        if(!settings.granted)throw new Error('Sync folder access was lost. Choose the folder again in Settings.');
+        if(!manual&&!identity.autoSync){
+          setDeviceSyncStatus(previous=>({...previous,phase:'idle',message:''}));
+          return null;
+        }
+
+        const listing=await readDeviceSyncFolder();
+        // Flush and prepare in the same synchronous turn so an edit made while
+        // the native folder was being read is included in this merge rather
+        // than overwritten by it. Applying to React follows immediately.
+        flushDeviceSyncState();
+        const prepared=prepareDeviceSync(window.localStorage,listing.files||[],{platform:deviceSyncPlatform,now:Date.now()});
+        applyDeviceSyncSnapshot(prepared.data);
+        let publishedIdentity=prepared.identity;
+        if(prepared.shouldWrite){
+          await writeDeviceSyncFile(prepared.fileName,prepared.payloadText);
+          publishedIdentity=markDeviceSyncPublished(window.localStorage,prepared.signature,prepared.revision,Date.now());
+        }
+        deviceSyncError.current='';
+        setDeviceSyncMeta(publishedIdentity);
+        setDeviceSyncStatus({phase:'idle',message:'',peerCount:prepared.peerCount,ignoredPeerFiles:prepared.ignoredPeerFiles});
+        return prepared;
+      }catch(e){
+        const message=e?.message||'Could not sync devices.';
+        deviceSyncError.current=message;
+        try{setDeviceSyncMeta(publicDeviceSyncMeta(readDeviceSyncMeta(window.localStorage,deviceSyncPlatform,{create:true})));}catch{}
+        setDeviceSyncStatus(previous=>({...previous,phase:'error',message}));
+        return null;
+      }
+    })();
+    deviceSyncPromise.current=task;
+    try{return await task;}
+    finally{
+      if(deviceSyncPromise.current===task)deviceSyncPromise.current=null;
+      if(deviceSyncQueued.current){
+        deviceSyncQueued.current=false;
+        setTimeout(()=>{void deviceSyncRun.current?.({reason:'change'});},600);
+      }
+    }
+  };
+  deviceSyncRun.current=runDeviceSync;
+  useEffect(()=>{
+    if(!deviceSyncAvailable)return;
+    let active=true;
+    try{setDeviceSyncMeta(publicDeviceSyncMeta(readDeviceSyncMeta(window.localStorage,deviceSyncPlatform,{create:true})));}catch{}
+    const load=()=>getDeviceSyncSettings()
+      .then(value=>{if(active)setDeviceSyncFolder(value);})
+      .catch(e=>{if(active&&route.page==='settings'){const message=e?.message||'Could not read sync folder settings.';deviceSyncError.current=message;setDeviceSyncStatus(previous=>({...previous,phase:'error',message}));}});
+    load();
+    if(route.page==='settings')window.addEventListener('focus',load);
+    return ()=>{active=false;window.removeEventListener('focus',load);};
+  },[deviceSyncAvailable,route.page]);
+  useEffect(()=>{
+    if(experience||!deviceSyncAvailable)return;
+    const timer=setTimeout(()=>{void deviceSyncRun.current?.({reason:'startup'});},1200);
+    const onFocus=()=>{void deviceSyncRun.current?.({reason:'focus'});};
+    const onVisible=()=>{if(!document.hidden)onFocus();};
+    const interval=setInterval(()=>{void deviceSyncRun.current?.({reason:'periodic'});},300000);
+    window.addEventListener('focus',onFocus);
+    document.addEventListener('visibilitychange',onVisible);
+    return ()=>{clearTimeout(timer);clearInterval(interval);window.removeEventListener('focus',onFocus);document.removeEventListener('visibilitychange',onVisible);};
+  },[experience,deviceSyncAvailable]);
+  useEffect(()=>{
+    if(!deviceSyncChangeReady.current){deviceSyncChangeReady.current=true;return;}
+    if(experience||!deviceSyncAvailable||!deviceSyncMeta.autoSync)return;
+    const timer=setTimeout(()=>{void deviceSyncRun.current?.({reason:'change'});},2500);
+    return ()=>clearTimeout(timer);
+  },[library,history,storedProgress,collections,appearance,contentPrefs,smartDownloads,experience,deviceSyncAvailable,deviceSyncMeta.autoSync]);
+  const waitForDeviceSyncIdle=async()=>{
+    while(deviceSyncPromise.current){
+      try{await deviceSyncPromise.current;}catch{break;}
+    }
+  };
+  const chooseSyncFolder=async()=>{
+    if(!deviceSyncAvailable||deviceSyncAction.current)return;
+    deviceSyncAction.current=true;
+    setDeviceSyncStatus(previous=>({...previous,phase:'choosing',message:''}));
+    try{
+      await waitForDeviceSyncIdle();
+      const next=await chooseDeviceSyncFolder();
+      setDeviceSyncFolder(next);
+      if(next?.canceled){
+        setDeviceSyncStatus(previous=>({...previous,phase:'idle',message:''}));
+        return;
+      }
+      if(!next?.granted)throw new Error('The folder did not grant read and write access.');
+      try{setDeviceSyncMeta(publicDeviceSyncMeta(readDeviceSyncMeta(window.localStorage,deviceSyncPlatform,{create:true})));}catch{}
+      deviceSyncAction.current=false;
+      const result=await deviceSyncRun.current?.({manual:true,reason:'folder'});
+      if(result)setToast(result.changed?'Devices synced · updates applied':'Sync folder connected');
+      else if(deviceSyncError.current)setToast(deviceSyncError.current);
+    }catch(e){
+      const message=e?.message||'Could not select a sync folder.';
+      deviceSyncError.current=message;
+      setDeviceSyncStatus(previous=>({...previous,phase:'error',message}));
+      setToast(message);
+    }finally{
+      deviceSyncAction.current=false;
+    }
+  };
+  const disconnectSyncFolder=async()=>{
+    if(!deviceSyncAvailable||deviceSyncAction.current)return;
+    if(!window.confirm('Disconnect this device from the sync folder?\n\nMikozora will stop reading and writing that folder. Sync files already there will stay there.'))return;
+    deviceSyncAction.current=true;
+    setDeviceSyncStatus(previous=>({...previous,phase:'disconnecting',message:''}));
+    try{
+      await waitForDeviceSyncIdle();
+      const next=await clearDeviceSyncFolder();
+      setDeviceSyncFolder(next);
+      setDeviceSyncStatus({phase:'idle',message:'',peerCount:0,ignoredPeerFiles:0});
+      setToast('Device sync disconnected · shared files were left in place');
+    }catch(e){
+      const message=e?.message||'Could not disconnect device sync.';
+      deviceSyncError.current=message;
+      setDeviceSyncStatus(previous=>({...previous,phase:'error',message}));
+      setToast(message);
+    }finally{
+      deviceSyncAction.current=false;
+    }
+  };
+  const changeDeviceSyncAuto=enabled=>{
+    try{
+      const next=setDeviceSyncAuto(window.localStorage,enabled,deviceSyncPlatform);
+      setDeviceSyncMeta(next);
+      setToast(enabled?'Automatic device sync on':'Automatic device sync off');
+      if(enabled)void deviceSyncRun.current?.({reason:'change'});
+    }catch(e){setToast(e?.message||'Could not change automatic device sync.');}
+  };
+  const syncDevicesNow=async()=>{
+    const result=await deviceSyncRun.current?.({manual:true,reason:'manual'});
+    if(result)setToast(result.changed?'Devices synced · updates applied':result.shouldWrite?'Devices synced · this device published':'Devices synced · already up to date');
+    else if(deviceSyncError.current)setToast(deviceSyncError.current);
+  };
   const ensureFollowedForSmart=item=>{
     const key=identity(item);let followed=false;
     if(!has(item))setLibrary(previous=>previous.some(x=>identity(x)===key)?previous:[savedSummary(item),...previous]);
@@ -1120,7 +1369,7 @@ function App() {
     {route.page==='downloads'&&<DownloadsPage items={downloads} loading={downloadsLoading} remove={deleteDownload} retry={retryDownload} change={d=>setDownloadModal({item:d.item,episodes:[d.episode],language:d.language||'english',serverChoice:d.serverChoice||'auto',subtitleMode:d.subtitleMode||'auto',subtitleSelection:Array.isArray(d.subtitleSelection)?d.subtitleSelection:[]})} browse={browse} folder={folder} saveCopy={saveCopy} openSettings={()=>go('settings')} playOffline={playOffline}/>}
     {route.page==='history'&&<HistoryPage items={history.filter(entry=>!hideNsfw||!isNsfw(entry.item))} resume={resume} open={open} clear={clearHistory} browse={browse}/>}
     {route.page==='sources'&&<SourcesPage browse={browse}/>}
-    {route.page==='settings'&&<SettingsPage library={library} history={history} clearLibrary={clearLibrary} clearHistory={clearHistory} openLicenses={()=>setLicenses(true)} openReleaseNotes={()=>setExperience({mode:'update',manual:true})} folder={folder} chooseFolder={chooseFolder} usePrivate={usePrivate} updates={updates} updatesAvailable={updatesAvailable} changeAutomatic={changeAutomatic} changeAlerts={changeAlerts} notificationPermission={notificationPermission} appearance={appearance} changeAppearance={changeAppearance} contentPrefs={contentPrefs} changeContentPrefs={changeContentPrefs} appUpdate={appUpdate} pendingUpdate={pendingUpdate} updateStatus={updateStatus} checkUpdate={checkAppUpdate} changeAutoCheck={changeAutoCheck} downloadUpdate={downloadAppUpdate} exportBackup={exportBackup} importBackup={importBackup} smartDownloads={smartDownloads} changeSmartDownloads={changeSmartDownloads}/>}
+    {route.page==='settings'&&<SettingsPage library={library} history={history} clearLibrary={clearLibrary} clearHistory={clearHistory} openLicenses={()=>setLicenses(true)} openReleaseNotes={()=>setExperience({mode:'update',manual:true})} folder={folder} chooseFolder={chooseFolder} usePrivate={usePrivate} updates={updates} updatesAvailable={updatesAvailable} changeAutomatic={changeAutomatic} changeAlerts={changeAlerts} notificationPermission={notificationPermission} appearance={appearance} changeAppearance={changeAppearance} contentPrefs={contentPrefs} changeContentPrefs={changeContentPrefs} appUpdate={appUpdate} pendingUpdate={pendingUpdate} updateStatus={updateStatus} checkUpdate={checkAppUpdate} changeAutoCheck={changeAutoCheck} downloadUpdate={downloadAppUpdate} exportBackup={exportBackup} importBackup={importBackup} smartDownloads={smartDownloads} changeSmartDownloads={changeSmartDownloads} deviceSync={{available:deviceSyncAvailable,folder:deviceSyncFolder,meta:deviceSyncMeta,status:deviceSyncStatus,choose:chooseSyncFolder,disconnect:disconnectSyncFolder,syncNow:syncDevicesNow,changeAuto:changeDeviceSyncAuto}}/>}
   </main></div><BottomNav page={route.page} go={go}/>{collectionDialog?.kind==='new'&&<CollectionNameDialog close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='rename'&&<CollectionNameDialog editing value={collections.find(c=>c.id===collectionDialog.id)?.name||''} close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='title'&&<TitleCollectionsDialog item={collectionDialog.item} collections={collections} close={()=>setCollectionDialog(null)} submit={selected=>saveTitleCollectionChoices(collectionDialog.item,selected)}/>}{collectionDialog?.kind==='members'&&collections.find(c=>c.id===collectionDialog.id)&&<CollectionMembersDialog collection={collections.find(c=>c.id===collectionDialog.id)} items={hideNsfw?library.filter(item=>!isNsfw(item)):library} close={()=>setCollectionDialog(null)} submit={keys=>saveCollectionMembers(collectionDialog.id,keys)}/>} {offlinePlayer&&<OfflinePlayerModal entry={offlinePlayer} close={()=>setOfflinePlayer(null)}/>}{player&&<PlayerModal key={player.episode.url} player={player} close={()=>setPlayer(null)} onEpisode={episode=>play(player.item,episode,{playlist:player.episodes})} watched={watchedUrlSet(progress,history,player.item)}/>}{licenses&&<LicenseModal close={()=>setLicenses(false)}/>}{downloadModal&&<DownloadModal request={downloadModal} close={()=>setDownloadModal(null)} submit={submitDownload}/>}{busy&&<div className="busy-overlay"><div><LoaderCircle size={20} className="spin"/><span>{busy}</span></div></div>}{toast&&<div className="toast"><Check size={16}/>{toast}</div>}</div>;
 }
 
