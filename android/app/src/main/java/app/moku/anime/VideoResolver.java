@@ -16,8 +16,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -58,10 +60,13 @@ final class VideoResolver {
         }
     }
     private VideoResolver() {}
-    /** Filter before fetching: AnimeSogo should never request non-English subtitle files. */
+    /** Filter before fetching so unselected subtitle files are never requested. */
     static List<Track> subtitleTracksForDownload(Result result,String source) {
+        return subtitleTracksForDownload(result,source,SubtitlePolicy.autoSelection());
+    }
+    static List<Track> subtitleTracksForDownload(Result result,String source,SubtitlePolicy.Selection selection) {
         List<Track> chosen=new ArrayList<>();
-        for(Track t:result.tracks)if(SubtitlePolicy.keepTrack(source,t.language,t.label))chosen.add(t);
+        for(Track t:result.tracks)if(SubtitlePolicy.keepForSelection(source,selection,t.language,t.label))chosen.add(t);
         return chosen;
     }
     private static String q(String s) throws Exception { return URLEncoder.encode(s,"UTF-8"); }
@@ -202,7 +207,8 @@ final class VideoResolver {
         ExecutorService pool=Executors.newFixedThreadPool(Math.min(3,Math.max(1,candidates.size())));
         List<Future<JSONObject>> futures=new ArrayList<>();
         int count=Math.min(8,candidates.size());
-        for(int i=0;i<count;i++) {final Candidate c=candidates.get(i);futures.add(pool.submit(()->probeCandidate(c)));}
+        final String source=item.optString("source");
+        for(int i=0;i<count;i++) {final Candidate c=candidates.get(i);futures.add(pool.submit(()->probeCandidate(c,source)));}
         JSONArray servers=new JSONArray();int failed=0;long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(50);
         try {
             for(Future<JSONObject> future:futures) {
@@ -214,26 +220,100 @@ final class VideoResolver {
         } finally {for(Future<JSONObject> future:futures)if(!future.isDone())future.cancel(true);pool.shutdownNow();}
         return new JSONObject().put("servers",servers).put("unavailable",failed);
     }
-    private static JSONObject probeCandidate(Candidate c) throws Exception {
+    private static JSONObject probeCandidate(Candidate c,String source) throws Exception {
         Result r=resolveCandidate(c,"best");JSONArray qualities=new JSONArray();
         qualities.put(new JSONObject().put("id","best").put("label","Best available"));
+        Map<String,JSONObject> subtitleMap=new LinkedHashMap<>();
+        for(Track track:r.tracks)addSubtitleOption(subtitleMap,SubtitlePolicy.trackOption(
+            track.language,track.label,track.preferred,SubtitlePolicy.defaultSelected(source,track.language,track.label,false)));
         boolean hls="application/x-mpegURL".equalsIgnoreCase(r.mime);
-        String note="";
+        String note="",subtitleNote="";
         if(hls) {
             try {
-                JSONArray variants=hlsQualities(SafeHttp.text(r.url,r.referer,2*1024*1024));
+                String playlist=SafeHttp.text(r.url,r.referer,2*1024*1024);
+                JSONArray variants=hlsQualities(playlist);
                 for(int i=0;i<variants.length();i++)qualities.put(variants.getJSONObject(i));
                 if(variants.length()==0)note="This server did not report separate video resolutions.";
-            }catch(Exception e){note="Individual video resolutions could not be checked; best available is still offered.";}
+                JSONArray hlsOptions=hlsSubtitleOptions(playlist,source);
+                for(int i=0;i<hlsOptions.length();i++)addSubtitleOption(subtitleMap,hlsOptions.getJSONObject(i));
+            }catch(Exception e){
+                note="Individual video resolutions could not be checked; best available is still offered.";
+                subtitleNote="In-stream subtitle tracks could not be checked.";
+            }
         } else {
             JSONArray variants=fileQualities(r.files);
             for(int i=0;i<variants.length();i++)qualities.put(variants.getJSONObject(i));
             note=variants.length()==0?"This server offers a file whose resolution is not reported.":"File resolutions are reported by the source.";
         }
+        JSONArray subtitles=new JSONArray(subtitleMap.values());
+        if(subtitles.length()==0&&subtitleNote.isEmpty())subtitleNote="No separate subtitle tracks were reported by this server.";
         String label=c.label;
         if("megaplay".equals(c.provider)||"direct-mega".equals(c.provider)||"gogomega".equals(c.provider))label+=" - MegaPlay SUB";
-        return new JSONObject().put("id",c.id).put("label",label).put("qualities",qualities).put("note",note);
+        return new JSONObject().put("id",c.id).put("label",label).put("qualities",qualities).put("note",note)
+            .put("subtitles",subtitles).put("subtitleNote",subtitleNote);
     }
+    private static void addSubtitleOption(Map<String,JSONObject> out,JSONObject option) throws Exception {
+        String id=option.optString("id");if(id.isEmpty()||option.optString("label").isEmpty())return;
+        JSONObject old=out.get(id);
+        if(old==null)out.put(id,option);
+        else {
+            old.put("preferred",old.optBoolean("preferred")||option.optBoolean("preferred"));
+            old.put("defaultSelected",old.optBoolean("defaultSelected")||option.optBoolean("defaultSelected"));
+        }
+    }
+    private static Map<String,String> hlsAttributes(String text) {
+        Map<String,String> out=new LinkedHashMap<>();int i=0;
+        while(i<text.length()) {
+            while(i<text.length()&&(text.charAt(i)==','||Character.isWhitespace(text.charAt(i))))i++;
+            int start=i;
+            while(i<text.length()&&text.charAt(i)!='='&&text.charAt(i)!=',')i++;
+            String key=text.substring(start,i).trim().toUpperCase(Locale.ROOT);
+            if(key.isEmpty()||i>=text.length()||text.charAt(i)!='=') {
+                while(i<text.length()&&text.charAt(i)!=',')i++;
+                continue;
+            }
+            i++;String value;
+            if(i<text.length()&&text.charAt(i)=='"') {
+                i++;int valueStart=i;
+                while(i<text.length()&&text.charAt(i)!='"')i++;
+                value=text.substring(valueStart,i);
+                if(i<text.length())i++;
+            } else {
+                int valueStart=i;
+                while(i<text.length()&&text.charAt(i)!=',')i++;
+                value=text.substring(valueStart,i).trim();
+            }
+            out.put(key,value);
+        }
+        return out;
+    }
+    private static String hlsAttr(Map<String,String> attrs,String key) {
+        String value=attrs.get(key);return value==null?"":value;
+    }
+    static JSONArray hlsSubtitleOptions(String master,String source) throws Exception {
+        Set<String> groups=new HashSet<>();List<Map<String,String>> media=new ArrayList<>();
+        for(String raw:master.split("\\r?\\n")) {
+            String line=raw.trim();
+            if(line.startsWith("#EXT-X-STREAM-INF:")) {
+                String group=hlsAttributes(line.substring(line.indexOf(':')+1)).get("SUBTITLES");
+                if(group!=null&&!group.isEmpty())groups.add(group);
+            } else if(line.startsWith("#EXT-X-MEDIA:")) {
+                media.add(hlsAttributes(line.substring(line.indexOf(':')+1)));
+            }
+        }
+        Map<String,JSONObject> out=new LinkedHashMap<>();
+        for(Map<String,String> attrs:media) {
+            if(!"SUBTITLES".equalsIgnoreCase(hlsAttr(attrs,"TYPE")))continue;
+            String group=hlsAttr(attrs,"GROUP-ID"),uri=hlsAttr(attrs,"URI");
+            if(uri.isEmpty()||(!groups.isEmpty()&&!groups.contains(group)))continue;
+            String language=hlsAttr(attrs,"LANGUAGE"),label=hlsAttr(attrs,"NAME");
+            boolean preferred="YES".equalsIgnoreCase(hlsAttr(attrs,"DEFAULT"))||"YES".equalsIgnoreCase(hlsAttr(attrs,"AUTOSELECT"));
+            addSubtitleOption(out,SubtitlePolicy.trackOption(language,label,preferred,
+                SubtitlePolicy.defaultSelected(source,language,label,true)));
+        }
+        return new JSONArray(out.values());
+    }
+
     static JSONArray hlsQualities(String master) throws Exception {
         Pattern resolution=Pattern.compile("(?:^|,)RESOLUTION=([0-9]{2,5})x([0-9]{2,5})(?:,|$)",Pattern.CASE_INSENSITIVE);
         Map<String,int[]> found=new LinkedHashMap<>();
@@ -291,9 +371,7 @@ final class VideoResolver {
             boolean english=SubtitlePolicy.isEnglish(declared,label);
             if(label.isEmpty())label=english?"English":declared;
             if(label.isEmpty())continue;
-            String lower=label.toLowerCase(Locale.ROOT),code=declared.toLowerCase(Locale.ROOT).replace('_','-');
-            String lang=english?"en":!code.isEmpty()&&!"und".equals(code)&&!"unknown".equals(code)?code:
-                lower.contains("indones")?"id":languageCode(lower);
+            String lang=SubtitlePolicy.languageCode(declared,label);
             String mime=url.toLowerCase(Locale.ROOT).contains(".srt")?"application/x-subrip":"text/vtt";
             result.tracks.add(new Track(url,label,lang,mime,t.optBoolean("default",false)||english));
         }
@@ -433,7 +511,7 @@ final class VideoResolver {
             boolean english=SubtitlePolicy.isEnglish(declared,label);
             if(label.isEmpty())label=english?"English":declared;
             if(label.isEmpty())continue;
-            String code=english?"en":!declared.isEmpty()?declared:languageCode(label.toLowerCase(Locale.ROOT));
+            String code=SubtitlePolicy.languageCode(declared,label);
             String mime=subtitle.toLowerCase(Locale.ROOT).contains(".srt")?"application/x-subrip":"text/vtt";
             result.tracks.add(new Track(subtitle,label,code,mime,track.optBoolean("default",false)||english));
         }

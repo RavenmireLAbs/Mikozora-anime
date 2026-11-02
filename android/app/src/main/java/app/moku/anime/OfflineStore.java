@@ -195,6 +195,7 @@ final class OfflineStore {
         String server=input.optString("server","auto"),quality=input.optString("quality","best");
         VideoResolver.validateSelection(server,quality);
         if("auto".equals(server)&&!"best".equals(quality))throw new IOException("Choose a server before selecting a specific quality");
+        SubtitlePolicy.Selection subtitleSelection=SubtitlePolicy.selectionFromInput(input,server);
         int added=0,skipped=0;
         for(int i=0;i<episodes.length();i++) {
             JSONObject pair=episodes.getJSONObject(i), item=pair.getJSONObject("item"), ep=pair.getJSONObject("episode");
@@ -214,6 +215,8 @@ final class OfflineStore {
             String episodeLanguage=SubtitlePolicy.languageFor(src,lang);
             JSONObject meta=new JSONObject().put("id",id).put("item",cleanItem).put("episode",cleanEp).put("language",episodeLanguage)
                 .put("serverChoice",server).put("qualityChoice",quality)
+                .put("subtitleMode",subtitleSelection.mode).put("subtitleSelection",new JSONArray(subtitleSelection.tracks.toString()))
+                .put("preferredSubtitleLanguage",subtitleSelection.preferredLanguage)
                 .put("status","queued").put("error","").put("subtitleDescription","Preparing subtitles")
                 .put("added",System.currentTimeMillis());
             OneTimeWorkRequest work=new OneTimeWorkRequest.Builder(DownloadWorker.class)

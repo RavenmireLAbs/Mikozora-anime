@@ -14,6 +14,10 @@ Expiring media URLs stay in the main process; provider/media requests use
 the Node equivalent of Android's `SafeHttp`, HLS renditions are downloaded
 with resume support, and completed media is converted to MP4 with the
 bundled FFmpeg binary for the built-in offline player and folder export.
+Server probes expose only label/language metadata for reported subtitle
+tracks; the user's Automatic/custom/no-separate choice is stored as stable
+language/label IDs and applied to sidecars and HLS text renditions exactly
+as on Android.
 
 Episode-update state lives in `userData/episode-updates.json`. Checks run
 on open, on demand, and about every six hours while the app is open or
@@ -62,7 +66,7 @@ desktop and the APK on Android.
 - **Stage 2:** downloads & offline playback
   (`VideoResolver`/`DownloadWorker` ported to Node with FFmpeg muxing),
   resumable direct/HLS transfers, subtitles, and verified folder export.
-- **Stage 3 (this release):** background new-episode alerts with a system-tray resident
+- **Stage 3:** background new-episode alerts with a system-tray resident
   checker and Windows notifications (porting `EpisodeStore`/`EpisodeFetcher`).
 
 The web UI probes the bridge for each capability

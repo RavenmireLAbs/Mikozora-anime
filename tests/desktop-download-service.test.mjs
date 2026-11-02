@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { access, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DownloadService, downloadIdFor } from '../desktop/src/lib/download-service.js';
+import { subtitleTrackOption } from '../desktop/src/lib/subtitles.js';
 
 async function waitFor(predicate, label) {
   const deadline = Date.now() + 10000;
@@ -149,6 +150,92 @@ test('download service retries, converts, plays, exports, cleans private copy an
   assert.deepEqual(await service.list(), []);
   assert.equal(await readFile(exportedVideo, 'utf8'), 'converted:source-video', 'removing the app record keeps user-owned exports');
   await service.shutdown();
+});
+
+test('custom subtitle selection downloads and exports only chosen non-English Sogo tracks', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mikozora-custom-subtitles-'));
+  const baseDir = join(root, 'app-downloads');
+  const exportRoot = join(root, 'chosen-folder');
+  await mkdir(exportRoot, { recursive: true });
+  const fetchedSubtitles = [];
+  const tracks = [
+    { url: 'https://cdn.example/en.vtt', label: 'English', language: 'en', mime: 'text/vtt', preferred: true },
+    { url: 'https://cdn.example/fr.srt', label: 'French', language: 'fr', mime: 'application/x-subrip', preferred: false },
+    { url: 'https://cdn.example/ar.vtt', label: 'Arabic', language: 'ar', mime: 'text/vtt', preferred: false },
+  ];
+  const service = new DownloadService({
+    baseDir,
+    resolver: {
+      resolve: async () => ({
+        url: 'https://cdn.example/custom.mp4', mime: 'video/mp4', referer: 'https://cdn.example/',
+        host: 'FixtureHost', serverLabel: 'Fixture Server', subtitleDescription: 'Available subtitle tracks',
+        fixedHeight: 720, tracks, files: [],
+      }),
+      downloadOptions: async () => ({ servers: [], unavailable: 0 }),
+    },
+    mediaProcessor: {
+      remux: async ({ inputs, output }) => {
+        const data = Buffer.from(`converted:${await readFile(inputs[0], 'utf8')}`);
+        await writeFile(output, data);
+        return { bytes: data.length, width: 1280, height: 720, hasVideo: true, hasAudio: true };
+      },
+      probe: async () => ({ hasVideo: true, hasAudio: true, width: 1280, height: 720 }),
+    },
+    publicUrlImpl: async (url) => new URL(url),
+    safeGetImpl: async (url) => {
+      fetchedSubtitles.push(String(url));
+      if (String(url).endsWith('fr.srt')) return Buffer.from('1\n00:00:01,000 --> 00:00:02,000\nBonjour\n');
+      if (String(url).endsWith('ar.vtt')) return Buffer.from('WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nArabic line\n');
+      return Buffer.from('WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nEnglish line\n');
+    },
+    safeFetchImpl: async (url) => ({ response: new Response('custom-video'), url: new URL(url) }),
+  });
+  await service.init();
+  try {
+    const episodes = [{
+      item: { source: 'sogo', url: 'https://animesogo.to/watch/custom', title: 'Custom Subtitles', image: '', type: 'TV' },
+      episode: { url: 'https://animesogo.to/watch/custom-episode-1', number: '1', title: '', ids: 'token' },
+    }];
+    const chosen = [
+      subtitleTrackOption({ label: 'Arabic', language: 'ar' }),
+      subtitleTrackOption({ label: 'French', language: 'fr' }),
+    ].map(({ id, label, language }) => ({ id, label, language }));
+    await assert.rejects(
+      service.enqueue(JSON.stringify({ episodes, language: 'english', server: 'auto', quality: 'best', subtitleMode: 'custom', subtitleTracks: chosen })),
+      /Choose a server before selecting subtitle tracks/,
+    );
+    assert.deepEqual(await service.enqueue(JSON.stringify({
+      episodes, language: 'english', server: 'sogo-fixture-0', quality: 'best',
+      subtitleMode: 'custom', subtitleTracks: chosen,
+    })), { added: 1, skipped: 0 });
+    const id = downloadIdFor('sogo', episodes[0].episode.url);
+    let record = await waitFor(async () => {
+      const found = (await service.list()).find((item) => item.id === id);
+      return found?.status === 'completed' ? found : null;
+    }, 'custom-subtitle download');
+    assert.deepEqual(fetchedSubtitles, ['https://cdn.example/fr.srt', 'https://cdn.example/ar.vtt']);
+    assert.deepEqual(record.tracks.map((track) => [track.label, track.language, track.preferred]), [
+      ['French', 'fr', false],
+      ['Arabic', 'ar', true],
+    ]);
+    assert.equal(record.preferredSubtitleLanguage, 'ar');
+    assert.equal(record.subtitleDescription, 'French, Arabic subtitles saved');
+
+    assert.equal((await service.setDownloadFolder(exportRoot)).granted, true);
+    await service.queueExport(id);
+    record = await waitFor(async () => {
+      const found = (await service.list()).find((item) => item.id === id);
+      return found?.exportStatus === 'completed' && found?.cleanupStatus === 'complete' ? found : null;
+    }, 'custom-subtitle folder export');
+    assert.equal(record.exportSubtitleCount, 2);
+    const exported = await listFiles(exportRoot);
+    assert.equal(exported.length, 3);
+    assert.ok(exported.some((file) => file.endsWith('.vtt')));
+    assert.ok(exported.some((file) => file.includes('.fr-1.srt')));
+    assert.match(await service.subtitleContent(id, 0), /Arabic line/);
+  } finally {
+    await service.shutdown();
+  }
 });
 
 test('queued records recover on service startup', async () => {

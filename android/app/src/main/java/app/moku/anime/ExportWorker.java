@@ -233,10 +233,19 @@ public final class ExportWorker extends Worker {
             return saved;
         }
         JSONObject item=meta.optJSONObject("item");String source=item==null?"":item.optString("source");
+        SubtitlePolicy.Selection selection=SubtitlePolicy.selectionFromRecord(meta);
         List<JSONObject> list=new ArrayList<>();
-        for(int i=0;i<tracks.length();i++){JSONObject t=tracks.optJSONObject(i);if(t!=null&&SubtitlePolicy.keepTrack(source,t.optString("language"),t.optString("label")))list.add(t);}
-        String preferred="indonesian".equals(SubtitlePolicy.languageFor(source,meta.optString("language")))?"id":"en";
-        Collections.sort(list,(a,b)->Boolean.compare(!preferred.equals(a.optString("language")),!preferred.equals(b.optString("language"))));
+        for(int i=0;i<tracks.length();i++){JSONObject t=tracks.optJSONObject(i);if(t!=null&&SubtitlePolicy.keepForSelection(source,selection,t.optString("language"),t.optString("label")))list.add(t);}
+        String preferred=selection.custom()&&!selection.preferredLanguage.isEmpty()?selection.preferredLanguage
+            :!meta.optString("preferredSubtitleLanguage").isEmpty()?meta.optString("preferredSubtitleLanguage")
+            :"indonesian".equals(SubtitlePolicy.languageFor(source,meta.optString("language")))?"id":"en";
+        String preferredPrimary=preferred.split("-",2)[0];
+        Collections.sort(list,(a,b)->{
+            int byPreferred=Boolean.compare(!a.optBoolean("preferred",false),!b.optBoolean("preferred",false));
+            if(byPreferred!=0)return byPreferred;
+            return Boolean.compare(!preferredPrimary.equals(SubtitlePolicy.languageCode(a.optString("language"),a.optString("label")).split("-",2)[0]),
+                !preferredPrimary.equals(SubtitlePolicy.languageCode(b.optString("language"),b.optString("label")).split("-",2)[0]));
+        });
         int written=0;
         for(JSONObject t:list) {
             String mime=t.optString("mime","text/vtt"),ext="application/x-subrip".equals(mime)?"srt":"vtt";

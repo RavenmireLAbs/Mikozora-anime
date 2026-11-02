@@ -8,8 +8,10 @@ import { parseHTML } from 'linkedom';
 import { allowedSource, isHttps, matchesSource, sourceBase, sourceName } from './allowlist.js';
 import { getText } from './http.js';
 import { safeText } from './safe-http.js';
-import { hlsQualities } from './hls.js';
-import { isEnglish, keepTrack } from './subtitles.js';
+import { hlsQualities, parseMasterPlaylist, selectVariant, subtitleRenditionOptions } from './hls.js';
+import {
+  isEnglish, keepTrack, keepTrackForSelection, subtitleLanguageCode, subtitleTrackOption,
+} from './subtitles.js';
 
 const LIMIT = 2 * 1024 * 1024;
 
@@ -62,8 +64,12 @@ function normalizedHttpUrl(raw, base) {
   return parsed;
 }
 
-export function subtitleTracksForDownload(result, source) {
-  return (result?.tracks || []).filter((track) => keepTrack(source, track.language, track.label));
+export function subtitleTracksForDownload(result, source, subtitleSelection = null) {
+  return (result?.tracks || []).filter((track) => (
+    subtitleSelection
+      ? keepTrackForSelection(source, subtitleSelection, track.language, track.label)
+      : keepTrack(source, track.language, track.label)
+  ));
 }
 
 export function validateSelection(server, quality) {
@@ -439,10 +445,7 @@ export function createVideoResolver({
       const english = isEnglish(declared, label);
       if (!label) label = english ? 'English' : declared;
       if (!label) continue;
-      const code = declared.toLowerCase().replaceAll('_', '-');
-      const lang = english ? 'en'
-        : code && code !== 'und' && code !== 'unknown' ? code
-          : label.toLowerCase().includes('indones') ? 'id' : languageCode(label.toLowerCase());
+      const lang = subtitleLanguageCode(declared, label);
       result.tracks.push({
         url,
         label,
@@ -483,7 +486,7 @@ export function createVideoResolver({
       result.tracks.push({
         url: subtitle,
         label,
-        language: english ? 'en' : declared || languageCode(label.toLowerCase()),
+        language: subtitleLanguageCode(declared, label),
         mime: subtitle.toLowerCase().includes('.srt') ? 'application/x-subrip' : 'text/vtt',
         preferred: !!track.default || english,
       });
@@ -645,27 +648,56 @@ export function createVideoResolver({
     throw new Error(last ? `No supported server could be resolved: ${last}` : 'No supported download server was available');
   }
 
-  async function probeCandidate(candidate, signal) {
+  async function probeCandidate(candidate, source, signal) {
     const result = await resolveCandidate(candidate, 'best', signal);
     const qualities = [{ id: 'best', label: 'Best available' }];
+    const subtitleMap = new Map();
+    const addSubtitle = (option) => {
+      if (!option?.id || !option.label) return;
+      const old = subtitleMap.get(option.id);
+      subtitleMap.set(option.id, old ? {
+        ...old,
+        preferred: old.preferred || option.preferred,
+        defaultSelected: old.defaultSelected || option.defaultSelected,
+      } : option);
+    };
+    for (const track of result.tracks || []) {
+      addSubtitle(subtitleTrackOption(track, keepTrack(source, track.language, track.label)));
+    }
     let note = '';
+    let subtitleNote = '';
     if ((result.mime || '').toLowerCase() === 'application/x-mpegurl') {
       try {
-        const variants = hlsQualities(await hostText(result.url, result.referer, LIMIT, { signal }));
+        const playlist = await hostText(result.url, result.referer, LIMIT, { signal });
+        const variants = hlsQualities(playlist);
         qualities.push(...variants);
         if (!variants.length) note = 'This server did not report separate video resolutions.';
+        try {
+          const master = parseMasterPlaylist(playlist, result.url);
+          let variant = null;
+          try { variant = selectVariant(master, 'best'); } catch { /* Options can still list reported renditions. */ }
+          for (const option of subtitleRenditionOptions(master, variant, { source })) addSubtitle(option);
+        } catch {
+          if (signal?.aborted) throw new Error('Server check superseded.');
+          subtitleNote = 'In-stream subtitle tracks could not be checked.';
+        }
       } catch {
         if (signal?.aborted) throw new Error('Server check superseded.');
         note = 'Individual video resolutions could not be checked; best available is still offered.';
+        subtitleNote = 'In-stream subtitle tracks could not be checked.';
       }
     } else {
       const variants = fileQualities(result.files);
       qualities.push(...variants);
       note = variants.length ? 'File resolutions are reported by the source.' : 'This server offers a file whose resolution is not reported.';
     }
+    const subtitles = [...subtitleMap.values()];
+    if (!subtitles.length && !subtitleNote) {
+      subtitleNote = 'No separate subtitle tracks were reported by this server.';
+    }
     let label = candidate.label;
     if (['megaplay', 'direct-mega', 'gogomega'].includes(candidate.provider)) label += ' - MegaPlay SUB';
-    return { id: candidate.id, label, qualities, note };
+    return { id: candidate.id, label, qualities, note, subtitles, subtitleNote };
   }
 
   async function downloadOptions(item, episode, language = 'english', options = {}) {
@@ -679,7 +711,7 @@ export function createVideoResolver({
     const worker = async () => {
       while (next < count) {
         const index = next++;
-        try { results[index] = await probeCandidate(list[index], signal); }
+        try { results[index] = await probeCandidate(list[index], item?.source || '', signal); }
         catch { results[index] = null; }
       }
     };

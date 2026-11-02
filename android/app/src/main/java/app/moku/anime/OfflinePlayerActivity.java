@@ -51,6 +51,7 @@ public final class OfflinePlayerActivity extends Activity {
         }
         try {
             List<MediaItem.SubtitleConfiguration> subtitles=new ArrayList<>();JSONArray tracks=meta.optJSONArray(folder?"exportTracks":"tracks");
+            String preferredText=meta.optString("preferredSubtitleLanguage","");
             if(tracks!=null)for(int i=0;i<tracks.length();i++) {
                 JSONObject t=tracks.optJSONObject(i);if(t==null)continue;Uri uri;
                 if(folder) {
@@ -59,6 +60,7 @@ public final class OfflinePlayerActivity extends Activity {
                     String name=t.optString("file");if(!name.matches("track-[0-9]+\\.(vtt|srt)"))continue;
                     File f=new File(OfflineStore.subtitleDir(this,id),name);if(!f.isFile())continue;uri=Uri.fromFile(f);
                 }
+                if((preferredText.isEmpty()||"und".equals(preferredText))&&t.optBoolean("preferred",false))preferredText=t.optString("language","");
                 subtitles.add(new MediaItem.SubtitleConfiguration.Builder(uri)
                     .setMimeType(t.optString("mime","text/vtt")).setLanguage(t.optString("language","und"))
                     .setLabel(t.optString("label","Subtitles"))
@@ -77,8 +79,9 @@ public final class OfflinePlayerActivity extends Activity {
             }
             player=new ExoPlayer.Builder(this).setMediaSourceFactory(new DefaultMediaSourceFactory(data)).build();
             player.setAudioAttributes(new AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(),true);
+            if(preferredText.isEmpty()||"und".equals(preferredText))preferredText="indonesian".equals(meta.optString("language"))?"id":"en";
             player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
-                .setPreferredTextLanguage("indonesian".equals(meta.optString("language"))?"id":"en").build());
+                .setPreferredTextLanguage(preferredText).build());
             player.addListener(new Player.Listener(){@Override public void onPlayerError(PlaybackException e){
                 Toast.makeText(OfflinePlayerActivity.this,folder?"Could not play the saved folder file. Check that it still exists and Mikozora can access the folder.":"Offline playback failed. Check device format support, or remove and download this episode again.",Toast.LENGTH_LONG).show();
             }});

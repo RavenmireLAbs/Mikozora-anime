@@ -391,6 +391,7 @@ function DownloadModal({request,close,submit}) {
   const englishOnly=['sogo','suge','anikoto','rulz','waves','bash'].includes(request.item.source);
   const sourceControlled=!englishOnly && request.item.source!=='xin';
   const [language,setLanguage]=useState(englishOnly||sourceControlled?'english':request.language||'english');const [server,setServer]=useState('auto');const [quality,setQuality]=useState('best');
+  const [subtitleMode,setSubtitleMode]=useState('auto');const [subtitleSelection,setSubtitleSelection]=useState(()=>new Set());
   const [working,setWorking]=useState(false);const [attempt,setAttempt]=useState(0);
   const [options,setOptions]=useState({loading:true,servers:[],unavailable:0,error:''});
   const count=request.episodes.length, sample=request.episodes[0];
@@ -405,22 +406,47 @@ function DownloadModal({request,close,submit}) {
   },[request.item.source,sample.url,sample.ids,language,attempt]);
   const chosen=options.servers.find(x=>x.id===server);
   const qualityOptions=chosen?.qualities?.length?chosen.qualities:[{id:'best',label:'Best available (HLS up to 1080p)'}];
-  async function confirm(){setWorking(true);try{await submit({language,server,quality})}finally{setWorking(false)}}
-  function changeLanguage(value){setLanguage(value);setServer('auto');setQuality('best')}
-  function changeServer(value){setServer(value);setQuality('best')}
+  const subtitleOptions=Array.isArray(chosen?.subtitles)?chosen.subtitles.filter(x=>x?.id&&x?.label):[];
+  const selectedSubtitleTracks=subtitleMode==='custom'?subtitleOptions.filter(x=>subtitleSelection.has(x.id)).map(({id,label,language:trackLanguage})=>({id,label,language:trackLanguage||'und'})):[];
+  const subtitleInvalid=subtitleMode==='custom'&&!selectedSubtitleTracks.length;
+  async function confirm(){if(subtitleInvalid)return;setWorking(true);try{await submit({language,server,quality,subtitleMode,subtitleTracks:selectedSubtitleTracks})}finally{setWorking(false)}}
+  function changeLanguage(value){setLanguage(value);setServer('auto');setQuality('best');setSubtitleMode('auto');setSubtitleSelection(new Set())}
+  function changeServer(value){
+    setServer(value);setQuality('best');
+    if(value==='auto'){setSubtitleMode('auto');setSubtitleSelection(new Set());return;}
+    const next=options.servers.find(x=>x.id===value), reported=Array.isArray(next?.subtitles)?next.subtitles:[];
+    const defaults=new Set(reported.filter(x=>x.defaultSelected).map(x=>x.id));
+    const available=new Set(reported.map(x=>x.id));
+    const prior=request.serverChoice===value&&Array.isArray(request.subtitleSelection)?request.subtitleSelection.map(x=>x?.id).filter(id=>available.has(id)):[];
+    if(request.serverChoice===value&&request.subtitleMode==='custom'&&prior.length){setSubtitleMode('custom');setSubtitleSelection(new Set(prior));}
+    else if(request.serverChoice===value&&request.subtitleMode==='none'){setSubtitleMode('none');setSubtitleSelection(defaults);}
+    else{setSubtitleMode('auto');setSubtitleSelection(defaults);}
+  }
+  function chooseSubtitleMode(value){
+    setSubtitleMode(value);
+    if(value==='custom'&&![...subtitleSelection].some(id=>subtitleOptions.some(x=>x.id===id)))setSubtitleSelection(new Set(subtitleOptions.filter(x=>x.defaultSelected).map(x=>x.id)));
+  }
+  function toggleSubtitle(id){setSubtitleSelection(previous=>{const next=new Set(previous);next.has(id)?next.delete(id):next.add(id);return next;})}
   return <div className="modal-backdrop" onMouseDown={close}><div className="download-modal" role="dialog" aria-modal="true" aria-label="Download episodes" onMouseDown={e=>e.stopPropagation()}>
     <div className="player-header"><div><span className="eyebrow">SAVE FOR OFFLINE</span><h2>{count===1?`Download episode ${sample.number}`:`Download ${count} episodes`}</h2><p>{request.item.title} · {sourceName(request.item.source)}</p></div><button className="icon-btn" onClick={close} aria-label="Close download dialog"><X size={20}/></button></div>
     <div className="download-dialog-body"><div className="download-fields">
-      <label className="download-language">PREFERRED SUBTITLE LANGUAGE<select value={language} onChange={e=>changeLanguage(e.target.value)} disabled={englishOnly||sourceControlled}><option value="english">{sourceControlled?'Set by server':englishOnly?'English only':'English'}</option>{!englishOnly&&!sourceControlled&&<option value="indonesian">Indonesian</option>}</select></label>
+      <label className="download-language">PREFERRED SUBTITLE LANGUAGE<select value={language} onChange={e=>changeLanguage(e.target.value)} disabled={englishOnly||sourceControlled}><option value="english">{sourceControlled?'Set by server':englishOnly?'English (automatic default)':'English'}</option>{!englishOnly&&!sourceControlled&&<option value="indonesian">Indonesian</option>}</select></label>
       <label className="download-language">DOWNLOAD SERVER<select value={server} onChange={e=>changeServer(e.target.value)}><option value="auto">Automatic · first compatible server</option>{options.servers.map(x=><option value={x.id} key={x.id}>{x.label}</option>)}</select></label>
       <label className="download-language">VIDEO QUALITY<select value={quality} onChange={e=>setQuality(e.target.value)}>{qualityOptions.map(x=><option value={x.id} key={x.id}>{x.label}</option>)}</select></label>
+      <div className="download-language subtitle-selection"><span>SUBTITLE TRACKS</span>{server==='auto'?<p className="subtitle-selection-note">Automatic subtitles are used with Automatic server. Choose a download server to see the separate tracks it reports for episode {sample.number}.</p>:<div className="subtitle-choice-list">
+        <label className="subtitle-choice"><input type="radio" name="download-subtitle-mode" checked={subtitleMode==='auto'} onChange={()=>chooseSubtitleMode('auto')}/><span><strong>Automatic</strong><small>{englishOnly?'Identifiable English tracks, as before':'Mikozora’s usual subtitle selection'}</small></span></label>
+        <label className={'subtitle-choice '+(subtitleOptions.length?'':'disabled')}><input type="radio" name="download-subtitle-mode" checked={subtitleMode==='custom'} disabled={!subtitleOptions.length} onChange={()=>chooseSubtitleMode('custom')}/><span><strong>Choose tracks</strong><small>{subtitleOptions.length?(subtitleMode==='custom'?`${selectedSubtitleTracks.length} of ${subtitleOptions.length} selected`:`${subtitleOptions.length} reported`):'No separate tracks reported'}</small></span></label>
+        {subtitleMode==='custom'&&<div className="subtitle-track-list" aria-label="Reported subtitle tracks">{subtitleOptions.map(track=><label className="subtitle-track" key={track.id}><span><strong>{track.label}</strong><small>{track.language||'und'}{track.preferred?' · Server default':''}</small></span><input type="checkbox" checked={subtitleSelection.has(track.id)} onChange={()=>toggleSubtitle(track.id)} aria-label={`Download ${track.label} subtitles`}/></label>)}</div>}
+        <label className="subtitle-choice"><input type="radio" name="download-subtitle-mode" checked={subtitleMode==='none'} onChange={()=>chooseSubtitleMode('none')}/><span><strong>No separate subtitles</strong><small>Burned-in subtitles, if any, stay in the video</small></span></label>
+        <p className="subtitle-selection-note">{chosen?.subtitleNote||'Tracks are matched by language and label on each episode; subtitle web addresses are never stored.'}</p>{subtitleInvalid&&<p className="subtitle-selection-error" role="alert">Choose at least one track, Automatic, or No separate subtitles.</p>}
+      </div>}</div>
     </div>
       <div className="quality-hint" role="status">{options.loading?<><LoaderCircle size={14} className="spin"/> Checking available servers and qualities…</>:options.error?<><AlertCircle size={14}/> {options.error} <button onClick={()=>setAttempt(x=>x+1)}>Retry</button></>:<><Check size={14}/>{chosen?.note || (options.servers.length?`${options.servers.length} compatible server${options.servers.length===1?'':'s'} found for episode ${sample.number}.`:'No compatible servers were confirmed; Automatic may not work.')}{options.unavailable>0?' Some servers could not be checked.':''}</>}</div>
-      {count>1&&<p className="quality-batch-hint">Choices are based on episode {sample.number}. Each episode must offer the selected server and quality, or that episode will fail rather than silently switch.</p>}
-      <div className="download-explainer"><ShieldCheck size={18}/><p>{request.item.source==='xin'?'Only supported servers are shown. AnimeXin subtitles are usually burned into the video in the selected language.':englishOnly?`${sourceName(request.item.source)} downloads identifiable English subtitle tracks only. If English is unavailable, the video may be saved without subtitles.`:'Only compatible servers are shown. Subtitles and languages depend on the selected third-party server.'}</p></div>
+      {count>1&&<p className="quality-batch-hint">Choices are based on episode {sample.number}. Each episode must offer the selected server and quality{subtitleMode==='custom'?', and at least one selected subtitle track,':''} or that episode will fail rather than silently switch.</p>}
+      <div className="download-explainer"><ShieldCheck size={18}/><p>{request.item.source==='xin'?'Only supported servers are shown. AnimeXin subtitles are usually burned into the video in the selected language.':englishOnly?`${sourceName(request.item.source)} uses identifiable English tracks with Automatic. Choose a server, then Choose tracks, to download different server-reported subtitles.`:'Only compatible servers are shown. Choose a server to pick its reported subtitle tracks; burned-in subtitles cannot be removed.'}</p></div>
       <p className="download-caution">Best HLS quality is capped at 1080p. Downloads use temporary app space; if you choose a folder, Mikozora removes its private copy after the saved video and subtitles are verified. Downloads can be large{isDesktopApp()?' and converting HLS can take a while.':' and may use mobile data.'}</p>
       {!hasNativeDownloads()&&<p className="preview-note"><AlertCircle size={15}/> {isDesktopApp()?'Downloads are unavailable in this Windows build.':'Downloads work in the Android app, not the browser preview.'}</p>}
-      <div className="download-dialog-actions"><button className="btn secondary" onClick={close}>Cancel</button><button className="btn primary" disabled={!hasNativeDownloads()||working} onClick={confirm}>{working?<LoaderCircle size={16} className="spin"/>:<Download size={16}/>} Add to queue</button></div>
+      <div className="download-dialog-actions"><button className="btn secondary" onClick={close}>Cancel</button><button className="btn primary" disabled={!hasNativeDownloads()||working||subtitleInvalid} onClick={confirm}>{working?<LoaderCircle size={16} className="spin"/>:<Download size={16}/>} Add to queue</button></div>
     </div></div></div>;
 }
 function DownloadsPage({items,loading,remove,retry,change,browse,folder,saveCopy,openSettings}) {
@@ -928,13 +954,13 @@ function App() {
   const clearHistory=()=>{if(window.confirm('Clear recently opened episodes from this device?')){setHistory([]);setStoredProgress([]);setToast('History cleared');}};
   const clearLibrary=()=>{if(window.confirm('Remove all saved titles from this device and their collection memberships? Your collections, downloads and folder files will remain.')){setLibrary([]);setCollections(previous=>previous.map(c=>({...c,items:[]})));setToast('Library cleared');}};
   const queueEpisodes=(item,episodes)=>{if(!episodes.length)return;setDownloadModal({item,episodes});};
-  const submitDownload=async ({language,server,quality})=>{
+  const submitDownload=async ({language,server,quality,subtitleMode='auto',subtitleTracks=[]})=>{
     if(!downloadModal)return;
     try{
       const item=downloadModal.item;
       const summary={source:item.source,url:item.url,title:item.title,image:item.image,type:item.type};
       const episodes=downloadModal.episodes.map(ep=>({item:summary,episode:{url:ep.url,number:ep.number,title:ep.title,ids:ep.ids||''}}));
-      const result=await enqueueDownloads(episodes,language,server,quality);
+      const result=await enqueueDownloads(episodes,language,server,quality,subtitleMode,subtitleTracks);
       setDownloadModal(null);setToast(result.added?`${result.added} episode${result.added===1?'':'s'} added to the queue`:'Already in your downloads');
       try{setDownloads(await getDownloads())}catch{} go('downloads');
     }catch(e){setToast(e.message||'Could not add episodes to the queue');}
@@ -945,7 +971,7 @@ function App() {
     catch(e){setToast(e.message||'Could not remove this download');}
   };
   const retryDownload=async d=>{
-    try{await enqueueDownloads([{item:d.item,episode:d.episode}],d.language||'english',d.serverChoice||'auto',d.qualityChoice||'best');setDownloads(await getDownloads());setToast('Added back to the queue');}
+    try{await enqueueDownloads([{item:d.item,episode:d.episode}],d.language||'english',d.serverChoice||'auto',d.qualityChoice||'best',d.subtitleMode||'auto',Array.isArray(d.subtitleSelection)?d.subtitleSelection:[]);setDownloads(await getDownloads());setToast('Added back to the queue');}
     catch(e){setToast(e.message||'Could not retry this download');}
   };
   const chooseFolder=async()=>{
@@ -970,7 +996,7 @@ function App() {
     {route.page==='detail'&&<DetailPage item={route.item} openEpisode={play} has={has} toggle={toggle} organize={item=>setCollectionDialog({kind:'title',item})} back={back} history={history} refreshKey={refreshKey} queueEpisodes={queueEpisodes} downloads={downloads} showDownloads={()=>go('downloads')} notify={setToast} hideNsfw={hideNsfw} openSettings={()=>go('settings')} watched={watchedUrlSet(progress,history,route.item)} onEpisodesReady={syncProgress} markWatched={markWatched}/>}
     {route.page==='library'&&<LibraryPage {...common} items={library} collections={collections} activeCollection={activeCollection} setActiveCollection={setActiveCollection} onCreate={()=>setCollectionDialog({kind:'new'})} onRename={id=>setCollectionDialog({kind:'rename',id})} onDelete={removeCollection} onMembers={id=>setCollectionDialog({kind:'members',id})} onFavourite={favourite} unreadTitles={unreadTitles} progressByTitle={libraryProgress} hideNsfw={hideNsfw}/>}
     {route.page==='updates'&&<UpdatesPage state={updates} available={updatesAvailable} syncError={updatesSyncError} actionError={updatesActionError} check={checkNow} readAll={readAllUpdates} openUpdate={viewUpdate} openLibrary={()=>go('library')} openSettings={()=>go('settings')}/>}
-    {route.page==='downloads'&&<DownloadsPage items={downloads} loading={downloadsLoading} remove={deleteDownload} retry={retryDownload} change={d=>setDownloadModal({item:d.item,episodes:[d.episode],language:d.language||'english'})} browse={browse} folder={folder} saveCopy={saveCopy} openSettings={()=>go('settings')}/>}
+    {route.page==='downloads'&&<DownloadsPage items={downloads} loading={downloadsLoading} remove={deleteDownload} retry={retryDownload} change={d=>setDownloadModal({item:d.item,episodes:[d.episode],language:d.language||'english',serverChoice:d.serverChoice||'auto',subtitleMode:d.subtitleMode||'auto',subtitleSelection:Array.isArray(d.subtitleSelection)?d.subtitleSelection:[]})} browse={browse} folder={folder} saveCopy={saveCopy} openSettings={()=>go('settings')}/>}
     {route.page==='history'&&<HistoryPage items={history.filter(entry=>!hideNsfw||!isNsfw(entry.item))} resume={resume} open={open} clear={clearHistory} browse={browse}/>}
     {route.page==='sources'&&<SourcesPage browse={browse}/>}
     {route.page==='settings'&&<SettingsPage library={library} history={history} clearLibrary={clearLibrary} clearHistory={clearHistory} openLicenses={()=>setLicenses(true)} openReleaseNotes={()=>setExperience({mode:'update',manual:true})} folder={folder} chooseFolder={chooseFolder} usePrivate={usePrivate} updates={updates} updatesAvailable={updatesAvailable} changeAutomatic={changeAutomatic} changeAlerts={changeAlerts} notificationPermission={notificationPermission} appearance={appearance} changeAppearance={changeAppearance} contentPrefs={contentPrefs} changeContentPrefs={changeContentPrefs} appUpdate={appUpdate} pendingUpdate={pendingUpdate} updateStatus={updateStatus} checkUpdate={checkAppUpdate} changeAutoCheck={changeAutoCheck} downloadUpdate={downloadAppUpdate} exportBackup={exportBackup} importBackup={importBackup}/>}

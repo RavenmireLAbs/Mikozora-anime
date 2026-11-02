@@ -64,7 +64,7 @@ await page.addInitScript(({ version, experienceKey })=>{
   request(id,url){window.__fixture(url).then(v=>reply(id,v)).catch(e=>window.__mokuNativeChunk(id,'',true,e.message));},
   downloads(id){reply(id,window.__oldDownloads)},exportSettings(id){reply(id,{configured:true,granted:true,name:'My folder'})},
   openPlayer(raw){window.__players.push(JSON.parse(raw))},playerNavigationError(message){window.__playerErrors.push(message)},openExternal(){},openDownload(){},openExport(){},
-  downloadOptions(id,raw){let p=JSON.parse(raw);reply(id,{servers:[{id:`${p.item.source}-server-0`,label:'Test server',qualities:[{id:'best',label:'Best'},{id:'v:1280x720',label:'720p'}]}],unavailable:0})},
+  downloadOptions(id,raw){let p=JSON.parse(raw);reply(id,{servers:[{id:`${p.item.source}-server-0`,label:'Test server',qualities:[{id:'best',label:'Best'},{id:'v:1280x720',label:'720p'}],subtitles:[{id:`s:${'a'.repeat(32)}`,label:'English',language:'en',preferred:true,defaultSelected:true},{id:`s:${'b'.repeat(32)}`,label:'French',language:'fr',preferred:false,defaultSelected:false}],subtitleNote:'Fixture subtitle tracks'}],unavailable:0})},
   enqueueDownloads(id,raw){let p=JSON.parse(raw);window.__queued.push(p);reply(id,{added:p.episodes.length,skipped:0})}
  };
 },{version:APP_VERSION,experienceKey:EXPERIENCE_KEY});
@@ -99,7 +99,7 @@ try{
    await page.getByRole('button',{name:'Download episode 1'}).click();
    const language=page.getByLabel('PREFERRED SUBTITLE LANGUAGE');
    assert.equal(await language.isDisabled(),true);
-   if(id==='waves')assert.equal(await language.locator('option:checked').innerText(),'English only');
+   if(id==='waves')assert.equal(await language.locator('option:checked').innerText(),'English (automatic default)');
    else assert.equal(await language.locator('option:checked').innerText(),'Set by server');
    await page.getByRole('button',{name:'Cancel',exact:true}).click();
   }
@@ -110,8 +110,11 @@ try{
    await page.getByRole('button',{name:/Download 2/}).click();
    await page.locator('select').filter({has:page.locator('option[value="suge-server-0"]')}).waitFor();
    await page.getByLabel('DOWNLOAD SERVER').selectOption('suge-server-0');await page.getByLabel('VIDEO QUALITY').selectOption('v:1280x720');
+   await page.getByLabel(/Choose tracks/).check();
+   await page.getByLabel('Download English subtitles').uncheck();
+   await page.getByLabel('Download French subtitles').check();
    await page.getByRole('button',{name:'Add to queue'}).click();
-   const queued=await page.evaluate(()=>window.__queued[0]);assert.equal(queued.episodes.length,2);assert.equal(queued.server,'suge-server-0');assert.equal(queued.quality,'v:1280x720');assert.equal(queued.language,'english');
+   const queued=await page.evaluate(()=>window.__queued[0]);assert.equal(queued.episodes.length,2);assert.equal(queued.server,'suge-server-0');assert.equal(queued.quality,'v:1280x720');assert.equal(queued.language,'english');assert.equal(queued.subtitleMode,'custom');assert.deepEqual(queued.subtitleTracks,[{id:`s:${'b'.repeat(32)}`,label:'French',language:'fr'}]);
   }
   await nav().click();
  }

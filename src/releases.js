@@ -1,13 +1,22 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; older entries remain available.
-export const APP_VERSION = '0.23.0';
+export const APP_VERSION = '0.24.0';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.23.0',
+    version: '0.24.0',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Choose which subtitles a server saves', description: 'The download dialog now lists the separate subtitle tracks a selected server reports — including AnimeSogo and the other supported sources. Keep Automatic, tick one or more languages or named tracks such as an SDH/CC variant, or choose no separate subtitles. On Anime sources, Automatic still saves identifiable English tracks, but an explicit choice can save a different language instead.' },
+      { title: 'Your choice stays with the episode', description: 'Mikozora remembers your subtitle choice for retries, uses the first chosen saved track as the playback default, and copies those same tracks into a verified folder save on Android and Windows. When you change a failed download’s server, choosing the same server restores its earlier subtitle picks.' },
+      { title: 'Only tracks the server actually offers', description: 'Choices are matched by language and label on every episode, without storing expiring subtitle web addresses. If none of your chosen tracks is available for an episode, that episode fails with a clear message rather than silently switching. Servers with no separate tracks say so, and subtitles burned into the video cannot be removed.' },
+    ],
+  },
+  {
+    version: '0.23.0',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'New-episode alerts arrive on Windows', description: 'The Windows app now checks your Favourites and personal collections for new episodes, just like Android: when it opens and about every six hours after that. The first check quietly sets a starting point, so existing episodes never trigger a flood of alerts, and anything genuinely new lands in Updates with badges on your library cards.' },
       { title: 'Mikozora waits in the tray', description: 'While automatic checks are on, closing the Windows window parks Mikozora in the system tray so background checks and Windows notifications keep working. Double-click the tray icon to come back, use its menu to check right away, or choose Quit Mikozora to exit fully. Turn automatic checks off in Settings and closing the window quits as before.' },

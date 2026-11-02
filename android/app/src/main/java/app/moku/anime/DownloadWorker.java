@@ -70,37 +70,53 @@ public final class DownloadWorker extends Worker {
             JSONObject item=meta.getJSONObject("item");String source=item.optString("source");
             String language=SubtitlePolicy.languageFor(source,meta.optString("language","english"));
             boolean englishOnly=SubtitlePolicy.englishOnly(source);
+            SubtitlePolicy.Selection subtitleSelection=SubtitlePolicy.selectionFromRecord(meta);
             VideoResolver.Result resolved=VideoResolver.resolve(item,meta.getJSONObject("episode"),language,server,quality);
             if(isStopped()||OfflineStore.get(c,id)==null)return Result.success();
             SafeHttp.publicUrl(resolved.url);
             OfflineStore.registerReferer(c,resolved.url,resolved.referer);
-            // The language policy is checked before making any subtitle-file network request.
-            JSONArray savedTracks=saveTracks(c,id,resolved,source);
-            if(!englishOnly&&!resolved.tracks.isEmpty()&&savedTracks.length()==0)
+            // The selection is checked before making any subtitle-file network request.
+            JSONArray savedTracks=saveTracks(c,id,resolved,source,subtitleSelection);
+            if(subtitleSelection.auto()&&!englishOnly&&!resolved.tracks.isEmpty()&&savedTracks.length()==0)
                 throw new IOException("The host provided subtitles, but none could be saved. Please retry.");
             String preferred="indonesian".equals(language)?"id":"en";
-            boolean offered=false,savedPreferred=false;
-            for(VideoResolver.Track t:resolved.tracks)
+            boolean offered=false,savedPreferred=false,selectedOffered=false;
+            for(VideoResolver.Track t:resolved.tracks) {
                 if(preferred.equals(t.language)||("en".equals(preferred)&&SubtitlePolicy.isEnglish(t.language,t.label)))offered=true;
+                if(SubtitlePolicy.matchesSelection(subtitleSelection,t.language,t.label))selectedOffered=true;
+            }
             for(int i=0;i<savedTracks.length();i++) {
                 JSONObject t=savedTracks.getJSONObject(i);
                 if(preferred.equals(t.optString("language"))||("en".equals(preferred)&&SubtitlePolicy.isEnglish(t.optString("language"),t.optString("label"))))savedPreferred=true;
             }
-            if(offered&&!savedPreferred)throw new IOException("The requested subtitle track could not be saved. Please retry.");
+            if(subtitleSelection.auto()&&offered&&!savedPreferred)throw new IOException("The requested subtitle track could not be saved. Please retry.");
             meta=OfflineStore.get(c,id);if(meta==null || isStopped())return Result.success();
-            String description=englishOnly?"No English subtitles available":resolved.subtitleDescription;
+            String description=subtitleSelection.none()
+                ?(resolved.subtitleDescription!=null&&resolved.subtitleDescription.contains("burned in")?resolved.subtitleDescription:"No separate subtitles selected")
+                :(englishOnly&&subtitleSelection.auto()?"No English subtitles available":resolved.subtitleDescription);
             if(savedTracks.length()>0) {
                 StringBuilder names=new StringBuilder();
                 for(int i=0;i<Math.min(savedTracks.length(),3);i++){if(i>0)names.append(", ");names.append(savedTracks.getJSONObject(i).optString("label"));}
                 description=names+(savedTracks.length()>3?" + "+(savedTracks.length()-3)+" more":"")+" subtitles saved";
-                if(!offered)description="Requested language unavailable · "+description;
+                if(subtitleSelection.auto()&&!offered)description="Requested language unavailable · "+description;
             }
             final String summary=description;
             if(!OfflineStore.change(c,id,current->{current.put("language",language);current.put("tracks",savedTracks);current.put("host",resolved.host);current.put("serverLabel",resolved.serverLabel);current.put("subtitleDescription",summary);}))return Result.success();
-            Prepared prepared=prepare(c,id,resolved,language,quality,englishOnly);
+            Prepared prepared=prepare(c,id,resolved,language,quality,englishOnly,subtitleSelection);
             if(isStopped()||OfflineStore.get(c,id)==null)return Result.success();
-            if(englishOnly&&savedTracks.length()==0&&prepared.englishHlsText)
-                OfflineStore.update(c,id,"subtitleDescription","English subtitles saved with video");
+            if(subtitleSelection.custom()&&savedTracks.length()==0&&!prepared.subtitleSelected)
+                throw new IOException(selectedOffered||prepared.subtitleOffered
+                    ?"The selected subtitle track could not be saved. Please retry."
+                    :"The selected subtitle track is not available for this episode.");
+            if(savedTracks.length()==0&&prepared.subtitleSelected&&((englishOnly&&subtitleSelection.auto())||subtitleSelection.custom())) {
+                String hlsDescription="English subtitles saved with video";
+                if(subtitleSelection.custom()&&!prepared.subtitleLabels.isEmpty()) {
+                    StringBuilder names=new StringBuilder();
+                    for(int i=0;i<Math.min(prepared.subtitleLabels.size(),3);i++){if(i>0)names.append(", ");names.append(prepared.subtitleLabels.get(i));}
+                    hlsDescription=names+(prepared.subtitleLabels.size()>3?" + "+(prepared.subtitleLabels.size()-3)+" more":"")+" subtitles saved with video";
+                }
+                OfflineStore.update(c,id,"subtitleDescription",hlsDescription);
+            }
             OfflineStore.update(c,id,"qualityLabel",prepared.qualityLabel);
             DownloadService.sendAddDownload(c,MokuDownloadService.class,prepared.request,true);
             if(OfflineStore.get(c,id)==null) {
@@ -136,11 +152,11 @@ public final class DownloadWorker extends Worker {
         }
         return Result.success();
     }
-    private JSONArray saveTracks(Context c,String id,VideoResolver.Result resolved,String source) throws Exception {
+    private JSONArray saveTracks(Context c,String id,VideoResolver.Result resolved,String source,SubtitlePolicy.Selection selection) throws Exception {
         File dir=OfflineStore.subtitleDir(c,id);OfflineStore.deleteTree(dir);
         if(!dir.mkdirs()&&!dir.isDirectory())throw new IOException("Could not create subtitle storage");
         JSONArray saved=new JSONArray();
-        for(VideoResolver.Track track:VideoResolver.subtitleTracksForDownload(resolved,source)) {
+        for(VideoResolver.Track track:VideoResolver.subtitleTracksForDownload(resolved,source,selection)) {
             if(isStopped()||OfflineStore.get(c,id)==null)break;
             try {
                 byte[] bytes=SafeHttp.get(track.url,resolved.referer,2*1024*1024);
@@ -153,13 +169,36 @@ public final class DownloadWorker extends Worker {
                 saved.put(new JSONObject().put("file",name).put("label",track.label).put("language",track.language).put("mime",track.mime).put("preferred",track.preferred));
             }catch(Exception ignored) { }
         }
+        if(selection.custom()) {
+            for(int i=0;i<saved.length();i++)saved.getJSONObject(i).put("preferred",false);
+            boolean marked=false;
+            for(int i=0;i<selection.tracks.length()&&!marked;i++) {
+                String wanted=selection.tracks.getJSONObject(i).optString("id");
+                for(int j=0;j<saved.length();j++) {
+                    JSONObject track=saved.getJSONObject(j);
+                    if(wanted.equals(SubtitlePolicy.trackId(track.optString("language"),track.optString("label")))) {
+                        track.put("preferred",true);marked=true;break;
+                    }
+                }
+            }
+        }
         return saved;
     }
     static final class Prepared {
         final DownloadRequest request;
         final String qualityLabel;
-        final boolean englishHlsText;
-        Prepared(DownloadRequest request,String qualityLabel,boolean englishHlsText){this.request=request;this.qualityLabel=qualityLabel;this.englishHlsText=englishHlsText;}
+        final boolean subtitleSelected;
+        final boolean subtitleOffered;
+        final List<String> subtitleLabels;
+        Prepared(DownloadRequest request,String qualityLabel,boolean subtitleSelected,boolean subtitleOffered,List<String> subtitleLabels){
+            this.request=request;this.qualityLabel=qualityLabel;this.subtitleSelected=subtitleSelected;
+            this.subtitleOffered=subtitleOffered;this.subtitleLabels=subtitleLabels;
+        }
+    }
+    private static final class TextSelection {
+        boolean selected;
+        boolean offered;
+        final List<String> labels=new ArrayList<>();
     }
     static Prepared prepare(Context c,String id,VideoResolver.Result media,String language,String quality) throws Exception {
         return prepare(c,id,media,language,quality,false,OfflineStore.upstream(c));
@@ -167,17 +206,26 @@ public final class DownloadWorker extends Worker {
     static Prepared prepare(Context c,String id,VideoResolver.Result media,String language,String quality,boolean englishOnly) throws Exception {
         return prepare(c,id,media,language,quality,englishOnly,OfflineStore.upstream(c));
     }
+    static Prepared prepare(Context c,String id,VideoResolver.Result media,String language,String quality,boolean englishOnly,SubtitlePolicy.Selection selection) throws Exception {
+        return prepare(c,id,media,language,quality,englishOnly,selection,OfflineStore.upstream(c));
+    }
     // The explicit factory overload also permits deterministic offline fixture tests.
     static Prepared prepare(Context c,String id,VideoResolver.Result media,String language,String quality,boolean englishOnly,DataSource.Factory upstream) throws Exception {
+        return prepare(c,id,media,language,quality,englishOnly,SubtitlePolicy.autoSelection(),upstream);
+    }
+    static Prepared prepare(Context c,String id,VideoResolver.Result media,String language,String quality,boolean englishOnly,SubtitlePolicy.Selection rawSelection,DataSource.Factory upstream) throws Exception {
+        final SubtitlePolicy.Selection selection=rawSelection==null?SubtitlePolicy.autoSelection():rawSelection;
         MediaItem.Builder builder=new MediaItem.Builder().setUri(media.url).setMediaId(id);
         if(media.mime!=null&&!media.mime.isEmpty())builder.setMimeType(media.mime);
         else if(media.url.toLowerCase().contains(".mp4"))builder.setMimeType(MimeTypes.VIDEO_MP4);
         MediaItem item=builder.build();
+        String preferredText=selection.custom()&&!selection.preferredLanguage.isEmpty()&&!"und".equals(selection.preferredLanguage)
+            ?selection.preferredLanguage:("indonesian".equals(language)?"id":"en");
         TrackSelectionParameters.Builder selections=DownloadHelper.getDefaultTrackSelectorParameters(c).buildUpon()
             .setMaxVideoSize(1920,1080).setForceHighestSupportedBitrate(true)
-            .setPreferredTextLanguage("indonesian".equals(language)?"id":"en");
-        // Don't let Media3's default/forced subtitle fallback select another language.
-        if(englishOnly)selections.setTrackTypeDisabled(C.TRACK_TYPE_TEXT,true);
+            .setPreferredTextLanguage(preferredText);
+        // Don't let Media3's default/forced subtitle fallback select an unchosen language.
+        if(selection.none()||selection.custom()||(selection.auto()&&englishOnly))selections.setTrackTypeDisabled(C.TRACK_TYPE_TEXT,true);
         TrackSelectionParameters params=selections.build();
         CountDownLatch done=new CountDownLatch(1);
         AtomicReference<Prepared> result=new AtomicReference<>();AtomicReference<Exception> error=new AtomicReference<>();
@@ -190,12 +238,17 @@ public final class DownloadWorker extends Worker {
                     @Override public void onPrepared(DownloadHelper h) {
                         try {
                             String label=selectVideoQuality(h,params,media,quality);
-                            boolean hasEnglish=false;
+                            TextSelection textSelection=new TextSelection();
                             if(h.getPeriodCount()>0) {
-                                if(englishOnly)hasEnglish=addEnglishHlsText(h,params);
-                                else h.addTextLanguagesToSelection(false,"en","id");
+                                if(selection.custom())textSelection=addSelectedHlsText(h,params,
+                                    (trackLanguage,trackLabel)->SubtitlePolicy.matchesSelection(selection,trackLanguage,trackLabel),
+                                    "Could not restrict subtitles to the selected tracks.");
+                                else if(selection.auto()&&englishOnly)textSelection=addSelectedHlsText(h,params,
+                                    SubtitlePolicy::isEnglish,"Could not restrict subtitles to English.");
+                                else if(selection.auto())h.addTextLanguagesToSelection(false,"en","id");
                             }
-                            result.set(new Prepared(h.getDownloadRequest(id,CacheScopes.marker()),label,hasEnglish));
+                            result.set(new Prepared(h.getDownloadRequest(id,CacheScopes.marker()),label,
+                                textSelection.selected,textSelection.offered,textSelection.labels));
                         }catch(Exception e){error.set(e);}finally{h.release();done.countDown();}
                     }
                     @Override public void onPrepareError(DownloadHelper h,IOException e){error.set(e);h.release();done.countDown();}
@@ -210,9 +263,10 @@ public final class DownloadWorker extends Worker {
         if(result.get()==null)throw new IOException("The host did not provide a downloadable media stream");
         return result.get();
     }
-    /** Add only explicitly identified English HLS text tracks; never a default-language fallback. */
-    private static boolean addEnglishHlsText(DownloadHelper helper,TrackSelectionParameters defaults) throws IOException {
-        boolean selected=false;
+    private interface TextMatcher { boolean matches(String language,String label); }
+    /** Add only explicitly matching HLS text tracks; never a default-language fallback. */
+    private static TextSelection addSelectedHlsText(DownloadHelper helper,TrackSelectionParameters defaults,TextMatcher matcher,String errorMessage) throws IOException {
+        TextSelection result=new TextSelection();
         for(int period=0;period<helper.getPeriodCount();period++) {
             MappedTrackInfo mapped=helper.getMappedTrackInfo(period);
             TrackSelectionParameters.Builder textOnly=defaults.buildUpon().clearOverridesOfType(C.TRACK_TYPE_TEXT);
@@ -227,23 +281,28 @@ public final class DownloadWorker extends Worker {
                     TrackGroup group=groups.get(g);
                     for(int t=0;t<group.length;t++) {
                         Format format=group.getFormat(t);
-                        if(mapped.getTrackSupport(renderer,g,t)!=C.FORMAT_HANDLED||!SubtitlePolicy.isEnglish(format.language,format.label))continue;
+                        if(mapped.getTrackSupport(renderer,g,t)!=C.FORMAT_HANDLED||!matcher.matches(format.language,format.label))continue;
+                        result.offered=true;
                         helper.addTrackSelection(period,textOnly.setOverrideForType(new TrackSelectionOverride(group,t)).build());
                     }
                 }
             }
-            // Guard against unexpected selector fallback: never enqueue a non-English text rendition.
+            // Guard against unexpected selector fallback: never enqueue an unchosen text rendition.
             for(int renderer=0;renderer<mapped.getRendererCount();renderer++) {
                 if(mapped.getRendererType(renderer)!=C.TRACK_TYPE_TEXT)continue;
                 for(ExoTrackSelection track:helper.getTrackSelections(period,renderer))for(int t=0;t<track.length();t++) {
                     Format format=track.getFormat(t);
-                    if(!SubtitlePolicy.isEnglish(format.language,format.label))throw new IOException("Could not restrict subtitles to English.");
-                    selected=true;
+                    if(!matcher.matches(format.language,format.label))throw new IOException(errorMessage);
+                    result.selected=true;
+                    String label=format.label==null||format.label.trim().isEmpty()
+                        ?SubtitlePolicy.languageCode(format.language,""):format.label;
+                    if(!result.labels.contains(label))result.labels.add(label);
                 }
             }
         }
-        return selected;
+        return result;
     }
+
     /** Replace only the selected HLS video rendition while retaining default audio and subtitles. */
     private static String selectVideoQuality(DownloadHelper helper,TrackSelectionParameters defaults,VideoResolver.Result media,String quality) throws Exception {
         if(quality.startsWith("f:")) {
