@@ -13,7 +13,7 @@ import { COLLECTIONS_KEY, FAVOURITES_ID, titleKey, normalizeCollections, collect
 import { PROGRESS_KEY, normalizeProgress, recordWatch, refreshSnapshot, setEpisodesWatched, removeProgressTitle, watchedUrlSet, continueWatching, progressByTitle } from './progress';
 import { backupFileName, buildBackup, parseBackup, applyBackup, downloadBackupInBrowser, pickBackupInBrowser } from './backup';
 import { APP_VERSION, RELEASES, startupExperience, completeExperience } from './releases';
-import { DEFAULT_UPDATE_STATE, readUpdateState, saveUpdateState, shouldAutoCheck, withCheckResult, visibleUpdate, dismissUpdate } from './update';
+import { DEFAULT_UPDATE_STATE, readUpdateState, saveUpdateState, shouldAutoCheck, withCheckResult, visibleUpdate, dismissUpdate, updateDownloadUrl } from './update';
 import { ACCENTS, MODES, DEFAULT_APPEARANCE, readAppearance, saveAppearance, applyAppearance, syncNativeAppearance } from './appearance';
 import { GENRES, DEFAULT_CONTENT_PREFS, readContentPrefs, saveContentPrefs, isNsfw, ratingOf, yearOf, filterTitles } from './content';
 import './style.css';
@@ -646,7 +646,8 @@ function WelcomeScreen({mode,manual,onContinue}) {
   </main>;
 }
 function UpdateBanner({info,download,dismiss}) {
-  return <div className="content update-banner-wrap"><div className="update-banner" role="status"><div className="setting-icon"><Sparkles size={19}/></div><div className="update-banner-text"><strong>Mikozora {info.version} is available</strong><p>You’re on {APP_VERSION}. The update installs over this one — your library, history and downloads stay put.</p></div><button className="btn primary" onClick={download}>{info.apkUrl?'Download update':'View update'}</button><button className="update-banner-close" aria-label="Dismiss update notice" onClick={dismiss}><X size={16}/></button></div></div>;
+  const target=updateDownloadUrl(info,isDesktopApp()?'desktop':'android');
+  return <div className="content update-banner-wrap"><div className="update-banner" role="status"><div className="setting-icon"><Sparkles size={19}/></div><div className="update-banner-text"><strong>Mikozora {info.version} is available</strong><p>You’re on {APP_VERSION}. The update installs over this one — your library, history and downloads stay put.</p></div><button className="btn primary" onClick={download}>{target&&target!==info.pageUrl?'Download update':'View update'}</button><button className="update-banner-close" aria-label="Dismiss update notice" onClick={dismiss}><X size={16}/></button></div></div>;
 }
 function App() {
   // Read before the library/history effects initialize storage on a fresh install.
@@ -673,7 +674,7 @@ function App() {
     if(shouldAutoCheck(stored,Date.now()))checkAppUpdate(false);
   },[experience]);
   const pendingUpdate=visibleUpdate(appUpdate,APP_VERSION);
-  const downloadAppUpdate=()=>{const target=pendingUpdate?.downloadUrl||pendingUpdate?.apkUrl||pendingUpdate?.pageUrl;if(target)external(target);};
+  const downloadAppUpdate=()=>{const target=updateDownloadUrl(pendingUpdate,isDesktopApp()?'desktop':'android');if(target)external(target);};
   const dismissAppUpdate=()=>storeAppUpdate(dismissUpdate(appUpdate));
   const changeAutoCheck=enabled=>storeAppUpdate({...appUpdate,autoCheck:enabled});
   const [appearance,setAppearance]=useState(initialAppearance);

@@ -1,13 +1,20 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; older entries remain available.
-export const APP_VERSION = '0.24.0';
+export const APP_VERSION = '0.24.1';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.24.0',
+    version: '0.24.1',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Windows updates download the Windows build', description: 'In the Windows app, “Download update” was saving the Android APK instead of the Windows installer. The update banner and Settings → About → App updates now download the Windows Setup build on Windows, as intended. If an earlier click left a Mikozora .apk file in your Windows Downloads folder, you can simply delete it. Android updates are unchanged.' },
+    ],
+  },
+  {
+    version: '0.24.0',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Choose which subtitles a server saves', description: 'The download dialog now lists the separate subtitle tracks a selected server reports — including AnimeSogo and the other supported sources. Keep Automatic, tick one or more languages or named tracks such as an SDH/CC variant, or choose no separate subtitles. On Anime sources, Automatic still saves identifiable English tracks, but an explicit choice can save a different language instead.' },
       { title: 'Your choice stays with the episode', description: 'Mikozora remembers your subtitle choice for retries, uses the first chosen saved track as the playback default, and copies those same tracks into a verified folder save on Android and Windows. When you change a failed download’s server, choosing the same server restores its earlier subtitle picks.' },

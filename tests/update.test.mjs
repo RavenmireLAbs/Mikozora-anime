@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { UPDATE_KEY, CHECK_INTERVAL_MS, DEFAULT_UPDATE_STATE, parseVersion, compareVersions, isNewerVersion, releaseFromApi, readUpdateState, saveUpdateState, shouldAutoCheck, withCheckResult, visibleUpdate, dismissUpdate } from '../src/update.js';
+import { UPDATE_KEY, CHECK_INTERVAL_MS, DEFAULT_UPDATE_STATE, parseVersion, compareVersions, isNewerVersion, releaseFromApi, readUpdateState, saveUpdateState, shouldAutoCheck, withCheckResult, visibleUpdate, dismissUpdate, updateDownloadUrl } from '../src/update.js';
 
 class Store {
   constructor(initial={}) { this.values=new Map(Object.entries(initial)); }
@@ -73,7 +73,7 @@ test('throttles automatic checks to twice a day', () => {
 
 test('records check results and shows only un-dismissed newer releases', () => {
   const now = 1_700_000_000_000;
-  const info = { version:'0.16.0', pageUrl:'https://example.com/r', apkUrl:'https://example.com/a.apk' };
+  const info = { version:'0.16.0', pageUrl:'https://example.com/r', apkUrl:'https://example.com/a.apk', downloadUrl:'https://example.com/a.apk' };
   const checked = withCheckResult(DEFAULT_UPDATE_STATE, info, now);
   assert.equal(checked.lastCheck, now);
   assert.equal(checked.latest, '0.16.0');
@@ -103,4 +103,39 @@ test('desktop update checks prefer the Windows Setup installer', () => {
   }, 'desktop');
   assert.equal(info.downloadUrl, 'https://example.com/setup.exe');
   assert.equal(info.apkUrl, 'https://example.com/Mikozora.apk');
+});
+
+// Regression: the installer URL used to be dropped when a check result was
+// recorded, so the Windows banner fell back to the Android APK.
+test('the Windows installer URL survives a check, save and reload', () => {
+  const store = new Store();
+  const info = releaseFromApi({
+    tag_name: 'v0.25.0',
+    html_url: 'https://github.com/RavenmireLAbs/Mikozora-anime/releases/tag/v0.25.0',
+    assets: [
+      { name: 'Mikozora-v0.25.0-Android.apk', browser_download_url: 'https://example.com/Mikozora.apk' },
+      { name: 'Mikozora-v0.25.0-Windows-Setup.exe', browser_download_url: 'https://example.com/setup.exe' },
+    ],
+  }, 'desktop');
+  saveUpdateState(store, withCheckResult(DEFAULT_UPDATE_STATE, info, 123));
+  const visible = visibleUpdate(readUpdateState(store), '0.24.0');
+  assert.equal(visible.downloadUrl, 'https://example.com/setup.exe');
+  assert.equal(updateDownloadUrl(visible, 'desktop'), 'https://example.com/setup.exe');
+});
+
+test('the update action never points a platform at the other platform’s build', () => {
+  // State saved before downloadUrl was persisted: only the APK is known.
+  const legacy = { version:'0.25.0', pageUrl:'https://example.com/r', apkUrl:'https://example.com/a.apk', downloadUrl:'' };
+  assert.equal(updateDownloadUrl(legacy, 'desktop'), 'https://example.com/r');
+  assert.equal(updateDownloadUrl(legacy, 'android'), 'https://example.com/a.apk');
+  // A backup exported on Android and restored on Windows keeps its APK
+  // downloadUrl; Windows must open the release page instead.
+  const fromAndroid = { ...legacy, downloadUrl:'https://example.com/a.apk' };
+  assert.equal(updateDownloadUrl(fromAndroid, 'desktop'), 'https://example.com/r');
+  assert.equal(updateDownloadUrl(fromAndroid, 'android'), 'https://example.com/a.apk');
+  // And the reverse trip must not send the phone an .exe.
+  const fromDesktop = { version:'0.25.0', pageUrl:'https://example.com/r', apkUrl:'https://example.com/a.apk', downloadUrl:'https://example.com/setup.exe' };
+  assert.equal(updateDownloadUrl(fromDesktop, 'android'), 'https://example.com/a.apk');
+  assert.equal(updateDownloadUrl(fromDesktop, 'desktop'), 'https://example.com/setup.exe');
+  assert.equal(updateDownloadUrl(null, 'desktop'), '');
 });
