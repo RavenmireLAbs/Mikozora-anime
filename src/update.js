@@ -1,11 +1,12 @@
-// In-app update checker state and helpers. Mikozora ships as a sideloaded APK
-// from GitHub Releases, so the app asks GitHub (politely, at most twice a
-// day) whether a newer signed release exists and points the user at it. The
+// In-app update checker state and helpers. Mikozora ships from GitHub
+// Releases (a signed APK on Android, installers on Windows), so the app
+// asks GitHub (politely, at most twice a day) whether a newer release
+// exists and points the user at the build for their platform. The
 // helpers are pure so they can be unit-tested without DOM or network.
 export const UPDATE_KEY = 'moku.update.v1';
 export const RELEASES_API_URL = 'https://api.github.com/repos/RavenmireLAbs/Mikozora-anime/releases/latest';
 export const CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000;
-export const DEFAULT_UPDATE_STATE = { autoCheck: true, lastCheck: 0, latest: '', pageUrl: '', apkUrl: '', dismissed: '' };
+export const DEFAULT_UPDATE_STATE = { autoCheck: true, lastCheck: 0, latest: '', pageUrl: '', apkUrl: '', downloadUrl: '', dismissed: '' };
 
 // "v0.15.0" -> [0, 15, 0]. Missing parts default to 0; anything that does not
 // start with digits is not a version Mikozora would ship.
@@ -36,9 +37,10 @@ function httpsUrl(value) {
   } catch { return ''; }
 }
 
-// Shape a GitHub Releases API payload into {version, pageUrl, apkUrl}, or
-// null when it is not recognizable as a release. The APK asset is preferred
-// so the update action can start the download directly.
+// Shape a GitHub Releases API payload into {version, pageUrl, apkUrl,
+// downloadUrl}, or null when it is not recognizable as a release.
+// downloadUrl is the asset for the requesting platform, so the update
+// action can start the right download directly.
 export function releaseFromApi(json, platform = 'android') {
   if (!json || typeof json !== 'object') return null;
   const parsed = parseVersion(json.tag_name);
@@ -68,6 +70,7 @@ export function readUpdateState(storage) {
       latest: typeof raw.latest === 'string' ? raw.latest : '',
       pageUrl: typeof raw.pageUrl === 'string' ? raw.pageUrl : '',
       apkUrl: typeof raw.apkUrl === 'string' ? raw.apkUrl : '',
+      downloadUrl: typeof raw.downloadUrl === 'string' ? raw.downloadUrl : '',
       dismissed: typeof raw.dismissed === 'string' ? raw.dismissed : '',
     };
   } catch { return { ...DEFAULT_UPDATE_STATE }; }
@@ -90,6 +93,10 @@ export function withCheckResult(state, info, now = Date.now()) {
     next.latest = info.version || '';
     next.pageUrl = info.pageUrl || '';
     next.apkUrl = info.apkUrl || '';
+    // The platform-specific asset must survive persistence: before this was
+    // recorded, the Windows banner fell back to apkUrl and downloaded the
+    // Android build.
+    next.downloadUrl = info.downloadUrl || '';
   }
   return next;
 }
@@ -100,7 +107,24 @@ export function visibleUpdate(state, currentVersion) {
   if (!state?.latest) return null;
   if (!isNewerVersion(state.latest, currentVersion)) return null;
   if (state.dismissed && compareVersions(state.latest, state.dismissed) <= 0) return null;
-  return { version: state.latest, pageUrl: state.pageUrl || '', apkUrl: state.apkUrl || '' };
+  return { version: state.latest, pageUrl: state.pageUrl || '', apkUrl: state.apkUrl || '', downloadUrl: state.downloadUrl || '' };
+}
+
+// The URL the Download action should open for a visible update on this
+// platform. Desktop must never fall back to the Android APK: state saved by
+// older builds (or imported from an Android backup) may carry an apkUrl
+// with no usable downloadUrl, and then the release page is the safe
+// destination until the next check records the Windows installer.
+export function updateDownloadUrl(update, platform = 'android') {
+  if (!update) return '';
+  const direct = String(update.downloadUrl || '');
+  if (platform === 'desktop') {
+    return direct && !/\.apk(?:$|[?#])/i.test(direct) ? direct : (update.pageUrl || '');
+  }
+  // Symmetric guard: a Windows backup restored on Android must not send
+  // the phone an .exe when the release's APK is right there.
+  const usable = direct && !/\.exe(?:$|[?#])/i.test(direct) ? direct : '';
+  return usable || update.apkUrl || update.pageUrl || '';
 }
 
 export function dismissUpdate(state) {
