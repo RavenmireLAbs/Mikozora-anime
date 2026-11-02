@@ -12,7 +12,7 @@ import { dirname, join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { safeFetch, safeGet } from './safe-http.js';
 import {
-  isMasterPlaylist, parseMasterPlaylist, parseMediaPlaylist, playlistIdentity,
+  fallbackAudioRendition, isMasterPlaylist, parseMasterPlaylist, parseMediaPlaylist, playlistIdentity,
   selectAudioRendition, selectSubtitleRenditions, selectVariant,
 } from './hls.js';
 import { isEnglish, mergeVttSegments, subtitleTextToVtt } from './subtitles.js';
@@ -275,6 +275,7 @@ export async function downloadHlsMedia({
   concurrency = 4,
   englishOnlySource = false,
   subtitleSelection = null,
+  probeFile = null,
 } = {}) {
   if (!workDir) throw new Error('A download work folder is required');
   await mkdir(workDir, { recursive: true });
@@ -310,10 +311,10 @@ export async function downloadHlsMedia({
   const streams = [{ prefix: 'v', playlist: videoPlaylist, label: 'video' }];
   if (audioPlaylist) streams.push({ prefix: 'a', playlist: audioPlaylist, label: 'audio' });
 
-  for (const stream of streams) {
-    if (!stream.playlist.segments.length) throw new Error(`The host did not provide HLS ${stream.label} segments`);
-    if (!stream.playlist.endList) throw new Error('Live HLS streams cannot be downloaded');
-    for (const segment of stream.playlist.segments) {
+  const assertDownloadable = (playlist, label) => {
+    if (!playlist.segments.length) throw new Error(`The host did not provide HLS ${label} segments`);
+    if (!playlist.endList) throw new Error('Live HLS streams cannot be downloaded');
+    for (const segment of playlist.segments) {
       if (segment.key && segment.key.method !== 'AES-128') {
         throw new Error('This video is protected and cannot be downloaded');
       }
@@ -321,7 +322,8 @@ export async function downloadHlsMedia({
         throw new Error('This video is protected and cannot be downloaded');
       }
     }
-  }
+  };
+  for (const stream of streams) assertDownloadable(stream.playlist, stream.label);
 
   const manifestFile = join(workDir, 'hls-manifest.json');
   const manifest = await readJson(manifestFile, { streams: {} });
@@ -345,7 +347,7 @@ export async function downloadHlsMedia({
   let downloadedBytes = 0;
   const streamPlans = [];
 
-  for (const stream of streams) {
+  const makePlan = (stream) => {
     const parts = [];
     if (stream.playlist.initSegment?.uri) {
       parts.push({
@@ -357,8 +359,9 @@ export async function downloadHlsMedia({
       parts.push({ segment, file: join(workDir, `${stream.prefix}-${String(index).padStart(6, '0')}.seg`) });
     });
     totalParts += parts.length;
-    streamPlans.push({ ...stream, parts, identity: playlistIdentity(stream.playlist) });
-  }
+    return { ...stream, parts, identity: playlistIdentity(stream.playlist) };
+  };
+  for (const stream of streams) streamPlans.push(makePlan(stream));
 
   const report = () => onProgress?.({
     bytes: downloadedBytes,
@@ -367,7 +370,7 @@ export async function downloadHlsMedia({
     progress: totalParts ? Math.round((completedParts / totalParts) * 100) : 0,
   });
 
-  for (const plan of streamPlans) {
+  const runPlan = async (plan) => {
     const same = manifest.streams[plan.prefix]?.identity === plan.identity;
     if (!same) await removeStreamFiles(workDir, plan.prefix);
     manifest.streams[plan.prefix] = { identity: plan.identity, updated: Date.now() };
@@ -450,6 +453,34 @@ export async function downloadHlsMedia({
       await combineFiles(plan.parts.map((part) => part.file), combined, signal);
     }
     plan.combined = combined;
+  };
+  for (const plan of [...streamPlans]) await runPlan(plan);
+
+  // Some hosts list audio renditions in the master playlist that the chosen
+  // variant never references (no AUDIO attribute, or a group that does not
+  // exist), so the variant's segments carry no sound even though a player
+  // would have paired the default audio rendition. When probing proves the
+  // downloaded video is silent, fetch that rendition now instead of
+  // completing a soundless episode.
+  if (master && probeFile && !streamPlans.some((plan) => plan.prefix === 'a')) {
+    const fallback = fallbackAudioRendition(master);
+    const downloadedVideo = streamPlans.find((plan) => plan.prefix === 'v');
+    if (fallback && downloadedVideo?.combined) {
+      let silent = false;
+      try {
+        const info = await probeFile(downloadedVideo.combined);
+        silent = !!info && info.hasVideo !== false && !info.hasAudio;
+      } catch { /* probing is best-effort; conversion validates again */ }
+      if (silent) {
+        throwIfAborted(signal);
+        const audio = await fetchPlaylist(fallback.uri, context);
+        const playlist = parseMediaPlaylist(audio.text, audio.url);
+        assertDownloadable(playlist, 'audio');
+        const plan = makePlan({ prefix: 'a', playlist, label: 'audio' });
+        streamPlans.push(plan);
+        await runPlan(plan);
+      }
+    }
   }
 
   const subtitleTracks = [];

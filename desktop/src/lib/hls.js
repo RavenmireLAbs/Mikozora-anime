@@ -143,6 +143,17 @@ export function selectAudioRendition(master, variant) {
   return [...options].sort((a, b) => Number(b.default) - Number(a.default) || Number(b.autoselect) - Number(a.autoselect))[0];
 }
 
+// Some hosts publish video-only variants whose EXT-X-STREAM-INF omits the
+// AUDIO attribute (or points at a group that does not exist) while the
+// master still lists audio renditions. Players pair the default rendition
+// anyway; when the downloaded variant turns out to carry no audio, this
+// picks the rendition such a player would have used.
+export function fallbackAudioRendition(master) {
+  const options = (master?.media || []).filter((item) => item.type === 'AUDIO' && item.uri);
+  if (!options.length) return null;
+  return [...options].sort((a, b) => Number(b.default) - Number(a.default) || Number(b.autoselect) - Number(a.autoselect))[0];
+}
+
 export function subtitleRenditions(master, variant) {
   const group = variant?.subtitlesGroup || '';
   const options = (master?.media || []).filter((item) => (

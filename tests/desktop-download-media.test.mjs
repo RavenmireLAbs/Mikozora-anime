@@ -1,13 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createCipheriv } from 'node:crypto';
+import { EventEmitter } from 'node:events';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  parseMasterPlaylist, parseMediaPlaylist, selectAudioRendition, selectSubtitleRenditions, selectVariant,
+  fallbackAudioRendition, parseMasterPlaylist, parseMediaPlaylist, selectAudioRendition, selectSubtitleRenditions, selectVariant,
 } from '../desktop/src/lib/hls.js';
 import { downloadDirectFile, downloadHlsMedia } from '../desktop/src/lib/media-download.js';
+import { playableInApp, remuxToMp4 } from '../desktop/src/lib/ffmpeg.js';
 import { isPublicAddress } from '../desktop/src/lib/safe-http.js';
 import {
   mergeVttSegments, normalizeSubtitleSelection, srtToVtt, subtitleTrackOption,
@@ -213,4 +215,160 @@ s2.vtt
   const noSubtitles = await downloadHlsMedia({ ...options, subtitleSelection: { mode: 'none', tracks: [] } });
   assert.deepEqual(noSubtitles.subtitleRenditions, []);
   assert.deepEqual(noSubtitles.subtitleTracks, []);
+});
+
+// Regression: some hosts list an AUDIO rendition in the master playlist
+// that the chosen variant never references. The variant then downloads
+// without sound unless the default rendition is paired like a player would.
+test('HLS downloads pair an unreferenced default audio rendition when the variant is silent', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mikozora-hls-fallback-'));
+  const bodies = new Map([
+    ['https://cdn.example/show/master.m3u8', `#EXTM3U
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",NAME="Japanese",DEFAULT=YES,URI="audio.m3u8"
+#EXT-X-STREAM-INF:BANDWIDTH=100,RESOLUTION=640x360
+video.m3u8
+`],
+    ['https://cdn.example/show/video.m3u8', `#EXTM3U
+#EXTINF:2,one
+v1.ts
+#EXT-X-ENDLIST
+`],
+    ['https://cdn.example/show/audio.m3u8', `#EXTM3U
+#EXTINF:2,one
+a1.ts
+#EXT-X-ENDLIST
+`],
+    ['https://cdn.example/show/v1.ts', Buffer.from('VIDEO-ONLY')],
+    ['https://cdn.example/show/a1.ts', Buffer.from('AUDIO-TRACK')],
+  ]);
+  const fetched = [];
+  const safeFetchImpl = async (url) => {
+    const href = String(url);
+    fetched.push(href);
+    if (!bodies.has(href)) throw new Error(`Unexpected URL ${href}`);
+    return { response: new Response(bodies.get(href)), url: new URL(href) };
+  };
+  const master = parseMasterPlaylist(bodies.get('https://cdn.example/show/master.m3u8'), 'https://cdn.example/show/master.m3u8');
+  assert.equal(selectAudioRendition(master, master.variants[0]), null, 'the variant references no audio group');
+  assert.equal(fallbackAudioRendition(master)?.uri, 'https://cdn.example/show/audio.m3u8');
+
+  const base = {
+    url: 'https://cdn.example/show/master.m3u8',
+    refererFor: () => 'https://cdn.example/',
+    safeFetchImpl,
+    safeGetImpl: async () => { throw new Error('no keys in fixture'); },
+  };
+
+  // Probed silent -> the orphaned rendition is downloaded as separate audio.
+  const silent = await downloadHlsMedia({
+    ...base,
+    workDir: join(root, 'silent'),
+    probeFile: async () => ({ hasVideo: true, hasAudio: false }),
+  });
+  assert.equal(silent.separateAudio, true);
+  assert.equal(silent.inputs.length, 2);
+  assert.equal(await readFile(silent.inputs[0], 'utf8'), 'VIDEO-ONLY');
+  assert.equal(await readFile(silent.inputs[1], 'utf8'), 'AUDIO-TRACK');
+  assert.ok(fetched.includes('https://cdn.example/show/audio.m3u8'));
+
+  // Probed with sound -> the rendition is left alone.
+  fetched.length = 0;
+  const muxed = await downloadHlsMedia({
+    ...base,
+    workDir: join(root, 'muxed'),
+    probeFile: async () => ({ hasVideo: true, hasAudio: true }),
+  });
+  assert.equal(muxed.separateAudio, false);
+  assert.equal(muxed.inputs.length, 1);
+  assert.ok(!fetched.includes('https://cdn.example/show/audio.m3u8'));
+});
+
+test('the in-app player needs 8-bit H.264 with AAC/MP3 audio', () => {
+  assert.equal(playableInApp({ hasVideo: true, hasAudio: true, videoCodec: 'h264 (High) (avc1 / 0x31637661)', audioCodec: 'aac (LC) (mp4a / 0x6134706D)' }), true);
+  assert.equal(playableInApp({ hasVideo: true, hasAudio: false, videoCodec: 'h264 (High)', audioCodec: '' }), true);
+  assert.equal(playableInApp({ hasVideo: true, hasAudio: true, videoCodec: 'hevc (Main) (hev1 / 0x31766568)', audioCodec: 'aac (LC)' }), false);
+  assert.equal(playableInApp({ hasVideo: true, hasAudio: true, videoCodec: 'h264 (High 10) (avc1 / 0x31637661)', audioCodec: 'aac (LC)' }), false);
+  assert.equal(playableInApp({ hasVideo: true, hasAudio: true, videoCodec: 'h264 (High)', audioCodec: 'ac3 (ac-3 / 0x332D6361)' }), false);
+  assert.equal(playableInApp({ hasVideo: false, hasAudio: true, videoCodec: '', audioCodec: 'aac' }), false);
+  assert.equal(playableInApp(null), false);
+});
+
+// Fake-ffmpeg harness: probes answer from a queue of stderr texts, copy and
+// transcode runs just create the output file. This exercises remuxToMp4's
+// decision logic without a real ffmpeg binary.
+function fakeFfmpeg(probeTexts) {
+  const queue = [...probeTexts];
+  const runs = [];
+  const spawnImpl = () => {
+    const child = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.stderr.setEncoding = () => {};
+    child.stdout = new EventEmitter();
+    child.kill = () => {};
+    const text = queue.shift() || '';
+    process.nextTick(() => {
+      child.stderr.emit('data', text);
+      child.emit('close', 1, null);
+    });
+    return child;
+  };
+  const runImpl = async (args) => {
+    runs.push(args);
+    await writeFile(args[args.length - 1], Buffer.alloc(256));
+    return { code: 0, signal: '', stderr: '' };
+  };
+  return { spawnImpl, runImpl, runs, remaining: () => queue.length };
+}
+
+const probeText = ({ video = 'h264 (High) (avc1 / 0x31637661), yuv420p, 640x360', audio = 'aac (LC) (mp4a / 0x6134706D), 48000 Hz, stereo' } = {}) =>
+  `Duration: 00:00:06.00, start: 0.000000, bitrate: 1000 kb/s\nStream #0:0: Video: ${video}\n${audio ? `Stream #0:1: Audio: ${audio}\n` : ''}`;
+
+test('remux rejects a silent copy when the downloaded media had sound', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mikozora-remux-audio-'));
+  const input = join(root, 'v-combined.media');
+  const output = join(root, 'episode.mp4');
+  await writeFile(input, Buffer.alloc(64));
+  const fake = fakeFfmpeg([
+    probeText(), // input probe: muxed h264+aac
+    probeText({ audio: '' }), // copy output lost the audio
+    probeText(), // transcoded output is complete
+  ]);
+  const result = await remuxToMp4({ ffmpegPath: 'ffmpeg', inputs: [input], output, spawnImpl: fake.spawnImpl, runImpl: fake.runImpl });
+  assert.equal(result.transcoded, true, 'a silent copy must fall through to the transcode');
+  assert.equal(result.hasAudio, true);
+  assert.equal(fake.runs.length, 2);
+  assert.ok(fake.runs[1].includes('libx264'));
+  assert.equal(fake.remaining(), 0);
+});
+
+test('remux transcodes codecs the in-app player cannot decode', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mikozora-remux-codec-'));
+  const input = join(root, 'v-combined.media');
+  const output = join(root, 'episode.mp4');
+  await writeFile(input, Buffer.alloc(64));
+  const hevc = 'hevc (Main) (hev1 / 0x31766568), yuv420p, 640x360';
+  const fake = fakeFfmpeg([
+    probeText({ video: hevc }), // input probe
+    probeText({ video: hevc }), // HEVC copy is not app-playable
+    probeText(), // transcoded output
+  ]);
+  const result = await remuxToMp4({ ffmpegPath: 'ffmpeg', inputs: [input], output, spawnImpl: fake.spawnImpl, runImpl: fake.runImpl });
+  assert.equal(result.transcoded, true);
+  assert.match(result.videoCodec, /^h264/);
+  assert.equal(fake.runs.length, 2);
+});
+
+test('remux still completes a genuinely silent source by stream copy', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mikozora-remux-silent-'));
+  const input = join(root, 'v-combined.media');
+  const output = join(root, 'episode.mp4');
+  await writeFile(input, Buffer.alloc(64));
+  const fake = fakeFfmpeg([
+    probeText({ audio: '' }), // input has no audio to lose
+    probeText({ audio: '' }), // copy output matches
+  ]);
+  const result = await remuxToMp4({ ffmpegPath: 'ffmpeg', inputs: [input], output, spawnImpl: fake.spawnImpl, runImpl: fake.runImpl });
+  assert.equal(result.transcoded, false);
+  assert.equal(result.hasAudio, false);
+  assert.equal(fake.runs.length, 1);
 });

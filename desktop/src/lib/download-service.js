@@ -242,6 +242,24 @@ export class DownloadService {
           record.status = 'failed';
           record.error = 'The downloaded file is missing. Download this episode again.';
           changed = true;
+        } else if (record.hasAudio === undefined && !record.exportVerified && this.mediaProcessor?.probe) {
+          // Saved by a build that could mark a silent or unplayable MP4 as
+          // ready. Verify it once; healthy files are remembered via
+          // hasAudio so later starts skip the probe.
+          try {
+            const info = await this.mediaProcessor.probe(this.privateFile(record.id));
+            if (!info?.hasVideo || !info?.hasAudio) {
+              record.status = 'failed';
+              record.error = info?.hasVideo
+                ? 'This saved copy has no sound. Download the episode again.'
+                : 'This saved copy has no playable picture. Download the episode again.';
+              record.localBytes = 0;
+              await rm(this.privateFile(record.id), { force: true }).catch(() => {});
+            } else {
+              record.hasAudio = true;
+            }
+            changed = true;
+          } catch { /* probing is best-effort; never break startup over it */ }
         }
       }
       this.records.set(record.id, record);
@@ -477,9 +495,24 @@ export class DownloadService {
       }
       const alreadyDownloaded = await fileSize(this.privateFile(id));
       if (alreadyDownloaded > 0 && Number(record.localBytes || 0) === alreadyDownloaded) {
-        this.patch(id, { status: 'completed', bytes: alreadyDownloaded, progress: 100, error: '' }, 'now');
-        await this.maybeAutoExport(id);
-        return;
+        // Size alone once trusted files that turned out silent or
+        // unplayable; only skip the download when the file checks out.
+        let trustworthy = true;
+        if (this.mediaProcessor?.probe) {
+          try {
+            const info = await this.mediaProcessor.probe(this.privateFile(id));
+            trustworthy = !!info?.hasVideo && (record.hasAudio === false || !!info?.hasAudio);
+          } catch { /* keep the file when probing is impossible */ }
+        }
+        if (trustworthy) {
+          this.patch(id, { status: 'completed', bytes: alreadyDownloaded, progress: 100, error: '' }, 'now');
+          await this.maybeAutoExport(id);
+          return;
+        }
+        await rm(this.privateFile(id), { force: true }).catch(() => {});
+        this.patch(id, { localBytes: 0, bytes: 0 }, 'now');
+        record = this.records.get(id);
+        if (!record || signal.aborted) return;
       }
 
       this.patch(id, { status: 'resolving', error: '' }, 'now');
@@ -555,6 +588,7 @@ export class DownloadService {
           lookup: this.lookup,
           englishOnlySource,
           subtitleSelection,
+          probeFile: this.mediaProcessor?.probe ? (file) => this.mediaProcessor.probe(file) : null,
           onProgress: ({ bytes, progress }) => {
             this.patchProgress(id, {
               bytes: Number(bytes) || 0,
@@ -679,6 +713,7 @@ export class DownloadService {
         status: 'completed',
         error: '',
         progress: 100,
+        hasAudio: !!converted?.hasAudio,
         bytes: finalBytes,
         localBytes: finalBytes,
         localFile: `media/${id}/episode.mp4`,
@@ -946,7 +981,7 @@ export class DownloadService {
     }
     if (this.mediaProcessor?.probe) {
       const info = await this.mediaProcessor.probe(pending.video.path);
-      if (!info?.hasVideo || !info?.hasAudio) {
+      if (!info?.hasVideo || (record.hasAudio !== false && !info?.hasAudio)) {
         throw new Error('The saved file is missing a readable video or audio track. The in-app copy was kept.');
       }
     }
@@ -1017,7 +1052,7 @@ export class DownloadService {
       if (!source?.file || !(await exists(source.file))) throw new Error('The in-app download is no longer available.');
       if (this.mediaProcessor?.probe) {
         const info = await this.mediaProcessor.probe(source.file);
-        if (!info?.hasVideo || !info?.hasAudio) throw new Error('The episode did not produce a complete video.');
+        if (!info?.hasVideo || (record.hasAudio !== false && !info?.hasAudio)) throw new Error('The episode did not produce a complete video.');
       }
 
       this.patch(id, { exportStatus: 'exporting', exportError: '' }, 'now');

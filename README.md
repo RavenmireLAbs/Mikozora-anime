@@ -2,10 +2,11 @@
 
 An Android-first anime and donghua browser inspired by the source-based discovery, library and history idea in [Kotatsu Redo](https://github.com/Kotatsu-Redo/Kotatsu-Redo). Mikozora is an independent project; it does not include Kotatsu's code or manga parsers.
 
-**Mikozora was previously called Moku.** The 0.12.0 rebrand kept the Android application ID and existing on-device storage identifiers as the legacy `app.moku.anime` and `moku.*` values. Mikozora 0.13.0 then introduced the project's permanent Android signing key. Because GitHub builds through 0.12.0 were debug-signed, Android cannot install a permanently signed release over them: uninstall the old copy once. Uninstalling removes private app data and in-app downloads, but files already exported to a chosen folder remain. Later permanently signed releases such as 0.24.1 use the same key and update signed 0.13.0 and newer installations in place.
+**Mikozora was previously called Moku.** The 0.12.0 rebrand kept the Android application ID and existing on-device storage identifiers as the legacy `app.moku.anime` and `moku.*` values. Mikozora 0.13.0 then introduced the project's permanent Android signing key. Because GitHub builds through 0.12.0 were debug-signed, Android cannot install a permanently signed release over them: uninstall the old copy once. Uninstalling removes private app data and in-app downloads, but files already exported to a chosen folder remain. Later permanently signed releases such as 0.24.2 use the same key and update signed 0.13.0 and newer installations in place.
 
-## Features in 0.24.1
+## Features in 0.24.2
 
+- **Windows silent-download fix:** on Windows, some episodes finished as **Ready to watch offline** but the saved MP4 had no sound — and some would not play at all in the offline player — because that server keeps audio in a separate HLS rendition the variant did not reference, or serves a video codec Chromium cannot decode. The Windows download engine now probes the downloaded video, pairs the server's default audio rendition when the variant itself is silent, converts incompatible codecs, and only marks a download complete when the finished file has picture and sound. Episodes saved broken by earlier Windows versions are detected at startup and marked failed with an explanation so they can be downloaded again.
 - **Windows update-download fix:** in the Windows app, **Download update** saved the Android APK instead of the Windows installer, because the platform-specific download chosen during the update check was not kept. The update banner and **Settings → About → App updates** now download the Windows Setup build on Windows (and still the APK on Android); if an earlier click left a Mikozora `.apk` in your Windows Downloads folder, you can delete it.
 - **Selectable server subtitles:** on Android and Windows, choose a specific download server and Mikozora lists the separate subtitle tracks that server reports for the representative episode. Keep **Automatic**, tick one or more languages or named variants, or choose **No separate subtitles**. Automatic still uses the previous policy (identifiable English on the six Anime sources), while an explicit choice can download another reported language and is preserved for retries, offline playback and folder copies.
 - **Watched checks in the Android player:** episodes you have already opened carry a ✓ and a dimmer label in the native player's episode rail, matching the browser player and series pages. The web layer flags watched episodes in the playlist it already sends the player, and the marks update as you move through a series with Previous, Next or the rail.
@@ -19,7 +20,7 @@ An Android-first anime and donghua browser inspired by the source-based discover
 - **New app icon:** a torii gate beneath the morning star with the sun rising between its pillars — a proper adaptive icon that follows your launcher's shape, with a themed monochrome version on Android 13 and newer.
 
 - **In-player episode navigation:** while an online episode is open, use **Previous** or **Next** below the video, or scroll the episode rail and tap an episode number. Mikozora finds the selected episode's servers without making you return to the series page; if that lookup fails, the current episode stays open and the player shows why. Episode changes use chronological episode order, update recent history, reset to the new episode's first available server, and disable Previous or Next at the ends of the series. The controls are below the video, so exit a third-party player's fullscreen mode to use them.
-- **Permanent Android signing:** 0.13.0 was the first GitHub release signed with Mikozora's permanent key. A debug-signed 0.12.0 or earlier installation must be uninstalled once before installing a permanently signed release; after that transition, signed GitHub releases such as 0.24.1 update in place.
+- **Permanent Android signing:** 0.13.0 was the first GitHub release signed with Mikozora's permanent key. A debug-signed 0.12.0 or earlier installation must be uninstalled once before installing a permanently signed release; after that transition, signed GitHub releases such as 0.24.2 update in place.
 
 - **A new name:** Moku is now **Mikozora**. Only the name, wordmark and release/artifact naming change; your existing library, collections, history, downloads, settings and exported folder copies remain in place on an in-place update.
 
@@ -69,10 +70,10 @@ MP4 export depends on the source format, the device's media codecs, Android's do
 
 ## Install the APK
 
-Copy `Mikozora-v0.24.1-Android.apk` to an Android device and open it, or use:
+Copy `Mikozora-v0.24.2-Android.apk` to an Android device and open it, or use:
 
 ```sh
-adb install -r Mikozora-v0.24.1-Android.apk
+adb install -r Mikozora-v0.24.2-Android.apk
 ```
 
 Android may ask you to allow installs from your file manager. On Android 13+, notification permission lets Android show download progress and new-episode alerts in the notification shade. Granting it is recommended; episode updates still appear inside Mikozora if notification permission is denied. An APK update must be signed with the same key as the installed build to preserve local data; locally built debug APKs may have a different signing key. In particular, if Android reports a signature conflict when moving from 0.12.0 or earlier to a permanently signed release, uninstall the old copy first—this is the expected one-time signing transition and will remove private app data and in-app downloads. Signed 0.13.0 and later installations update in place.

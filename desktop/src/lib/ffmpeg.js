@@ -133,13 +133,27 @@ export async function probeMedia(ffmpegPath, file, options = {}) {
   return { ...info, code: result.code };
 }
 
-async function validateOutput(ffmpegPath, file, { requireAudio = false, spawnImpl } = {}) {
+// The offline player is Chromium's <video> element: inside an MP4 it
+// reliably decodes 8-bit H.264 video with AAC/MP3 audio. A stream copy in
+// any other codec (HEVC, AV1, 10-bit H.264, AC3…) would "complete" yet
+// show a black or silent player, so such copies must be transcoded.
+export function playableInApp(info) {
+  if (!info?.hasVideo) return false;
+  if (!/^h264\b/i.test(info.videoCodec || '') || /high 10/i.test(info.videoCodec || '')) return false;
+  if (info.hasAudio && !/^(aac|mp3)\b/i.test(info.audioCodec || '')) return false;
+  return true;
+}
+
+async function validateOutput(ffmpegPath, file, { requireAudio = false, requirePlayable = false, spawnImpl } = {}) {
   let size = 0;
   try { size = (await stat(file)).size; } catch { size = 0; }
   if (size < 128) throw new Error('The converted video was incomplete');
   const info = await probeMedia(ffmpegPath, file, { spawnImpl });
   if (!info.hasVideo || (requireAudio && !info.hasAudio)) {
     throw new Error('The converted video is missing a readable video or audio track');
+  }
+  if (requirePlayable && !playableInApp(info)) {
+    throw new Error('The converted video uses a format the in-app player cannot play');
   }
   return { ...info, bytes: size };
 }
@@ -166,13 +180,19 @@ export async function remuxToMp4({
 
   // TS audio commonly arrives as AAC in ADTS; probing locally lets us apply
   // the ASC bitstream filter only when the selected audio really is AAC.
+  // The same probe records whether the downloaded media carries sound at
+  // all: if it does, the finished MP4 must keep it. (Before this, a
+  // video-only result still validated and was marked ready to watch.)
   let useAacFilter = false;
+  let inputHasAudio = null;
   try {
     const probeInput = separateAudio && files[1] ? files[1] : files[0];
     const info = await probeMedia(ffmpegPath, probeInput, { spawnImpl });
     useAacFilter = /^aac\b/i.test(info.audioCodec || '');
+    inputHasAudio = !!info.hasAudio;
     if (!duration && info.duration) duration = info.duration;
   } catch { /* copy/transcode below will surface a clearer failure */ }
+  const mustKeepAudio = requireAudio || inputHasAudio === true;
 
   const common = ['-y', ...inputArgs, ...mapArgs, '-sn', '-dn'];
   const copyArgs = [
@@ -185,7 +205,7 @@ export async function remuxToMp4({
   const copy = await run(copyArgs);
   if (copy.code === 0) {
     try {
-      const info = await validateOutput(ffmpegPath, output, { requireAudio, spawnImpl });
+      const info = await validateOutput(ffmpegPath, output, { requireAudio: mustKeepAudio, requirePlayable: true, spawnImpl });
       return { output, transcoded: false, ...info };
     } catch { /* fall through to a compatibility transcode */ }
   }
@@ -204,7 +224,7 @@ export async function remuxToMp4({
     await rm(output, { force: true }).catch(() => {});
     throw new Error('Could not convert this downloaded stream to MP4. The host format may be unsupported.');
   }
-  const info = await validateOutput(ffmpegPath, output, { requireAudio, spawnImpl });
+  const info = await validateOutput(ffmpegPath, output, { requireAudio: mustKeepAudio, requirePlayable: true, spawnImpl });
   return { output, transcoded: true, ...info };
 }
 
