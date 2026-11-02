@@ -629,6 +629,12 @@ export class DownloadService {
         if (!directOffered && !hlsOffered) description = `Requested language unavailable · ${description}`;
       }
 
+      // The MP4 is now self-contained, so segment/direct-file work data would
+      // otherwise double the storage used by every completed episode. Remove
+      // it before publishing the completed state, so "completed" also means
+      // the work folder is gone.
+      await rm(work, { recursive: true, force: true }).catch(() => {});
+
       this.patch(id, {
         language,
         tracks: savedTracks,
@@ -645,10 +651,6 @@ export class DownloadService {
         storageMode: 'private',
         downloadedAt: this.now(),
       }, 'now');
-
-      // The MP4 is now self-contained, so segment/direct-file work data would
-      // otherwise double the storage used by every completed episode.
-      await rm(work, { recursive: true, force: true }).catch(() => {});
       await this.maybeAutoExport(id);
     } catch (error) {
       if (processingFile) await rm(processingFile, { force: true }).catch(() => {});

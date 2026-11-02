@@ -114,7 +114,10 @@ test('download service retries, converts, plays, exports, cleans private copy an
 
   const privateFile = join(baseDir, 'media', id, 'episode.mp4');
   assert.equal(await readFile(privateFile, 'utf8'), 'converted:source-video');
-  await assert.rejects(access(join(baseDir, 'media', id, 'work')));
+  await waitFor(async () => {
+    try { await access(join(baseDir, 'media', id, 'work')); return null; }
+    catch { return true; }
+  }, 'work folder to be removed after completion');
 
   const token = await service.createPlaybackToken(id);
   assert.ok(token);
