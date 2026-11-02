@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import {
   fallbackAudioRendition, parseMasterPlaylist, parseMediaPlaylist, selectAudioRendition, selectSubtitleRenditions, selectVariant,
 } from '../desktop/src/lib/hls.js';
-import { downloadDirectFile, downloadHlsMedia } from '../desktop/src/lib/media-download.js';
+import { disguisedHlsSegmentPayloadOffset, downloadDirectFile, downloadHlsMedia } from '../desktop/src/lib/media-download.js';
 import { parseFfmpegInfo, playableInApp, remuxToMp4 } from '../desktop/src/lib/ffmpeg.js';
 import { isPublicAddress } from '../desktop/src/lib/safe-http.js';
 import {
@@ -215,6 +215,82 @@ s2.vtt
   const noSubtitles = await downloadHlsMedia({ ...options, subtitleSelection: { mode: 'none', tracks: [] } });
   assert.deepEqual(noSubtitles.subtitleRenditions, []);
   assert.deepEqual(noSubtitles.subtitleTracks, []);
+});
+
+function disguisedPngPrefix() {
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    Buffer.alloc(244, 0x5a),
+  ]);
+}
+
+function transportStreamPayload(fill) {
+  const body = Buffer.alloc(188 * 4, fill);
+  for (let offset = 0; offset < body.length; offset += 188) body[offset] = 0x47;
+  return body;
+}
+
+test('disguised HLS segment detection finds media after an image prefix', () => {
+  const prefix = disguisedPngPrefix();
+  const ts = transportStreamPayload(0x11);
+  assert.equal(disguisedHlsSegmentPayloadOffset(Buffer.concat([prefix, ts])), prefix.length);
+  assert.equal(disguisedHlsSegmentPayloadOffset(ts), 0, 'a normal TS segment is untouched');
+  assert.equal(disguisedHlsSegmentPayloadOffset(prefix), 0, 'a real image with no media payload is untouched');
+
+  const ftyp = Buffer.alloc(24);
+  ftyp.writeUInt32BE(ftyp.length, 0);
+  ftyp.write('ftyp', 4, 'ascii');
+  ftyp.write('isom', 8, 'ascii');
+  assert.equal(disguisedHlsSegmentPayloadOffset(Buffer.concat([prefix, ftyp])), prefix.length);
+});
+
+test('HLS downloads strip image disguises from fresh and already-saved segments', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mikozora-hls-disguised-'));
+  const workDir = join(root, 'work');
+  const prefix = disguisedPngPrefix();
+  const firstPayload = transportStreamPayload(0x21);
+  const secondPayload = transportStreamPayload(0x34);
+  const bodies = new Map([
+    ['https://cdn.example/show/video.m3u8', `#EXTM3U
+#EXTINF:2,one
+seg0.image
+#EXTINF:2,two
+seg1.image
+#EXT-X-ENDLIST
+`],
+    ['https://cdn.example/show/seg0.image', Buffer.concat([prefix, firstPayload])],
+    ['https://cdn.example/show/seg1.image', Buffer.concat([prefix, secondPayload])],
+  ]);
+  const segmentFetches = [];
+  const options = {
+    url: 'https://cdn.example/show/video.m3u8',
+    workDir,
+    refererFor: () => 'https://cdn.example/',
+    safeFetchImpl: async (url) => {
+      const href = String(url);
+      if (href.endsWith('.image')) segmentFetches.push(href);
+      if (!bodies.has(href)) throw new Error(`Unexpected URL ${href}`);
+      return { response: new Response(bodies.get(href)), url: new URL(href) };
+    },
+    safeGetImpl: async () => { throw new Error('no keys or subtitles in fixture'); },
+  };
+
+  const expected = Buffer.concat([firstPayload, secondPayload]);
+  const first = await downloadHlsMedia(options);
+  assert.deepEqual(await readFile(first.inputs[0]), expected);
+  assert.equal(first.bytes, expected.length);
+  assert.equal(segmentFetches.length, 2);
+
+  // Simulate work saved by a build that combined the disguised bodies
+  // verbatim. A retry should clean those saved parts in place rather than
+  // fetching the episode's segments again.
+  await writeFile(join(workDir, 'v-000000.seg'), Buffer.concat([prefix, firstPayload]));
+  await writeFile(join(workDir, 'v-000001.seg'), Buffer.concat([prefix, secondPayload]));
+  await writeFile(first.inputs[0], Buffer.concat([prefix, firstPayload, prefix, secondPayload]));
+
+  const second = await downloadHlsMedia(options);
+  assert.equal(segmentFetches.length, 2, 'already-saved segments are cleaned, not downloaded again');
+  assert.deepEqual(await readFile(second.inputs[0]), expected);
 });
 
 // Regression: some hosts list an AUDIO rendition in the master playlist
@@ -485,17 +561,39 @@ test('a conversion failure reports what ffmpeg actually said, without local path
   const failure = {
     code: 1,
     signal: '',
-    stderr: "[mpegts @ 0x1] Opening 'C:\\Users\\someone\\AppData\\episode.processing.mp4' for writing\n[libx264 @ 0x2] height not divisible by 2 (638x359)\nError while opening encoder\n",
+    stderr: "[mpegts @ 0x1] Opening 'C:\\Users\\someone\\AppData\\episode.processing.mp4' for writing\n[libx264 @ 0x2] height not divisible by 2 (638x359)\nError while opening encoder\nConversion failed!\n",
   };
   const fake = fakeFfmpeg([probeText()], [failure, failure, failure]);
   await assert.rejects(
     remuxToMp4({ ffmpegPath: 'ffmpeg', inputs: [input], output, spawnImpl: fake.spawnImpl, runImpl: fake.runImpl }),
     (error) => {
       assert.match(error.message, /Could not convert this downloaded stream to MP4\./);
-      assert.match(error.message, /Error while opening encoder/);
+      assert.match(error.message, /height not divisible by 2 \(638x359\)/);
+      assert.ok(!/Conversion failed!/.test(error.message), 'generic ffmpeg summaries stay out of the message');
       assert.ok(!/someone|AppData|C:\\/.test(error.message), 'no local paths leak into the message');
       return true;
     },
   );
   assert.equal(fake.runs.length, 3, 'copy plus both transcode plans were attempted');
+});
+
+test('a conversion failure prefers the first input complaint over downstream encoder errors', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mikozora-remux-input-failure-'));
+  const input = join(root, 'v-combined.media');
+  const output = join(root, 'episode.mp4');
+  await writeFile(input, Buffer.alloc(64));
+  const failure = {
+    code: 1,
+    signal: '',
+    stderr: '[png @ 0x1] Invalid PNG signature 0x00000000.\n[libx264 @ 0x2] width not divisible by 2 (1x1)\nConversion failed!\n',
+  };
+  const fake = fakeFfmpeg([probeText()], [failure, failure, failure]);
+  await assert.rejects(
+    remuxToMp4({ ffmpegPath: 'ffmpeg', inputs: [input], output, spawnImpl: fake.spawnImpl, runImpl: fake.runImpl }),
+    (error) => {
+      assert.match(error.message, /Invalid PNG signature/);
+      assert.ok(!/width not divisible/.test(error.message));
+      return true;
+    },
+  );
 });

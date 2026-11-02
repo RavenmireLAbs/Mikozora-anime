@@ -7,7 +7,7 @@
 // combined media files.
 import { createDecipheriv } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { safeFetch, safeGet } from './safe-http.js';
@@ -20,6 +20,8 @@ import { isEnglish, mergeVttSegments, subtitleTextToVtt } from './subtitles.js';
 const PLAYLIST_LIMIT = 2 * 1024 * 1024;
 const KEY_LIMIT = 128;
 const SUBTITLE_SEGMENT_LIMIT = 2 * 1024 * 1024;
+const DISGUISED_SEGMENT_PROBE_LIMIT = 256 * 1024;
+const TS_PACKET_LENGTH = 188;
 
 function abortError() {
   const error = new Error('Download was canceled');
@@ -33,6 +35,122 @@ function throwIfAborted(signal) {
 
 async function fileSize(file) {
   try { return (await stat(file)).size; } catch { return 0; }
+}
+
+function looksLikeImagePrefix(bytes) {
+  if (!bytes || bytes.length < 12) return false;
+  return (
+    (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) // PNG
+    || (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) // JPEG
+    || (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) // GIF8
+    || (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46
+      && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) // WebP
+    || (bytes[0] === 0x42 && bytes[1] === 0x4d) // BMP
+  );
+}
+
+function transportStreamPayloadOffset(bytes) {
+  const span = TS_PACKET_LENGTH * 3;
+  for (let i = 1; i + span < bytes.length; i++) {
+    if (bytes[i] !== 0x47) continue;
+    let synced = true;
+    for (let packet = 1; packet <= 3; packet++) {
+      if (bytes[i + (TS_PACKET_LENGTH * packet)] !== 0x47) {
+        synced = false;
+        break;
+      }
+    }
+    if (synced) return i;
+  }
+  return null;
+}
+
+function fragmentedMp4PayloadOffset(bytes) {
+  for (let typeOffset = 5; typeOffset + 4 <= bytes.length; typeOffset++) {
+    const type = bytes.toString('ascii', typeOffset, typeOffset + 4);
+    if (type !== 'ftyp' && type !== 'styp' && type !== 'moof') continue;
+    const start = typeOffset - 4;
+    const boxSize = bytes.readUInt32BE(start);
+    if (boxSize !== 1 && (boxSize < 8 || boxSize > 64 * 1024 * 1024)) continue;
+    if (type === 'moof') {
+      // A real movie fragment starts with its mfhd child box.
+      if (bytes.toString('ascii', start + 12, start + 16) !== 'mfhd') continue;
+    } else {
+      // ftyp/styp carry a printable major brand immediately after the type.
+      const brand = bytes.subarray(start + 8, start + 12);
+      if (brand.length < 4 || ![...brand].every((byte) => byte >= 0x20 && byte <= 0x7e)) continue;
+    }
+    return start;
+  }
+  return null;
+}
+
+function packedAudioPayloadOffset(bytes) {
+  // HLS packed-audio segments begin with an ID3 timestamp tag.
+  for (let i = 1; i + 10 <= bytes.length; i++) {
+    if (bytes[i] !== 0x49 || bytes[i + 1] !== 0x44 || bytes[i + 2] !== 0x33) continue; // ID3
+    const versionMajor = bytes[i + 3];
+    const versionMinor = bytes[i + 4];
+    const syncsafe = bytes.subarray(i + 6, i + 10);
+    if (versionMajor < 0xff && versionMinor < 0xff && [...syncsafe].every((byte) => byte < 0x80)) return i;
+  }
+  return null;
+}
+
+// Some MegaPlay-family CDNs disguise every HLS segment as an image: the
+// HTTP body begins with a real 1x1 PNG (or another small image), followed
+// by the MPEG-TS/fMP4 payload. Media3 finds the payload while extracting
+// each HLS chunk, so Android plays/downloads these normally. The Windows
+// engine concatenates the raw segment bodies into one file, though, and
+// ffmpeg then identifies the combined file as a PNG image and every
+// conversion attempt fails. Locate the real payload so the image prefix
+// can be removed from each downloaded segment before combining.
+export function disguisedHlsSegmentPayloadOffset(input) {
+  const bytes = Buffer.isBuffer(input) ? input : Buffer.from(input || []);
+  if (!looksLikeImagePrefix(bytes)) return 0;
+  const candidates = [
+    transportStreamPayloadOffset(bytes),
+    fragmentedMp4PayloadOffset(bytes),
+  ].filter((offset) => offset != null && offset > 0);
+  if (candidates.length) return Math.min(...candidates);
+  return packedAudioPayloadOffset(bytes) || 0;
+}
+
+async function readFileHead(file, limit) {
+  let handle = null;
+  try {
+    handle = await open(file, 'r');
+    const { size } = await handle.stat();
+    const length = Math.min(size, limit);
+    if (!length) return { bytes: Buffer.alloc(0), size };
+    const buffer = Buffer.alloc(length);
+    let read = 0;
+    while (read < length) {
+      const { bytesRead } = await handle.read(buffer, read, length - read, read);
+      if (!bytesRead) break;
+      read += bytesRead;
+    }
+    return { bytes: buffer.subarray(0, read), size };
+  } finally {
+    await handle?.close().catch(() => {});
+  }
+}
+
+async function sanitizeDownloadedSegmentFile(file, signal) {
+  throwIfAborted(signal);
+  const { bytes, size } = await readFileHead(file, DISGUISED_SEGMENT_PROBE_LIMIT);
+  const offset = disguisedHlsSegmentPayloadOffset(bytes);
+  if (!offset || offset >= size) return size;
+  const temp = `${file}.clean-${process.pid}`;
+  try {
+    await pipeline(createReadStream(file, { start: offset }), createWriteStream(temp), { signal });
+    throwIfAborted(signal);
+    await rename(temp, file);
+    return size - offset;
+  } catch (error) {
+    await rm(temp, { force: true }).catch(() => {});
+    throw error;
+  }
 }
 
 export function createMediaReferer(result = {}) {
@@ -377,7 +495,12 @@ export async function downloadHlsMedia({
     await writeJson(manifestFile, manifest);
 
     for (const part of plan.parts) {
-      const size = same ? await fileSize(part.file) : 0;
+      let size = same ? await fileSize(part.file) : 0;
+      // Segments saved by an older build may still carry an image disguise.
+      // Clean them in place on retry so a failed conversion does not force
+      // the whole episode to download again; the reduced part sizes also
+      // make the stale combined file mismatch and get rebuilt below.
+      if (size > 0) size = await sanitizeDownloadedSegmentFile(part.file, signal);
       if (size > 0) {
         part.done = true;
         part.bytes = size;
@@ -427,7 +550,7 @@ export async function downloadHlsMedia({
           } else {
             await rename(bodyFile, tempFinal);
           }
-          const size = await fileSize(tempFinal);
+          const size = await sanitizeDownloadedSegmentFile(tempFinal, signal);
           if (!size) throw new Error('An HLS segment was empty');
           await rename(tempFinal, part.file);
           part.done = true;
