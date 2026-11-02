@@ -34,21 +34,22 @@ async function setup(viewport={width:320,height:568},mobile=true){
  page.on('console',msg=>{if(msg.type()==='error'&&msg.text().includes('Content Security Policy'))errors.push(msg.text())});
  await page.addInitScript(({seed})=>{
   if(!localStorage.getItem('episode.test.seed')){for(const [k,v] of Object.entries(seed))localStorage.setItem(k,v);localStorage.setItem('episode.test.seed','1')}
-  window.__syncs=[];window.__syncOpenFlags=[];window.__manualCalls=0;window.__permissionCalls=[];window.__openIntent=true;
+  window.__syncs=[];window.__syncOpenFlags=[];window.__syncSettings=null;window.__manualCalls=0;window.__permissionCalls=[];window.__openIntent=true;window.__openDownloads=false;
   window.__mockUpdates={automatic:true,alerts:true,watchedCount:0,initializedCount:0,unreadCount:0,updates:[],errors:[],checking:false,queued:false,lastSuccess:0,notificationStatus:'permission',permissionAsked:false};
   const reply=(id,value)=>window.__mokuNativeChunk(id,typeof value==='string'?value:JSON.stringify(value),true,null);
   const signal=()=>setTimeout(()=>window.dispatchEvent(new Event('moku-updates-changed')),0);
   const count=()=>window.__mockUpdates.unreadCount=window.__mockUpdates.updates.filter(x=>!x.read).length;
   window.__addUpdate=(item,n)=>{const s=window.__mockUpdates;const id=String(n).repeat(64).slice(0,64);s.updates.unshift({id,titleId:`${item.source}|${item.url}`,item,episode:{number:String(n),title:`Episode ${n}`,url:item.url+`/ep-${n}`},discoveredAt:Date.now(),read:false});s.queued=false;s.lastSuccess=Date.now();count();signal()};
   window.MokuBridge={
-   request(id){reply(id,'<html></html>')},downloads(id){reply(id,[])},exportSettings(id){reply(id,{configured:false,granted:false,name:''})},openExternal(){},openPlayer(){},
-   syncEpisodeTitles(id,raw,onOpen){const titles=JSON.parse(raw);window.__syncs.push(titles);window.__syncOpenFlags.push(onOpen);const s=window.__mockUpdates,ids=new Set(titles.map(x=>`${x.source}|${x.url}`));s.watchedCount=titles.length;s.initializedCount=titles.length;s.updates=s.updates.filter(x=>ids.has(x.titleId));count();reply(id,s);signal()},
+   request(id){reply(id,'<html></html>')},downloads(id){reply(id,[])},enqueueDownloads(id){reply(id,{added:0,skipped:0})},exportSettings(id){reply(id,{configured:false,granted:false,name:''})},openExternal(){},openPlayer(){},
+   syncEpisodeTitles(id,raw,onOpen){const parsed=JSON.parse(raw),titles=Array.isArray(parsed)?parsed:parsed.titles;window.__syncs.push(titles);window.__syncOpenFlags.push(onOpen);window.__syncSettings=Array.isArray(parsed)?null:parsed.smartDownloads;const s=window.__mockUpdates,ids=new Set(titles.map(x=>`${x.source}|${x.url}`));s.watchedCount=titles.length;s.initializedCount=titles.length;s.updates=s.updates.filter(x=>ids.has(x.titleId));count();reply(id,s);signal()},
    episodeUpdates(id){reply(id,window.__mockUpdates)},
    checkEpisodes(id){window.__manualCalls++;window.__mockUpdates.queued=true;reply(id,window.__mockUpdates);signal()},
    setEpisodeAutomatic(id,on){window.__mockUpdates.automatic=on;reply(id,window.__mockUpdates);signal()},
    setEpisodeAlerts(id,on){window.__mockUpdates.alerts=on;reply(id,window.__mockUpdates);signal()},
    markEpisodeRead(id,updateId){for(const e of window.__mockUpdates.updates)if(updateId==='all'||updateId===e.id)e.read=true;count();reply(id,window.__mockUpdates);signal()},
    takeOpenUpdates(){const open=window.__openIntent;window.__openIntent=false;return open},
+   takeOpenDownloads(){const open=window.__openDownloads;window.__openDownloads=false;return open},
    episodeNotificationPermission(automatic){window.__permissionCalls.push(automatic);window.__mockUpdates.permissionAsked=true;if(!automatic)window.__mockUpdates.notificationStatus='allowed';signal()}
   };
  },{seed});
@@ -63,6 +64,7 @@ try{
  await page.locator('.updates-page').waitFor();
  await page.waitForFunction(()=>window.__syncs.at(-1)?.length===2);
  assert.deepEqual((await page.evaluate(()=>window.__syncs.at(-1))).map(x=>x.title),[a.title,b.title],'deduplicated collection members only');
+ assert.deepEqual(await page.evaluate(()=>window.__syncSettings),{enabled:false,wifiOnly:true,maxUnwatchedPerSeries:3,notifyWhenReady:true},'Smart Download defaults sync natively');
  assert.deepEqual(await page.evaluate(()=>window.__syncOpenFlags),[true],'first snapshot requests an on-open check');
  assert.deepEqual(await page.evaluate(()=>window.__permissionCalls),[true],'notification permission asked once after the update screen');
  assert.ok(await page.getByText('2 titles being followed').isVisible());
@@ -113,12 +115,21 @@ try{
  assert.ok(await page.getByText('Android notification permission is needed').isVisible());
  await page.getByRole('button',{name:'Allow',exact:true}).click();await page.getByText('Allowed in Android').waitFor();
  assert.deepEqual(await page.evaluate(()=>window.__permissionCalls),[true,false]);
+ const smart=page.getByRole('button',{name:'Smart downloads'});assert.equal(await smart.getAttribute('aria-pressed'),'false');await smart.click();assert.equal(await smart.getAttribute('aria-pressed'),'true');
+ await page.waitForFunction(()=>window.__mockUpdates.automatic===true);assert.equal(await automatic.getAttribute('aria-pressed'),'true','turning Smart on enables background episode checks');
+ await automatic.click();assert.equal(await automatic.getAttribute('aria-pressed'),'false');
+ await page.getByLabel('Maximum unwatched Smart downloads per series').selectOption('5');
+ await page.waitForFunction(()=>window.__syncSettings?.enabled===true&&window.__syncSettings.maxUnwatchedPerSeries===5);
+ const wifi=page.getByRole('button',{name:'Smart downloads on Wi-Fi only'});assert.equal(await wifi.getAttribute('aria-pressed'),'true');await wifi.click();assert.equal(await wifi.getAttribute('aria-pressed'),'false');
+ assert.deepEqual(await page.evaluate(()=>{const value=JSON.parse(localStorage.getItem('moku.smartDownloads.v1'));return {enabled:value.enabled,wifiOnly:value.wifiOnly,maxUnwatchedPerSeries:value.maxUnwatchedPerSeries}}),{enabled:true,wifiOnly:false,maxUnwatchedPerSeries:5});
  await noOverflow(page);await page.screenshot({path:resolve(SHOTS,'settings-updates-mobile.png')});
  await page.evaluate(()=>{window.__openIntent=true;window.dispatchEvent(new Event('moku-open-updates'))});
  await page.locator('.updates-page').waitFor();assert.ok(await page.getByText(/Automatic checks are off/).isVisible());
  await page.getByRole('button',{name:'Check now'}).click();await page.waitForFunction(()=>window.__manualCalls===2);
+ await page.evaluate(()=>{window.__openDownloads=true;window.dispatchEvent(new Event('moku-open-downloads'))});
+ await page.getByRole('heading',{name:'Ready when you are.'}).waitFor();
  assert.deepEqual(errors,[]);await context.close();
- console.log('PASS simulated Android: silent baseline UX, deduplicated memberships, notification deep-link/permission, manual checks, updates/badges/read, removal, settings, failures and 320px layout.');
+ console.log('PASS simulated Android: silent baseline UX, deduplicated memberships, notification deep-link/permission, manual checks, updates/badges/read, removal, Smart Download settings/deep-link, failures and 320px layout.');
  const desktop=await setup({width:1440,height:900},false);await goto(desktop.page);await desktop.page.getByRole('button',{name:'Continue to Mikozora'}).click();await desktop.page.locator('.updates-page').waitFor();
  await desktop.page.evaluate(item=>window.__addUpdate(item,2),b);await desktop.page.getByText('Episode 2',{exact:false}).first().waitFor();await noOverflow(desktop.page);
  await desktop.page.screenshot({path:resolve(SHOTS,'updates-desktop.png')});assert.deepEqual(desktop.errors,[]);await desktop.context.close();

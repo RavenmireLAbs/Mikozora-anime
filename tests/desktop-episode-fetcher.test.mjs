@@ -20,8 +20,8 @@ test('Sogo-family fetch builds episode URLs from data-num/data-slug', async () =
     ['https://animesogo.to/ajax/episode/list/12345?vrf=', JSON.stringify({
       status: 200,
       result: `<ul class="episodes">
-        <li><a data-num="1" data-slug="1">1</a></li>
-        <li><a data-num="2.5" data-slug="2-5">2.5</a></li>
+        <li><a data-num="1" data-slug="1" data-ids="episode-one-token">1</a></li>
+        <li><a data-num="2.5" data-slug="2-5" data-ids="episode-two-token">2.5</a></li>
         <li><a data-num="2.5" data-slug="2-5">dup</a></li>
       </ul>`,
     })],
@@ -30,9 +30,9 @@ test('Sogo-family fetch builds episode URLs from data-num/data-slug', async () =
     if (!pages.has(url)) throw new Error(`Unexpected ${url}`);
     return pages.get(url);
   });
-  assert.deepEqual(episodes.map((e) => [e.key, e.number, e.url]), [
-    ['number:1', '1', 'https://animesogo.to/watch/example/ep-1'],
-    ['number:2.5', '2.5', 'https://animesogo.to/watch/example/ep-2-5'],
+  assert.deepEqual(episodes.map((e) => [e.key, e.number, e.url, e.ids]), [
+    ['number:1', '1', 'https://animesogo.to/watch/example/ep-1', 'episode-one-token'],
+    ['number:2.5', '2.5', 'https://animesogo.to/watch/example/ep-2-5', 'episode-two-token'],
   ]);
 });
 
@@ -42,7 +42,7 @@ test('Waves fetch prefers the listed href', async () => {
     if (url === 'https://aniwaves.ru/ajax/episode/list/777?vrf=') {
       return JSON.stringify({
         status: 200,
-        result: '<a data-num="3" data-ids="x" href="/watch/example/ep-3">3</a>',
+        result: '<a data-num="3" data-ids="777&eps=3" href="/watch/example/ep-3">3</a>',
       });
     }
     throw new Error(`Unexpected ${url}`);
@@ -50,6 +50,7 @@ test('Waves fetch prefers the listed href', async () => {
   assert.equal(episodes.length, 1);
   assert.equal(episodes[0].url, 'https://aniwaves.ru/watch/example/ep-3');
   assert.equal(episodes[0].number, '3');
+  assert.equal(episodes[0].ids, '777&eps=3');
 });
 
 test('WordPress fetch reads eplister numbers/titles and URL-key specials', async () => {

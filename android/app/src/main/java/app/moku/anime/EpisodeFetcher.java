@@ -31,10 +31,14 @@ final class EpisodeFetcher {
     private EpisodeFetcher() {}
 
     static final class Episode {
-        final String key,number,title,url;
+        final String key,number,title,url,ids;
         final double numeric;
         Episode(String key,String number,String title,String url,double numeric) {
-            this.key=key;this.number=number;this.title=title;this.url=url;this.numeric=numeric;
+            this(key,number,title,url,"",numeric);
+        }
+        Episode(String key,String number,String title,String url,String ids,double numeric) {
+            this.key=key;this.number=number;this.title=title;this.url=url;
+            this.ids=ids==null?"":ids;this.numeric=numeric;
         }
     }
     static List<Episode> fetch(String source,String series,TextSource network) throws Exception {
@@ -63,7 +67,7 @@ final class EpisodeFetcher {
                 String number=canonical(raw);if(number.isEmpty())number=canonical(slug);
                 String url="waves".equals(source)?episodeUrl(source,series,e.attr("href")):"";
                 if(url.isEmpty()&&!slug.isEmpty())url=episodeUrl(source,series,series.replaceAll("/+$","")+"/ep-"+encode(slug));
-                add(out,number,"Episode "+(number.isEmpty()?raw:number),url);
+                add(out,number,"Episode "+(number.isEmpty()?raw:number),url,e.attr("data-ids"));
             }
             if(out.isEmpty())throw new IOException("Source episode links are unavailable");
             return new ArrayList<>(out.values());
@@ -162,10 +166,14 @@ final class EpisodeFetcher {
         }catch(Exception ignored){return "";}
     }
     private static void add(Map<String,Episode> out,String number,String title,String url) {
+        add(out,number,title,url,"");
+    }
+    private static void add(Map<String,Episode> out,String number,String title,String url,String ids) {
         if(url.isEmpty())return;
         String key=number.isEmpty()?"url:"+url:"number:"+number;
         if(key.length()>2700||out.containsKey(key))return;
         double n=0;try{if(!number.isEmpty())n=Double.parseDouble(number);}catch(Exception ignored){}
-        out.put(key,new Episode(key,number,title.length()>300?title.substring(0,300):title,url,n));
+        String cleanIds=ids==null?"":ids.trim();if(cleanIds.length()>1000)cleanIds="";
+        out.put(key,new Episode(key,number,title.length()>300?title.substring(0,300):title,url,cleanIds,n));
     }
 }

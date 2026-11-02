@@ -180,3 +180,11 @@
 .offline-video-wrap video{width:100%;height:100%;display:block;object-fit:contain;background:#101312}
 .offline-player-note{display:flex;gap:7px;align-items:flex-start;color:#909a8e;font-size:11px;line-height:1.5;margin:0;padding:13px 22px 18px}
 .offline-player-error{color:#e0c999}
+
+/* Smart Downloads */
+.smart-detail-note{display:flex;gap:7px;align-items:flex-start;margin:11px 0 0;color:#a9c49b;font-size:11px;line-height:1.5}
+.smart-select{background:#1c241d;border:1px solid #39463a;border-radius:8px;color:#e0e9de;min-height:39px;padding:0 28px 0 10px;font-size:11px;font-weight:700;flex:none}
+.smart-download-settings .setting-row>button[aria-pressed=true]{color:#caeda7;border-color:#4d6442;background:#273724}
+.smart-explainer strong{color:#dcebd5}
+.remembered-choice-note{display:flex;gap:7px;align-items:flex-start;margin:0 0 13px;color:#a9c49b;font-size:11px;line-height:1.5}
+@media(max-width:760px){.smart-download-settings .setting-row{gap:10px}.smart-select{max-width:128px;padding-right:22px}}

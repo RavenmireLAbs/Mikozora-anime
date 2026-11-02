@@ -22,12 +22,17 @@ if (protocol === 'mikozora:') {
   // on Android, so the flag lives here: the main process latches it when a
   // notification is clicked, and the UI consumes it exactly once.
   let openUpdates = false;
+  let openDownloads = false;
   ipcRenderer.on('moku:updates-changed', () => {
     window.dispatchEvent(new Event('moku-updates-changed'));
   });
   ipcRenderer.on('moku:open-updates', () => {
     openUpdates = true;
     window.dispatchEvent(new Event('moku-open-updates'));
+  });
+  ipcRenderer.on('moku:open-downloads', () => {
+    openDownloads = true;
+    window.dispatchEvent(new Event('moku-open-downloads'));
   });
 
   contextBridge.exposeInMainWorld('MokuBridge', {
@@ -54,6 +59,11 @@ if (protocol === 'mikozora:') {
     takeOpenUpdates: () => {
       const value = openUpdates;
       openUpdates = false;
+      return value;
+    },
+    takeOpenDownloads: () => {
+      const value = openDownloads;
+      openDownloads = false;
       return value;
     },
     saveBackupFile: call('saveBackupFile'),

@@ -42,6 +42,7 @@ let episodeService = null;
 let tray = null;
 let quitting = false;
 let episodeNotification = null;
+const downloadReadyNotifications = new Set();
 
 function bundledFfmpegPath() {
   const raw = typeof ffmpegStaticPath === 'string' ? ffmpegStaticPath : '';
@@ -211,15 +212,18 @@ function showWindow() {
   win.focus();
 }
 
-function sendOpenUpdates() {
+function sendOpenChannel(channel) {
   if (!win || win.isDestroyed()) return;
-  const send = () => { if (win && !win.isDestroyed()) win.webContents.send('moku:open-updates'); };
+  const send = () => { if (win && !win.isDestroyed()) win.webContents.send(channel); };
   if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send);
   else send();
 }
 
+function sendOpenUpdates() { sendOpenChannel('moku:open-updates'); }
+function sendOpenDownloads() { sendOpenChannel('moku:open-downloads'); }
+
 function syncTray(state) {
-  const wanted = !!state?.automatic;
+  const wanted = !!state?.automatic || !!state?.smartDownloads?.enabled;
   if (wanted && !tray) {
     try {
       const image = nativeImage.createFromPath(join(__dirname, '..', 'build', 'icon.png'));
@@ -254,6 +258,23 @@ function notifyEpisodes(content, { alert } = {}) {
   notification.on('click', () => { showWindow(); sendOpenUpdates(); notification.close(); });
   notification.on('close', () => { if (episodeNotification === notification) episodeNotification = null; });
   episodeNotification = notification;
+  notification.show();
+}
+
+function notifyDownloadReady(record) {
+  if (!record || !Notification.isSupported()) return;
+  const series = String(record.item?.title || 'Your series');
+  const number = String(record.episode?.number || '');
+  const episode = number ? `Episode ${number}` : String(record.episode?.title || 'New episode');
+  const notification = new Notification({
+    title: 'Ready to watch offline',
+    body: `${series} · ${episode}`,
+    silent: false,
+    icon: join(__dirname, '..', 'build', 'icon.png'),
+  });
+  downloadReadyNotifications.add(notification);
+  notification.on('click', () => { showWindow(); sendOpenDownloads(); notification.close(); });
+  notification.on('close', () => downloadReadyNotifications.delete(notification));
   notification.show();
 }
 
@@ -292,10 +313,10 @@ function createWindow() {
   win.on('close', (event) => {
     saveBounds();
     store.flush();
-    // With automatic episode checks on, closing the window parks Mikozora
-    // in the system tray so background checks and alerts keep working,
-    // like Android's scheduled checks. Quit from the tray menu exits.
-    if (!quitting && episodeService?.automaticEnabled()) {
+    // With automatic episode checks or Smart Downloads on, closing the
+    // window parks Mikozora in the system tray so background checks,
+    // automatic downloads and alerts keep working. Quit from the tray exits.
+    if (!quitting && (episodeService?.automaticEnabled() || episodeService?.smartDownloadsEnabled())) {
       syncTray(episodeService.state());
       if (tray) { event.preventDefault(); win.hide(); }
     }
@@ -327,10 +348,12 @@ if (!app.requestSingleInstanceLock()) {
       baseDir: join(app.getPath('userData'), 'downloads'),
       store,
       mediaProcessor: createFfmpegProcessor(bundledFfmpegPath()),
+      onDownloadReady: notifyDownloadReady,
     });
     downloadService.init().catch(() => {});
     episodeService = new EpisodeService({
       store: new EpisodeStore({ file: join(app.getPath('userData'), 'episode-updates.json') }),
+      downloadService,
       notify: notifyEpisodes,
       onStateChanged: (state) => {
         syncTray(state);

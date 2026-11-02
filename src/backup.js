@@ -10,6 +10,7 @@ import { PROGRESS_KEY } from './progress.js';
 import { APPEARANCE_KEY } from './appearance.js';
 import { CONTENT_KEY } from './content.js';
 import { UPDATE_KEY } from './update.js';
+import { SMART_DOWNLOADS_KEY } from './smart-downloads.js';
 
 export const BACKUP_FORMAT = 'mikozora-backup';
 export const BACKUP_VERSION = 1;
@@ -22,6 +23,7 @@ export const BACKUP_KEYS = [
   APPEARANCE_KEY,
   CONTENT_KEY,
   UPDATE_KEY,
+  SMART_DOWNLOADS_KEY,
   EXPERIENCE_KEY,
 ];
 

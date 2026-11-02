@@ -42,8 +42,8 @@ public final class EpisodeWorker extends ListenableWorker {
                     processed++;continue;
                 }
                 if(isStopped()||(!manual&&!EpisodeStore.automatic(c)))break;
-                int found=EpisodeStore.success(c,title,episodes,Math.max(System.currentTimeMillis(),cutoff));
-                if(found>0){EpisodeNotifier.refresh(c,!announced);announced=true;}
+                int found=EpisodeStore.successEvents(c,title,episodes,Math.max(System.currentTimeMillis(),cutoff)).size();
+                if(found>0){EpisodeNotifier.refresh(c,!announced);announced=true;if(!isStopped())SmartDownloads.queuePending(c);}
                 processed++;
             }
             if(!isStopped()&&(manual||EpisodeStore.automatic(c))&&!EpisodeStore.due(c,cutoff).isEmpty())EpisodeScheduler.continueBatch(c,manual,cutoff);

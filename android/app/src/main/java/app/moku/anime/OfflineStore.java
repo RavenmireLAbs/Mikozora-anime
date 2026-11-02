@@ -3,6 +3,7 @@ package app.moku.anime;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.net.Uri;
+import androidx.annotation.Nullable;
 import androidx.annotation.OptIn;
 import androidx.media3.common.C;
 import androidx.media3.common.util.UnstableApi;
@@ -68,6 +69,21 @@ final class OfflineStore {
                 new DefaultDownloaderFactory(new CacheDataSource.Factory().setCache(cache)
                     .setCacheKeyFactory(CacheScopes.keys(request)).setUpstreamDataSourceFactory(network),downloads)
                     .createDownloader(request));
+            java.util.concurrent.Executor completionEvents=Executors.newSingleThreadExecutor();
+            manager.addListener(new DownloadManager.Listener() {
+                @Override public void onDownloadChanged(DownloadManager downloadManager,Download download,@Nullable Exception finalException) {
+                    if(download.state!=Download.STATE_COMPLETED)return;
+                    String id=download.request.id;
+                    // The worker normally observes completion too. This direct Media3
+                    // callback is a second path if WorkManager stops or the process is
+                    // restarted around the moment the transfer finishes. The persisted
+                    // ready claim makes the notification exactly-once.
+                    completionEvents.execute(() -> {
+                        OfflineStore.update(app,id,"status","completed");
+                        DownloadWorker.notifyReady(app,id);
+                    });
+                }
+            });
             manager.setMaxParallelDownloads(2);
         }
         return manager;
@@ -139,6 +155,17 @@ final class OfflineStore {
             return true;
         }
     }
+    static JSONObject claimReadyNotification(Context c,String id) {
+        synchronized(LOCK) {
+            try {
+                JSONObject meta=get(c,id);
+                if(meta==null||!meta.optBoolean("autoDownload",false)||!meta.optBoolean("smartNotify",false)||meta.optLong("readyNotifiedAt",0)>0)return null;
+                meta.put("readyNotifiedAt",System.currentTimeMillis());
+                if(!prefs(c).edit().putString(id,meta.toString()).commit())return null;
+                return new JSONObject(meta.toString());
+            }catch(Exception ignored){return null;}
+        }
+    }
     static Download getDownload(Context c,String id) {
         try{return manager(c).getDownloadIndex().getDownload(id);}catch(Exception ignored){return null;}
     }
@@ -188,6 +215,9 @@ final class OfflineStore {
         return new JSONArray(all);
     }
     static JSONObject enqueue(Context c,String payload) throws Exception {
+        return enqueue(c,payload,false,false,false);
+    }
+    static JSONObject enqueue(Context c,String payload,boolean autoDownload,boolean wifiOnly,boolean notifyWhenReady) throws Exception {
         if(payload==null||payload.length()>350000)throw new IOException("Selection is too large");
         JSONObject input=new JSONObject(payload);JSONArray episodes=input.getJSONArray("episodes");
         if(episodes.length()<1||episodes.length()>50)throw new IOException("Choose between 1 and 50 episodes per batch");
@@ -217,11 +247,12 @@ final class OfflineStore {
                 .put("serverChoice",server).put("qualityChoice",quality)
                 .put("subtitleMode",subtitleSelection.mode).put("subtitleSelection",new JSONArray(subtitleSelection.tracks.toString()))
                 .put("preferredSubtitleLanguage",subtitleSelection.preferredLanguage)
+                .put("autoDownload",autoDownload).put("smartWifiOnly",autoDownload&&wifiOnly).put("smartNotify",autoDownload&&notifyWhenReady).put("readyNotifiedAt",0L)
                 .put("status","queued").put("error","").put("subtitleDescription","Preparing subtitles")
                 .put("added",System.currentTimeMillis());
             OneTimeWorkRequest work=new OneTimeWorkRequest.Builder(DownloadWorker.class)
                 .setInputData(new Data.Builder().putString("id",id).build())
-                .setConstraints(new Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+                .setConstraints(new Constraints.Builder().setRequiredNetworkType(autoDownload&&wifiOnly?NetworkType.UNMETERED:NetworkType.CONNECTED).build())
                 .addTag("moku-offline").build();
             meta.put("workId",work.getId().toString());put(c,meta);
             WorkManager.getInstance(c).enqueueUniqueWork("moku-"+id,ExistingWorkPolicy.REPLACE,work);

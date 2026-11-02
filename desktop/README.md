@@ -21,9 +21,18 @@ as on Android.
 
 Episode-update state lives in `userData/episode-updates.json`. Checks run
 on open, on demand, and about every six hours while the app is open or
-parked in the system tray; with automatic checks on, closing the window
-hides it to the tray (Quit from the tray menu exits fully), and new
-episodes raise a Windows notification that opens the Updates screen.
+parked in the system tray; with automatic checks or Smart Downloads on,
+closing the window hides it to the tray (Quit from the tray menu exits
+fully), and new episodes raise a Windows notification that opens the
+Updates screen.
+
+Smart Downloads use the same checker to queue newly found episodes for
+selected series or collections, reusing each series' last queued manual
+server, quality and subtitle choices and respecting the per-series
+unwatched cap. Ready Smart downloads can raise a separate Windows
+notification that opens Downloads. Windows work stops when Mikozora is
+fully quit, and Windows does not expose a reliable metered-connection
+signal to the app, so the Android unmetered-only switch is not offered.
 
 ## Run it locally (any OS with Node)
 

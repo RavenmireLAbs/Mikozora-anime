@@ -54,18 +54,20 @@ function episodeUrl(source, series, raw) {
   } catch { return ''; }
 }
 
-function add(out, number, title, url) {
+function add(out, number, title, url, ids = '') {
   if (!url) return;
   const key = number === '' ? `url:${url}` : `number:${number}`;
   if (key.length > 2700 || out.has(key)) return;
   let n = 0;
   if (number !== '') { const parsed = Number(number); if (Number.isFinite(parsed)) n = parsed; }
   const cleanTitle = String(title || '');
+  const cleanIds = String(ids || '').trim();
   out.set(key, {
     key,
     number,
     title: cleanTitle.length > 300 ? cleanTitle.slice(0, 300) : cleanTitle,
     url,
+    ids: cleanIds.length <= 1000 ? cleanIds : '',
     numeric: n,
   });
 }
@@ -161,7 +163,7 @@ export async function fetchEpisodes(source, series, getText = getEpisodeListText
       if (url === '' && slug !== '') {
         url = episodeUrl(source, series, `${series.replace(/\/+$/, '')}/ep-${encode(slug)}`);
       }
-      add(out, number, `Episode ${number === '' ? raw : number}`, url);
+      add(out, number, `Episode ${number === '' ? raw : number}`, url, attr(e, 'data-ids'));
     }
     if (out.size === 0) throw new Error('Source episode links are unavailable');
     return [...out.values()];
