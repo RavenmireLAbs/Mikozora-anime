@@ -17,6 +17,19 @@ if (protocol === 'mikozora:') {
   };
   const fire = (method) => (...args) => ipcRenderer.send('moku:fire', { method, args });
 
+  // Episode-update signals from the main process (Android dispatches the
+  // same window events from its activity). takeOpenUpdates is synchronous
+  // on Android, so the flag lives here: the main process latches it when a
+  // notification is clicked, and the UI consumes it exactly once.
+  let openUpdates = false;
+  ipcRenderer.on('moku:updates-changed', () => {
+    window.dispatchEvent(new Event('moku-updates-changed'));
+  });
+  ipcRenderer.on('moku:open-updates', () => {
+    openUpdates = true;
+    window.dispatchEvent(new Event('moku-open-updates'));
+  });
+
   contextBridge.exposeInMainWorld('MokuBridge', {
     platform: 'desktop',
     request: call('request'),
@@ -31,6 +44,18 @@ if (protocol === 'mikozora:') {
     exportDownload: call('exportDownload'),
     openDownload: fire('openDownload'),
     openExport: fire('openExport'),
+    syncEpisodeTitles: call('syncEpisodeTitles'),
+    episodeUpdates: call('episodeUpdates'),
+    checkEpisodes: call('checkEpisodes'),
+    setEpisodeAutomatic: call('setEpisodeAutomatic'),
+    setEpisodeAlerts: call('setEpisodeAlerts'),
+    markEpisodeRead: call('markEpisodeRead'),
+    episodeNotificationPermission: fire('episodeNotificationPermission'),
+    takeOpenUpdates: () => {
+      const value = openUpdates;
+      openUpdates = false;
+      return value;
+    },
     saveBackupFile: call('saveBackupFile'),
     openBackupFile: call('openBackupFile'),
     setAppearance: fire('setAppearance'),

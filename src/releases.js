@@ -1,13 +1,22 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; older entries remain available.
-export const APP_VERSION = '0.22.0';
+export const APP_VERSION = '0.23.0';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.22.0',
+    version: '0.23.0',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'New-episode alerts arrive on Windows', description: 'The Windows app now checks your Favourites and personal collections for new episodes, just like Android: when it opens and about every six hours after that. The first check quietly sets a starting point, so existing episodes never trigger a flood of alerts, and anything genuinely new lands in Updates with badges on your library cards.' },
+      { title: 'Mikozora waits in the tray', description: 'While automatic checks are on, closing the Windows window parks Mikozora in the system tray so background checks and Windows notifications keep working. Double-click the tray icon to come back, use its menu to check right away, or choose Quit Mikozora to exit fully. Turn automatic checks off in Settings and closing the window quits as before.' },
+      { title: 'Full parity, one app', description: 'With episode alerts in place, the Windows app now matches Android across browsing, streaming, downloads, offline playback and episode updates. Android itself is unchanged in this release.' },
+    ],
+  },
+  {
+    version: '0.22.0',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Downloads arrive on Windows', description: 'The Windows app can now download episodes for offline viewing, just like Android. Queue a single episode or a batch, choose an available server and quality, and Mikozora resolves the media privately, saves the right subtitles and converts streams into playable MP4 files.' },
       { title: 'Watch without a connection', description: 'Completed downloads open in a built-in offline player on Windows, with saved subtitle tracks and your place remembered on that computer. Interrupted downloads resume their saved work when they can instead of starting over.' },
