@@ -1,6 +1,7 @@
 // Subtitle language policy and text helpers — port of Android's
 // SubtitlePolicy.java, plus the small WebVTT conversions the Windows
 // offline player needs.
+import { createHash } from 'node:crypto';
 
 const ENGLISH_WORD = /(?:^|[^a-z])(?:english|eng)(?:$|[^a-z])/;
 const ENGLISH_TAG = /^(?:en|eng)(?:[-_][a-z0-9]{2,8})*$/;
@@ -28,6 +29,138 @@ export function isEnglish(language, label) {
 
 export function keepTrack(source, language, label) {
   return !englishOnly(source) || isEnglish(language, label);
+}
+
+const LANGUAGE_NAMES = {
+  arabic: 'ar', bengali: 'bn', chinese: 'zh', czech: 'cs', danish: 'da',
+  dutch: 'nl', filipino: 'fil', finnish: 'fi', french: 'fr', german: 'de',
+  greek: 'el', hebrew: 'he', hindi: 'hi', hungarian: 'hu', italian: 'it',
+  japanese: 'ja', korean: 'ko', malay: 'ms', norwegian: 'no', persian: 'fa',
+  polish: 'pl', portuguese: 'pt', romanian: 'ro', russian: 'ru', spanish: 'es',
+  swedish: 'sv', thai: 'th', turkish: 'tr', ukrainian: 'uk', urdu: 'ur',
+  vietnamese: 'vi',
+};
+
+function cleanSubtitleLabel(label) {
+  return String(label || '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+export function subtitleLanguageCode(language, label = '') {
+  if (isEnglish(language, label)) return 'en';
+  let code = String(language || '').trim().toLowerCase().replaceAll('_', '-');
+  if (code === 'ind' || code === 'in') return 'id';
+  if (code && code !== 'und' && code !== 'unknown') {
+    code = code.replace(/[^a-z0-9-]/g, '').replace(/^-+|-+$/g, '').slice(0, 35);
+    if (/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/.test(code)) return code;
+  }
+  const name = `${cleanSubtitleLabel(label).toLowerCase()} ${code}`;
+  if (name.includes('indones') || /\bindo\b/.test(name)) return 'id';
+  for (const [word, value] of Object.entries(LANGUAGE_NAMES)) {
+    if (name.includes(word)) return value;
+  }
+  return 'und';
+}
+
+export function isIndonesian(language, label = '') {
+  return subtitleLanguageCode(language, label).split('-')[0] === 'id';
+}
+
+// Download choices are made from one representative episode, while actual
+// subtitle URLs expire and differ per episode. The durable identity is the
+// server-reported language + label, hashed so arbitrary labels stay bounded.
+export function subtitleTrackId(language, label = '') {
+  const code = subtitleLanguageCode(language, label);
+  const name = cleanSubtitleLabel(label).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim() || code;
+  const digest = createHash('sha256').update(`${code}\n${name}`, 'utf8').digest();
+  return `s:${digest.subarray(0, 16).toString('hex')}`;
+}
+
+export function subtitleTrackOption(track, defaultSelected = false) {
+  const language = subtitleLanguageCode(track?.language, track?.label || track?.name || '');
+  const label = cleanSubtitleLabel(track?.label || track?.name || '') || language;
+  return {
+    id: subtitleTrackId(language, label),
+    label,
+    language,
+    preferred: !!track?.preferred || !!track?.default,
+    defaultSelected: !!defaultSelected,
+  };
+}
+
+export function defaultSubtitleSelected(source, track, { hls = false } = {}) {
+  if (!hls) return keepTrack(source, track?.language, track?.label || track?.name || '');
+  if (englishOnly(source)) return isEnglish(track?.language, track?.label || track?.name || '');
+  return isEnglish(track?.language, track?.label || track?.name || '')
+    || isIndonesian(track?.language, track?.label || track?.name || '');
+}
+
+const SUBTITLE_TRACK_ID = /^s:[a-f0-9]{32}$/;
+
+export function normalizeSubtitleSelection(rawMode, rawTracks, server = 'auto') {
+  const mode = rawMode == null || rawMode === '' ? 'auto' : String(rawMode);
+  if (!['auto', 'custom', 'none'].includes(mode)) throw new Error('Invalid subtitle selection');
+  if (mode !== 'custom') return { mode, tracks: [] };
+  if (String(server || 'auto') === 'auto') {
+    throw new Error('Choose a server before selecting subtitle tracks');
+  }
+  if (!Array.isArray(rawTracks) || rawTracks.length < 1 || rawTracks.length > 60) {
+    throw new Error('Choose at least one subtitle track');
+  }
+  const seen = new Set();
+  const tracks = [];
+  for (const raw of rawTracks) {
+    const id = String(raw?.id || '');
+    const label = cleanSubtitleLabel(raw?.label || '').slice(0, 160);
+    if (!SUBTITLE_TRACK_ID.test(id) || !label || seen.has(id)) {
+      if (!SUBTITLE_TRACK_ID.test(id) || !label) throw new Error('Invalid subtitle selection');
+      continue;
+    }
+    seen.add(id);
+    tracks.push({ id, label, language: subtitleLanguageCode(raw?.language, label) });
+  }
+  if (!tracks.length) throw new Error('Choose at least one subtitle track');
+  return { mode, tracks };
+}
+
+export function storedSubtitleSelection(record) {
+  try {
+    return normalizeSubtitleSelection(
+      record?.subtitleMode,
+      record?.subtitleSelection,
+      record?.serverChoice || 'selected-server',
+    );
+  } catch {
+    return { mode: 'auto', tracks: [] };
+  }
+}
+
+export function trackMatchesSubtitleSelection(track, selection) {
+  if (selection?.mode !== 'custom') return false;
+  const id = track?.id && SUBTITLE_TRACK_ID.test(track.id)
+    ? track.id
+    : subtitleTrackId(track?.language, track?.label || track?.name || '');
+  return selection.tracks.some((chosen) => chosen.id === id);
+}
+
+export function keepTrackForSelection(source, selection, language, label) {
+  if (!selection || selection.mode === 'auto') return keepTrack(source, language, label);
+  if (selection.mode === 'none') return false;
+  return trackMatchesSubtitleSelection({ language, label }, selection);
+}
+
+export function applyPreferredSubtitle(tracks, selection) {
+  const saved = [...(tracks || [])];
+  if (selection?.mode !== 'custom' || !saved.length) return saved;
+  const preferredId = selection.tracks
+    .map((track) => track.id)
+    .find((id) => saved.some((track) => subtitleTrackId(track.language, track.label || track.name || '') === id));
+  let marked = false;
+  return saved.map((track) => {
+    const id = subtitleTrackId(track.language, track.label || track.name || '');
+    const preferred = !marked && id === preferredId;
+    if (preferred) marked = true;
+    return { ...track, preferred };
+  });
 }
 
 export function srtToVtt(raw) {

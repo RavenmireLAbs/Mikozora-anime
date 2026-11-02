@@ -68,8 +68,8 @@ export async function getDownloads() { return JSON.parse(await bridgeCall('downl
 export async function getDownloadOptions(item, episode, language = 'english') {
   return JSON.parse(await bridgeCall('downloadOptions', JSON.stringify({ item: { source:item.source }, episode: { url:episode.url, ids:episode.ids || '' }, language })));
 }
-export async function enqueueDownloads(episodes, language = 'english', server = 'auto', quality = 'best') {
-  return JSON.parse(await bridgeCall('enqueueDownloads', JSON.stringify({ episodes, language, server, quality })));
+export async function enqueueDownloads(episodes, language = 'english', server = 'auto', quality = 'best', subtitleMode = 'auto', subtitleTracks = []) {
+  return JSON.parse(await bridgeCall('enqueueDownloads', JSON.stringify({ episodes, language, server, quality, subtitleMode, subtitleTracks })));
 }
 export async function removeDownload(id) { return bridgeCall('removeDownload', id); }
 export async function getExportSettings() { return JSON.parse(await bridgeCall('exportSettings')); }

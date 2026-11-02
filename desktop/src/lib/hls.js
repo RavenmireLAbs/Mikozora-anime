@@ -3,7 +3,10 @@
 // playlists, separate audio/subtitle renditions, TS/fMP4 segments,
 // EXT-X-MAP, byte ranges and AES-128 segment keys.
 import { createHash } from 'node:crypto';
-import { isEnglish } from './subtitles.js';
+import {
+  defaultSubtitleSelected, englishOnly, isEnglish, isIndonesian, subtitleLanguageCode,
+  subtitleTrackId, subtitleTrackOption, trackMatchesSubtitleSelection,
+} from './subtitles.js';
 
 export function parseAttributes(raw) {
   const attrs = {};
@@ -140,32 +143,60 @@ export function selectAudioRendition(master, variant) {
   return [...options].sort((a, b) => Number(b.default) - Number(a.default) || Number(b.autoselect) - Number(a.autoselect))[0];
 }
 
-export function selectSubtitleRenditions(master, variant, { source = '', language = 'english', englishOnlySource = false } = {}) {
-  if (!variant?.subtitlesGroup) return [];
-  const options = (master?.media || []).filter((item) => item.type === 'SUBTITLES' && item.groupId === variant.subtitlesGroup && item.uri);
-  const selectedCode = language === 'indonesian' ? 'id' : 'en';
+export function subtitleRenditions(master, variant) {
+  const group = variant?.subtitlesGroup || '';
+  const options = (master?.media || []).filter((item) => (
+    item.type === 'SUBTITLES'
+    && item.uri
+    && (!group || item.groupId === group)
+  ));
   const seen = new Set();
   const result = [];
   for (const item of options) {
-    const english = isEnglish(item.language, item.name);
-    const declared = String(item.language || '').toLowerCase().replace('_', '-');
-    const indonesian = declared === 'id' || declared === 'ind' || /indones/i.test(item.name);
-    if (englishOnlySource && !english) continue;
-    if (!englishOnlySource && !english && !indonesian) continue;
-    const code = english ? 'en' : 'id';
-    const key = `${code}|${item.uri}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    const language = subtitleLanguageCode(item.language, item.name);
+    const label = String(item.name || '').trim() || language;
+    const id = subtitleTrackId(language, label);
+    if (seen.has(id)) continue;
+    seen.add(id);
     result.push({
       ...item,
-      label: item.name || (english ? 'English' : 'Indonesian'),
-      language: code,
+      id,
+      label,
+      language,
       mime: 'text/vtt',
-      preferred: code === selectedCode || item.default,
+      preferred: !!item.default,
     });
   }
-  if (source) return result;
   return result;
+}
+
+export function subtitleRenditionOptions(master, variant, { source = '' } = {}) {
+  return subtitleRenditions(master, variant).map((item) => subtitleTrackOption(
+    item,
+    defaultSubtitleSelected(source, item, { hls: true }),
+  ));
+}
+
+export function selectSubtitleRenditions(master, variant, {
+  source = '', language = 'english', englishOnlySource = false, subtitleSelection = null,
+} = {}) {
+  if (!variant?.subtitlesGroup) return [];
+  if (subtitleSelection?.mode === 'none') return [];
+  const options = subtitleRenditions(master, variant);
+  if (subtitleSelection?.mode === 'custom') {
+    return options.filter((item) => trackMatchesSubtitleSelection(item, subtitleSelection));
+  }
+  const selectedCode = language === 'indonesian' ? 'id' : 'en';
+  return options
+    .filter((item) => {
+      const english = isEnglish(item.language, item.label);
+      const indonesian = isIndonesian(item.language, item.label);
+      return englishOnlySource || englishOnly(source) ? english : english || indonesian;
+    })
+    .map((item) => ({
+      ...item,
+      preferred: subtitleLanguageCode(item.language, item.label).split('-')[0] === selectedCode || item.default,
+    }));
 }
 
 function parseByteRange(raw, previousEnd = 0) {

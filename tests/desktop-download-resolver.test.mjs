@@ -5,6 +5,7 @@ import {
   createVideoResolver, mediafireFile, megaSource, subtitleTracksForDownload, validateSelection,
 } from '../desktop/src/lib/video-resolver.js';
 import { hlsQualities } from '../desktop/src/lib/hls.js';
+import { normalizeSubtitleSelection, subtitleLanguageCode, subtitleTrackId } from '../desktop/src/lib/subtitles.js';
 
 test('HLS quality labels mirror the Android parser', () => {
   const variants = hlsQualities(`#EXTM3U
@@ -22,6 +23,13 @@ d.m3u8
     { id: 'v:1920x820', label: '1920 x 820' },
     { id: 'v:640x360', label: '360p - 640 x 360' },
   ]);
+});
+
+test('subtitle language names normalize to codes for server track identities', () => {
+  assert.equal(subtitleLanguageCode('Arabic', 'العربية'), 'ar');
+  assert.equal(subtitleLanguageCode('ind', 'Indonesian'), 'id');
+  assert.equal(subtitleLanguageCode('pt-BR', 'Portuguese (Brazil)'), 'pt-br');
+  assert.equal(subtitleTrackId('en', 'English (SDH)'), subtitleTrackId('en', 'English - SDH'));
 });
 
 test('selection validation rejects path-like servers and malformed qualities', () => {
@@ -50,9 +58,11 @@ test('MegaPlay encrypted sources are decrypted and signed like Android', () => {
 
 function sogoFixture() {
   const master = `#EXTM3U
-#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360
+#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="Arabic",LANGUAGE="ar",URI="ar.m3u8"
+#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",LANGUAGE="en",URI="en.m3u8"
+#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360,SUBTITLES="subs"
 360.m3u8
-#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720
+#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720,SUBTITLES="subs"
 720.m3u8
 `;
   const resolver = createVideoResolver({
@@ -98,11 +108,23 @@ test('Sogo-family options and explicit resolution keep Android IDs and English f
   assert.equal(options.servers[0].id, 'sogo-megaplay-hd-0');
   assert.equal(options.servers[0].label, 'MegaPlay HD - MegaPlay SUB');
   assert.deepEqual(options.servers[0].qualities.map((q) => q.id), ['best', 'v:1280x720', 'v:640x360']);
+  assert.deepEqual(options.servers[0].subtitles.map((track) => [track.label, track.language, track.defaultSelected]), [
+    ['English', 'en', true],
+    ['French', 'fr', false],
+    ['Arabic', 'ar', false],
+  ]);
+  assert.ok(options.servers[0].subtitles.every((track) => !('url' in track) && !('uri' in track)));
+  assert.equal(options.servers[0].subtitleNote, '');
 
   const resolved = await resolver.resolve(item, episode, 'english', 'sogo-megaplay-hd-0', 'v:1280x720');
   assert.equal(resolved.url, 'https://cdn.example/master.m3u8');
   assert.equal(resolved.host, 'MegaPlay');
   assert.deepEqual(subtitleTracksForDownload(resolved, 'sogo').map((track) => track.language), ['en']);
+  const french = options.servers[0].subtitles.find((track) => track.language === 'fr');
+  const custom = normalizeSubtitleSelection('custom', [french], options.servers[0].id);
+  assert.deepEqual(subtitleTracksForDownload(resolved, 'sogo', custom).map((track) => track.language), ['fr']);
+  assert.deepEqual(subtitleTracksForDownload(resolved, 'sogo', { mode: 'none', tracks: [] }), []);
+  assert.throws(() => normalizeSubtitleSelection('custom', [french], 'auto'), /Choose a server/);
 
   await assert.rejects(
     resolver.resolve(item, episode, 'english', 'sogo-not-listed-0', 'best'),

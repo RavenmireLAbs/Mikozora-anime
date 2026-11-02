@@ -274,6 +274,7 @@ export async function downloadHlsMedia({
   lookup,
   concurrency = 4,
   englishOnlySource = false,
+  subtitleSelection = null,
 } = {}) {
   if (!workDir) throw new Error('A download work folder is required');
   await mkdir(workDir, { recursive: true });
@@ -291,7 +292,7 @@ export async function downloadHlsMedia({
     variant = selectVariant(master, quality);
     videoUrl = variant.uri;
     audioRendition = selectAudioRendition(master, variant);
-    subtitleRenditions = selectSubtitleRenditions(master, variant, { source, language, englishOnlySource });
+    subtitleRenditions = selectSubtitleRenditions(master, variant, { source, language, englishOnlySource, subtitleSelection });
     const video = await fetchPlaylist(videoUrl, context);
     videoText = video.text;
     videoUrl = video.url;
@@ -472,6 +473,7 @@ export async function downloadHlsMedia({
         : mergeVttSegments(parts);
       if (!content.includes('-->')) throw new Error('Subtitle playlist had no cues');
       subtitleTracks.push({
+        id: rendition.id || '',
         label: rendition.label || rendition.name || 'Subtitles',
         language: rendition.language,
         mime: 'text/vtt',
@@ -495,6 +497,7 @@ export async function downloadHlsMedia({
     qualityLabel: variant?.width && variant?.height ? `${variant.width} x ${variant.height}` : '',
     subtitleTracks,
     subtitleErrors,
+    subtitleRenditions,
   };
 }
 

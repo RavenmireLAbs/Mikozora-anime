@@ -9,7 +9,9 @@ import {
 } from '../desktop/src/lib/hls.js';
 import { downloadDirectFile, downloadHlsMedia } from '../desktop/src/lib/media-download.js';
 import { isPublicAddress } from '../desktop/src/lib/safe-http.js';
-import { mergeVttSegments, srtToVtt } from '../desktop/src/lib/subtitles.js';
+import {
+  mergeVttSegments, normalizeSubtitleSelection, srtToVtt, subtitleTrackOption,
+} from '../desktop/src/lib/subtitles.js';
 
 test('SafeHttp address policy rejects private and reserved addresses', () => {
   for (const address of ['10.0.0.5', '127.0.0.1', '172.16.4.2', '192.168.1.10', '100.64.1.2', '8.8.8.8']) {
@@ -42,6 +44,16 @@ test('HLS parser selects capped variants, audio, English subtitles and byte rang
     selectSubtitleRenditions(master, variant, { englishOnlySource: true }).map((item) => item.language),
     ['en'],
   );
+  const frenchSelection = normalizeSubtitleSelection(
+    'custom',
+    [subtitleTrackOption({ label: 'French', language: 'fr' })],
+    'sogo-server-0',
+  );
+  assert.deepEqual(
+    selectSubtitleRenditions(master, variant, { englishOnlySource: true, subtitleSelection: frenchSelection }).map((item) => item.language),
+    ['fr'],
+  );
+  assert.deepEqual(selectSubtitleRenditions(master, variant, { subtitleSelection: { mode: 'none', tracks: [] } }), []);
 
   const media = parseMediaPlaylist(`#EXTM3U
 #EXT-X-MEDIA-SEQUENCE:40
@@ -189,4 +201,16 @@ s2.vtt
   const second = await downloadHlsMedia(options);
   assert.equal(second.bytes, first.bytes);
   assert.equal(segmentFetches.length, firstSegmentFetchCount, 'completed segments should be reused');
+
+  const englishSelection = normalizeSubtitleSelection(
+    'custom',
+    [subtitleTrackOption({ label: 'English', language: 'en' })],
+    'sogo-server-0',
+  );
+  const custom = await downloadHlsMedia({ ...options, subtitleSelection: englishSelection });
+  assert.deepEqual(custom.subtitleRenditions.map((track) => track.language), ['en']);
+  assert.equal(custom.subtitleTracks.length, 1);
+  const noSubtitles = await downloadHlsMedia({ ...options, subtitleSelection: { mode: 'none', tracks: [] } });
+  assert.deepEqual(noSubtitles.subtitleRenditions, []);
+  assert.deepEqual(noSubtitles.subtitleTracks, []);
 });

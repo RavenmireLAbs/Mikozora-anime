@@ -17,7 +17,11 @@ import { allowedSource, matchesSource } from './allowlist.js';
 import { createVideoResolver, subtitleTracksForDownload, validateSelection } from './video-resolver.js';
 import { publicUrl, safeFetch, safeGet } from './safe-http.js';
 import { createMediaReferer, downloadDirectFile, downloadHlsMedia, isHlsResult } from './media-download.js';
-import { englishOnly, isEnglish, keepTrack, languageFor, subtitleTextToVtt } from './subtitles.js';
+import {
+  applyPreferredSubtitle, englishOnly, isEnglish, keepTrackForSelection, languageFor,
+  normalizeSubtitleSelection, storedSubtitleSelection, subtitleLanguageCode, subtitleTextToVtt,
+  subtitleTrackId, trackMatchesSubtitleSelection,
+} from './subtitles.js';
 import { episodeFileBase, seriesFolderName } from './folder-names.js';
 
 const ID_PATTERN = /^[a-f0-9]{32}$/;
@@ -332,6 +336,7 @@ export class DownloadService {
     const quality = cleanString(input.quality || 'best');
     validateSelection(server, quality);
     if (server === 'auto' && quality !== 'best') throw new Error('Choose a server before selecting a specific quality');
+    const subtitleSelection = normalizeSubtitleSelection(input.subtitleMode, input.subtitleTracks, server);
 
     let added = 0;
     let skipped = 0;
@@ -353,6 +358,9 @@ export class DownloadService {
         language: episodeLanguage,
         serverChoice: server,
         qualityChoice: quality,
+        subtitleMode: subtitleSelection.mode,
+        subtitleSelection: subtitleSelection.tracks,
+        preferredSubtitleLanguage: subtitleSelection.tracks[0]?.language || '',
         status: 'queued',
         error: '',
         subtitleDescription: 'Preparing subtitles',
@@ -407,7 +415,7 @@ export class DownloadService {
     await rm(dir, { recursive: true, force: true });
     await mkdir(dir, { recursive: true });
     const saved = [];
-    for (const track of subtitleTracksForDownload(resolved, record.item.source)) {
+    for (const track of subtitleTracksForDownload(resolved, record.item.source, storedSubtitleSelection(record))) {
       if (signal?.aborted) throw abortError();
       if (!this.records.has(record.id)) throw abortError();
       try {
@@ -431,7 +439,7 @@ export class DownloadService {
         // preferred-language outcome after trying all offered tracks.
       }
     }
-    return saved;
+    return applyPreferredSubtitle(saved, storedSubtitleSelection(record));
   }
 
   async saveHlsSubtitleTracks(record, hlsTracks, existing) {
@@ -441,7 +449,7 @@ export class DownloadService {
     for (const track of hlsTracks || []) {
       const content = String(track?.content || '');
       if (!content.includes('-->')) continue;
-      const duplicate = saved.some((old) => old.language === track.language && old.label === track.label);
+      const duplicate = saved.some((old) => subtitleTrackId(old.language, old.label) === subtitleTrackId(track.language, track.label));
       if (duplicate) continue;
       const name = `track-${saved.length}.vtt`;
       await writeBufferAtomic(join(dir, name), Buffer.from(content, 'utf8'));
@@ -453,7 +461,7 @@ export class DownloadService {
         preferred: !!track.preferred,
       });
     }
-    return saved;
+    return applyPreferredSubtitle(saved, storedSubtitleSelection(record));
   }
 
   async runDownload(id, controller) {
@@ -481,6 +489,7 @@ export class DownloadService {
       const source = record.item.source;
       const language = languageFor(source, record.language || 'english');
       const englishOnlySource = englishOnly(source);
+      const subtitleSelection = storedSubtitleSelection(record);
       const resolved = await this.resolver.resolve(
         record.item,
         record.episode,
@@ -493,13 +502,24 @@ export class DownloadService {
       await this.publicUrlImpl(resolved.url, { lookup: this.lookup });
 
       let savedTracks = await this.saveDirectSubtitleTracks(record, resolved, signal);
-      if (!englishOnlySource && resolved.tracks.length && !savedTracks.length) {
+      const directSelectedOffered = subtitleSelection.mode === 'custom'
+        && resolved.tracks.some((track) => trackMatchesSubtitleSelection(track, subtitleSelection));
+      if (subtitleSelection.mode === 'auto' && !englishOnlySource && resolved.tracks.length && !savedTracks.length) {
         // HLS may still provide a text rendition, so defer the Android
         // failure until the playlist has been inspected below.
         if (!isHlsResult(resolved)) throw new Error('The host provided subtitles, but none could be saved. Please retry.');
       }
+      if (subtitleSelection.mode === 'custom' && !isHlsResult(resolved) && !savedTracks.length) {
+        throw new Error(directSelectedOffered
+          ? 'The selected subtitle track could not be saved. Please retry.'
+          : 'The selected subtitle track is not available for this episode.');
+      }
 
-      const preliminaryDescription = englishOnlySource ? 'No English subtitles available' : (resolved.subtitleDescription || 'Preparing subtitles');
+      const preliminaryDescription = subtitleSelection.mode === 'none'
+        ? (/burned in/i.test(resolved.subtitleDescription || '') ? resolved.subtitleDescription : 'No separate subtitles selected')
+        : englishOnlySource && subtitleSelection.mode === 'auto'
+          ? 'No English subtitles available'
+          : (resolved.subtitleDescription || 'Preparing subtitles');
       this.patch(id, {
         language,
         tracks: savedTracks,
@@ -534,6 +554,7 @@ export class DownloadService {
           fetchImpl: this.fetchImpl,
           lookup: this.lookup,
           englishOnlySource,
+          subtitleSelection,
           onProgress: ({ bytes, progress }) => {
             this.patchProgress(id, {
               bytes: Number(bytes) || 0,
@@ -547,8 +568,14 @@ export class DownloadService {
         duration = hls.duration;
         qualityLabel = hls.qualityLabel || '';
         savedTracks = await this.saveHlsSubtitleTracks(record, hls.subtitleTracks, savedTracks);
-        if (!englishOnlySource && resolved.tracks.length && !savedTracks.length) {
+        if (subtitleSelection.mode === 'auto' && !englishOnlySource && resolved.tracks.length && !savedTracks.length) {
           throw new Error('The host provided subtitles, but none could be saved. Please retry.');
+        }
+        if (subtitleSelection.mode === 'custom' && !savedTracks.length) {
+          const hlsSelectedOffered = (hls.subtitleRenditions || []).length > 0;
+          throw new Error(directSelectedOffered || hlsSelectedOffered
+            ? 'The selected subtitle track could not be saved. Please retry.'
+            : 'The selected subtitle track is not available for this episode.');
         }
       } else {
         const part = join(work, 'source.part');
@@ -618,15 +645,22 @@ export class DownloadService {
         || (hls?.subtitleErrors || []).length > 0;
       const savedPreferred = savedTracks.some((track) => preferredCode === track.language
         || (preferredCode === 'en' && isEnglish(track.language, track.label)));
-      if ((directOffered || hlsOffered) && !savedPreferred && savedTracks.length === 0) {
+      if (subtitleSelection.mode === 'auto'
+        && (directOffered || hlsOffered) && !savedPreferred && savedTracks.length === 0) {
         throw new Error('The requested subtitle track could not be saved. Please retry.');
       }
 
-      let description = englishOnlySource ? 'No English subtitles available' : (resolved.subtitleDescription || 'Preparing subtitles');
+      let description = subtitleSelection.mode === 'none'
+        ? (/burned in/i.test(resolved.subtitleDescription || '') ? resolved.subtitleDescription : 'No separate subtitles selected')
+        : englishOnlySource && subtitleSelection.mode === 'auto'
+          ? 'No English subtitles available'
+          : (resolved.subtitleDescription || 'Preparing subtitles');
       if (savedTracks.length) {
         const names = savedTracks.slice(0, 3).map((track) => track.label || 'Subtitles').join(', ');
         description = `${names}${savedTracks.length > 3 ? ` + ${savedTracks.length - 3} more` : ''} subtitles saved`;
-        if (!directOffered && !hlsOffered) description = `Requested language unavailable · ${description}`;
+        if (subtitleSelection.mode === 'auto' && !directOffered && !hlsOffered) {
+          description = `Requested language unavailable · ${description}`;
+        }
       }
 
       // The MP4 is now self-contained, so segment/direct-file work data would
@@ -1013,11 +1047,18 @@ export class DownloadService {
       };
 
       const sourceName = record.item?.source || '';
-      const preferred = languageFor(sourceName, record.language || 'english') === 'indonesian' ? 'id' : 'en';
+      const subtitleSelection = storedSubtitleSelection(record);
+      const preferred = subtitleSelection.tracks[0]?.language
+        || record.preferredSubtitleLanguage
+        || (languageFor(sourceName, record.language || 'english') === 'indonesian' ? 'id' : 'en');
+      const preferredPrimary = subtitleLanguageCode(preferred).split('-')[0];
       const filtered = (source.tracks || [])
-        .filter((track) => keepTrack(sourceName, track.language, track.label))
+        .filter((track) => keepTrackForSelection(sourceName, subtitleSelection, track.language, track.label))
         .map((track, index) => ({ track, index }))
-        .sort((a, b) => Number(a.track.language !== preferred) - Number(b.track.language !== preferred) || a.index - b.index)
+        .sort((a, b) => Number(!a.track.preferred) - Number(!b.track.preferred)
+          || Number(subtitleLanguageCode(a.track.language, a.track.label).split('-')[0] !== preferredPrimary)
+            - Number(subtitleLanguageCode(b.track.language, b.track.label).split('-')[0] !== preferredPrimary)
+          || a.index - b.index)
         .map(({ track }) => track);
       const savedTracks = [];
       let written = 0;
