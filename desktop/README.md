@@ -15,6 +15,12 @@ the Node equivalent of Android's `SafeHttp`, HLS renditions are downloaded
 with resume support, and completed media is converted to MP4 with the
 bundled FFmpeg binary for the built-in offline player and folder export.
 
+Episode-update state lives in `userData/episode-updates.json`. Checks run
+on open, on demand, and about every six hours while the app is open or
+parked in the system tray; with automatic checks on, closing the window
+hides it to the tray (Quit from the tray menu exits fully), and new
+episodes raise a Windows notification that opens the Updates screen.
+
 ## Run it locally (any OS with Node)
 
 ```sh
@@ -53,10 +59,10 @@ desktop and the APK on Android.
   built-in player (episode rail, watched checks),
   library/collections/history/Continue Watching, themes, backup &
   restore, update checks, external links.
-- **Stage 2 (this release):** downloads & offline playback
+- **Stage 2:** downloads & offline playback
   (`VideoResolver`/`DownloadWorker` ported to Node with FFmpeg muxing),
   resumable direct/HLS transfers, subtitles, and verified folder export.
-- **Stage 3:** background new-episode alerts with a system-tray resident
+- **Stage 3 (this release):** background new-episode alerts with a system-tray resident
   checker and Windows notifications (porting `EpisodeStore`/`EpisodeFetcher`).
 
 The web UI probes the bridge for each capability

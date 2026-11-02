@@ -3,15 +3,15 @@
 // and results return by evaluating
 // window.__mokuNativeChunk(id, chunk, done, error) in the page, exactly
 // like the Android bridge. The implemented surface covers networking,
-// backup files, appearance, external links, downloads/offline playback and
-// folder export. Episode alerts remain absent until the tray-resident stage,
-// so the shared UI continues to degrade that one feature gracefully.
+// backup files, appearance, external links, downloads/offline playback,
+// folder export, and episode-update checks/alerts.
 import { dialog, shell } from 'electron';
 import { readFile, writeFile, stat } from 'node:fs/promises';
 import { allowedSource, allowedProjectRelease } from './lib/allowlist.js';
 import { getText } from './lib/http.js';
 import { normalizeAppearance, backgroundFor } from './lib/appearance.js';
 import { playerRefererForEpisode } from './lib/player-network.js';
+import { episodeErrorMessage } from './lib/episode-service.js';
 
 // Android chunks at 20000 chars for Binder limits; desktop can use fewer,
 // bigger pieces. The page joins chunks until `done`, so size is invisible.
@@ -102,10 +102,20 @@ function fromApp(event) {
   return typeof url === 'string' && url.startsWith('mikozora://');
 }
 
-export function registerBridge(ipcMain, getWindow, store, setPlayerReferer = () => {}, downloadService = null) {
+export function registerBridge(ipcMain, getWindow, store, setPlayerReferer = () => {}, downloadService = null, episodeService = null) {
   const requireDownloads = () => {
     if (!downloadService) throw new Error('Downloads are unavailable in this Windows build.');
     return downloadService;
+  };
+  const requireEpisodes = () => {
+    if (!episodeService) throw new Error('Episode updates are unavailable in this Windows build.');
+    return episodeService;
+  };
+  // Episode methods mirror MainActivity.episodeError: only the known
+  // user-facing messages reach the UI; everything else is generic.
+  const episodeCall = async (fn) => {
+    try { return JSON.stringify(await fn(requireEpisodes())); }
+    catch (err) { throw new Error(episodeErrorMessage(err)); }
   };
   ipcMain.on('moku:bridge', async (event, payload) => {
     const { method, id, args } = payload || {};
@@ -130,6 +140,12 @@ export function registerBridge(ipcMain, getWindow, store, setPlayerReferer = () 
       else if (method === 'chooseDownloadFolder') out = await chooseDownloadFolder(getWindow(), requireDownloads());
       else if (method === 'clearDownloadFolder') out = JSON.stringify(await requireDownloads().clearDownloadFolder());
       else if (method === 'exportDownload') out = JSON.stringify(await requireDownloads().queueExport(String(args?.[0] ?? '')));
+      else if (method === 'syncEpisodeTitles') out = await episodeCall((svc) => svc.syncTitles(String(args?.[0] ?? ''), !!args?.[1]));
+      else if (method === 'episodeUpdates') out = await episodeCall((svc) => svc.updates());
+      else if (method === 'checkEpisodes') out = await episodeCall((svc) => svc.checkNow());
+      else if (method === 'setEpisodeAutomatic') out = await episodeCall((svc) => svc.setAutomatic(!!args?.[0]));
+      else if (method === 'setEpisodeAlerts') out = await episodeCall((svc) => svc.setAlerts(!!args?.[0]));
+      else if (method === 'markEpisodeRead') out = await episodeCall((svc) => svc.markRead(String(args?.[0] ?? '')));
       else if (method === 'saveBackupFile') out = await saveBackupFile(getWindow(), args?.[0], args?.[1]);
       else if (method === 'openBackupFile') out = await openBackupFile(getWindow());
       else throw new Error('Not available in the Windows app yet.');
@@ -172,6 +188,8 @@ export function registerBridge(ipcMain, getWindow, store, setPlayerReferer = () 
           ).catch(() => {});
         }
       })();
+    } else if (method === 'episodeNotificationPermission') {
+      episodeService?.notificationPermission(!!args?.[0]);
     } else if (method === 'openExternal') {
       const url = String(args?.[0] ?? '');
       if (allowedSource(url) || allowedProjectRelease(url)) shell.openExternal(url).catch(() => {});

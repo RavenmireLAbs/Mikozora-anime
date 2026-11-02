@@ -10,7 +10,7 @@ const builder = read('desktop/electron-builder.yml');
 const desktopPkg = JSON.parse(read('desktop/package.json'));
 const ui = read('src/main.jsx');
 
-test('desktop preload exposes the bridge only on the app origin, with stage 2 download methods', () => {
+test('desktop preload exposes the bridge only on the app origin, with download and episode methods', () => {
   // Embedded third-party players must stay bridge-free, as on Android.
   assert.match(preload, /protocol === 'mikozora:'\{\}|protocol === 'mikozora:'\) \{|=== 'mikozora:'\) \{/);
   assert.match(preload, /platform: 'desktop'/);
@@ -28,9 +28,18 @@ test('desktop preload exposes the bridge only on the app origin, with stage 2 do
   assert.match(preload, /exportDownload: call\('exportDownload'\)/);
   assert.match(preload, /openDownload: fire\('openDownload'\)/);
   assert.match(preload, /openExport: fire\('openExport'\)/);
-  // The remaining unimplemented stage stays absent so capability probes degrade.
+  assert.match(preload, /syncEpisodeTitles: call\('syncEpisodeTitles'\)/);
+  assert.match(preload, /episodeUpdates: call\('episodeUpdates'\)/);
+  assert.match(preload, /checkEpisodes: call\('checkEpisodes'\)/);
+  assert.match(preload, /setEpisodeAutomatic: call\('setEpisodeAutomatic'\)/);
+  assert.match(preload, /setEpisodeAlerts: call\('setEpisodeAlerts'\)/);
+  assert.match(preload, /markEpisodeRead: call\('markEpisodeRead'\)/);
+  assert.match(preload, /episodeNotificationPermission: fire\('episodeNotificationPermission'\)/);
+  assert.match(preload, /takeOpenUpdates: \(\) =>/);
+  assert.match(preload, /moku:updates-changed/);
+  assert.match(preload, /moku:open-updates/);
+  // Only Android's native player method stays absent on desktop.
   assert.ok(!/openPlayer\s*:/.test(preload));
-  assert.ok(!/episodeUpdates\s*:/.test(preload));
 });
 
 test('desktop bridge mirrors the Android chunk protocol and re-checks the sender origin', () => {
@@ -48,6 +57,13 @@ test('desktop bridge mirrors the Android chunk protocol and re-checks the sender
   assert.match(bridge, /method === 'clearDownloadFolder'/);
   assert.match(bridge, /method === 'exportDownload'/);
   assert.match(bridge, /__mokuOpenOfflineDownload/);
+  assert.match(bridge, /method === 'syncEpisodeTitles'/);
+  assert.match(bridge, /method === 'episodeUpdates'/);
+  assert.match(bridge, /method === 'checkEpisodes'/);
+  assert.match(bridge, /method === 'setEpisodeAutomatic'/);
+  assert.match(bridge, /method === 'setEpisodeAlerts'/);
+  assert.match(bridge, /method === 'markEpisodeRead'/);
+  assert.match(bridge, /episodeErrorMessage/);
   assert.match(bridge, /shell\.openPath/);
   assert.match(bridge, /showSaveDialog/);
   assert.match(bridge, /showOpenDialog/);
@@ -66,6 +82,12 @@ test('desktop window is sandboxed and packaging ships installer + portable', () 
   assert.match(main, /createFfmpegProcessor/);
   assert.match(main, /handleDownloadRequest/);
   assert.match(main, /validPlaybackToken/);
+  assert.match(main, /new EpisodeService/);
+  assert.match(main, /new Tray\(/);
+  assert.match(main, /new Notification\(/);
+  assert.match(main, /setAppUserModelId\('app\.mikozora\.desktop'\)/);
+  assert.match(main, /moku:updates-changed/);
+  assert.match(main, /moku:open-updates/);
   assert.match(main, /content-range/);
   assert.match(ui, /function OfflinePlayerModal/);
   assert.match(ui, /__mokuOpenOfflineDownload/);

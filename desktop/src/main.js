@@ -6,7 +6,7 @@
 // proxy, page fetches through the MokuBridge-compatible IPC bridge in
 // bridge.js, and everything the UI stores (library, progress, backups)
 // keeps the exact Android formats — an Android backup file imports as-is.
-import { app, BrowserWindow, Menu, protocol, shell, ipcMain, session } from 'electron';
+import { app, BrowserWindow, Menu, Tray, Notification, nativeImage, protocol, shell, ipcMain, session } from 'electron';
 import { join, extname, normalize } from 'node:path';
 import { createReadStream, readFileSync, writeFileSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
@@ -18,11 +18,17 @@ import { backgroundFor } from './lib/appearance.js';
 import { cleanUserAgent, playerEmbedHeaders } from './lib/player-network.js';
 import { registerBridge } from './bridge.js';
 import { DownloadService } from './lib/download-service.js';
+import { EpisodeStore } from './lib/episode-store.js';
+import { EpisodeService } from './lib/episode-service.js';
 import { createFfmpegProcessor } from './lib/ffmpeg.js';
 import ffmpegStaticPath from 'ffmpeg-static';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const APP_ORIGIN = 'mikozora://app';
+
+// Windows toasts are attributed through the AppUserModelId; keep it in
+// step with electron-builder's appId so notifications show as Mikozora.
+if (process.platform === 'win32') app.setAppUserModelId('app.mikozora.desktop');
 
 // Must be registered before the app is ready.
 protocol.registerSchemesAsPrivileged([
@@ -32,6 +38,10 @@ protocol.registerSchemesAsPrivileged([
 // --- tiny settings store (appearance + window bounds) in userData ---
 let store = { get: (key, fallback) => fallback, set() {}, flush() {} };
 let downloadService = null;
+let episodeService = null;
+let tray = null;
+let quitting = false;
+let episodeNotification = null;
 
 function bundledFfmpegPath() {
   const raw = typeof ffmpegStaticPath === 'string' ? ffmpegStaticPath : '';
@@ -193,6 +203,60 @@ function openExternalAllowed(url) {
   if (allowedSource(url) || allowedProjectRelease(url)) shell.openExternal(url).catch(() => {});
 }
 
+// --- system tray + episode-update notifications ---
+function showWindow() {
+  if (!win || win.isDestroyed()) { createWindow(); return; }
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
+function sendOpenUpdates() {
+  if (!win || win.isDestroyed()) return;
+  const send = () => { if (win && !win.isDestroyed()) win.webContents.send('moku:open-updates'); };
+  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send);
+  else send();
+}
+
+function syncTray(state) {
+  const wanted = !!state?.automatic;
+  if (wanted && !tray) {
+    try {
+      const image = nativeImage.createFromPath(join(__dirname, '..', 'build', 'icon.png'));
+      tray = new Tray(image.isEmpty() ? image : image.resize({ width: 16, height: 16 }));
+      tray.setContextMenu(Menu.buildFromTemplate([
+        { label: 'Open Mikozora', click: () => showWindow() },
+        { label: 'Check for new episodes now', click: () => { episodeService?.checkNow().catch(() => {}); } },
+        { type: 'separator' },
+        { label: 'Quit Mikozora', click: () => { quitting = true; app.quit(); } },
+      ]));
+      tray.on('double-click', () => showWindow());
+    } catch { tray = null; }
+  } else if (!wanted && tray) {
+    tray.destroy();
+    tray = null;
+  }
+  if (tray) {
+    const unread = Number(state?.unreadCount) || 0;
+    tray.setToolTip(unread ? `Mikozora — ${unread} new episode${unread === 1 ? '' : 's'}` : 'Mikozora');
+  }
+}
+
+function notifyEpisodes(content, { alert } = {}) {
+  if (episodeNotification) { episodeNotification.close(); episodeNotification = null; }
+  if (!content || !Notification.isSupported()) return;
+  const notification = new Notification({
+    title: content.title,
+    body: content.body,
+    silent: !alert,
+    icon: join(__dirname, '..', 'build', 'icon.png'),
+  });
+  notification.on('click', () => { showWindow(); sendOpenUpdates(); notification.close(); });
+  notification.on('close', () => { if (episodeNotification === notification) episodeNotification = null; });
+  episodeNotification = notification;
+  notification.show();
+}
+
 let win = null;
 function createWindow() {
   const bounds = store.get('windowBounds', {});
@@ -225,7 +289,17 @@ function createWindow() {
   };
   win.on('resize', saveBounds);
   win.on('move', saveBounds);
-  win.on('close', () => { saveBounds(); store.flush(); });
+  win.on('close', (event) => {
+    saveBounds();
+    store.flush();
+    // With automatic episode checks on, closing the window parks Mikozora
+    // in the system tray so background checks and alerts keep working,
+    // like Android's scheduled checks. Quit from the tray menu exits.
+    if (!quitting && episodeService?.automaticEnabled()) {
+      syncTray(episodeService.state());
+      if (tray) { event.preventDefault(); win.hide(); }
+    }
+  });
   win.on('closed', () => { win = null; });
 
   // The top-level page may only ever be the app itself; anything else a
@@ -244,9 +318,7 @@ function createWindow() {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
-    if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
-  });
+  app.on('second-instance', () => showWindow());
   Menu.setApplicationMenu(null);
   app.whenReady().then(() => {
     store = createStore();
@@ -257,10 +329,27 @@ if (!app.requestSingleInstanceLock()) {
       mediaProcessor: createFfmpegProcessor(bundledFfmpegPath()),
     });
     downloadService.init().catch(() => {});
+    episodeService = new EpisodeService({
+      store: new EpisodeStore({ file: join(app.getPath('userData'), 'episode-updates.json') }),
+      notify: notifyEpisodes,
+      onStateChanged: (state) => {
+        syncTray(state);
+        if (win && !win.isDestroyed()) win.webContents.send('moku:updates-changed');
+      },
+      openNotificationSettings: () => { shell.openExternal('ms-settings:notifications').catch(() => {}); },
+      notificationsSupported: () => Notification.isSupported(),
+    });
+    episodeService.start().then(() => syncTray(episodeService.state())).catch(() => {});
     protocol.handle('mikozora', handleAppRequest);
-    registerBridge(ipcMain, () => win, store, (referer) => { currentPlayerReferer = referer; }, downloadService);
+    registerBridge(ipcMain, () => win, store, (referer) => { currentPlayerReferer = referer; }, downloadService, episodeService);
     createWindow();
   });
-  app.on('window-all-closed', () => app.quit());
-  app.on('before-quit', () => { void downloadService?.shutdown(); store.flush(); });
+  app.on('window-all-closed', () => { if (!tray) app.quit(); });
+  app.on('before-quit', () => {
+    quitting = true;
+    void downloadService?.shutdown();
+    void episodeService?.shutdown();
+    if (tray) { tray.destroy(); tray = null; }
+    store.flush();
+  });
 }
