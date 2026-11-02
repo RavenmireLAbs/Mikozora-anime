@@ -1,13 +1,20 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; older entries remain available.
-export const APP_VERSION = '0.24.3';
+export const APP_VERSION = '0.24.4';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.24.3',
+    version: '0.24.4',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Windows downloads from split-audio servers keep their sound', description: 'Some servers (the HD-1 server among them) serve a video stream that declares an audio track which never actually carries any sound — the real audio is a separate stream. On Windows that empty declaration fooled Mikozora into treating the video as already having sound, so the separate audio was never paired and the download then failed at conversion, while other servers such as Vidstream worked. Mikozora now recognises an audio declaration with nothing behind it, pairs the server’s real audio stream, and converts the result with sound. Retry an episode that failed this way and it reuses the parts already downloaded. Android is unchanged.' },
+    ],
+  },
+  {
+    version: '0.24.3',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Windows conversion gets more chances to succeed', description: 'After the sound fix in 0.24.2, some Windows downloads could stop at “Could not convert this downloaded stream to MP4” when converting that server’s video for the built-in player failed on the first attempt. Mikozora now converts only the part the player cannot handle — video or audio — when it can, retries with a more forgiving conversion, and checks paired audio files before using them. If an episode still cannot be converted, the error now shows the converter’s actual reason. Retrying a failed episode reuses the parts already downloaded, so it goes straight back to conversion. Android is unchanged.' },
     ],

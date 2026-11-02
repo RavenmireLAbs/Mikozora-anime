@@ -9,7 +9,7 @@ import {
   fallbackAudioRendition, parseMasterPlaylist, parseMediaPlaylist, selectAudioRendition, selectSubtitleRenditions, selectVariant,
 } from '../desktop/src/lib/hls.js';
 import { downloadDirectFile, downloadHlsMedia } from '../desktop/src/lib/media-download.js';
-import { playableInApp, remuxToMp4 } from '../desktop/src/lib/ffmpeg.js';
+import { parseFfmpegInfo, playableInApp, remuxToMp4 } from '../desktop/src/lib/ffmpeg.js';
 import { isPublicAddress } from '../desktop/src/lib/safe-http.js';
 import {
   mergeVttSegments, normalizeSubtitleSelection, srtToVtt, subtitleTrackOption,
@@ -281,6 +281,26 @@ a1.ts
   assert.equal(muxed.separateAudio, false);
   assert.equal(muxed.inputs.length, 1);
   assert.ok(!fetched.includes('https://cdn.example/show/audio.m3u8'));
+
+  // A variant whose transport stream merely *declares* an audio PID that
+  // carries no frames (a phantom PMT entry, e. left behind when the
+  // packager split audio into this very rendition) must also pair: the
+  // real probe parser reports no audio for it, re-arming the fallback
+  // instead of letting the phantom pose as muxed sound.
+  fetched.length = 0;
+  const phantom = await downloadHlsMedia({
+    ...base,
+    workDir: join(root, 'phantom'),
+    probeFile: async () => parseFfmpegInfo(
+      'Duration: 00:00:06.00, start: 1.466667, bitrate: 1000 kb/s\n'
+      + 'Stream #0:0[0x100]: Video: h264 (High) ([27][0][0][0] / 0x001B), yuv420p, 640x360\n'
+      + 'Stream #0:1[0x101]: Audio: aac ([15][0][0][0] / 0x000F), 0 channels, fltp\n',
+    ),
+  });
+  assert.equal(phantom.separateAudio, true);
+  assert.equal(phantom.inputs.length, 2);
+  assert.equal(await readFile(phantom.inputs[1], 'utf8'), 'AUDIO-TRACK');
+  assert.ok(fetched.includes('https://cdn.example/show/audio.m3u8'));
 });
 
 test('the in-app player needs 8-bit H.264 with AAC/MP3 audio', () => {
@@ -413,6 +433,48 @@ test('remux ignores a separate-audio file that carries no audio when the video i
   assert.equal(fake.runs.length, 1);
   assert.equal(fake.runs[0].filter((arg) => arg === '-i').length, 1, 'the junk second input is dropped');
   assert.ok(fake.runs[0].includes('0:a?'));
+});
+
+test('probing discounts a declared audio stream that carries no frames', () => {
+  const phantom = parseFfmpegInfo(
+    'Duration: 00:24:00.00, start: 1.466667, bitrate: 2000 kb/s\n'
+    + 'Stream #0:0[0x100]: Video: h264 (High) ([27][0][0][0] / 0x001B), yuv420p, 1920x1080\n'
+    + 'Stream #0:1[0x101]: Audio: aac ([15][0][0][0] / 0x000F), 0 channels, fltp\n',
+  );
+  assert.equal(phantom.hasVideo, true);
+  assert.equal(phantom.hasAudio, false);
+  assert.equal(phantom.streams[1].phantom, true);
+
+  const real = parseFfmpegInfo(probeText());
+  assert.equal(real.hasAudio, true);
+  assert.equal(real.streams[1].phantom, undefined);
+
+  const mixed = parseFfmpegInfo(
+    'Stream #0:0: Video: h264 (High), yuv420p, 640x360\n'
+    + 'Stream #0:1: Audio: aac, 0 channels, fltp\n'
+    + 'Stream #0:2: Audio: aac (LC), 48000 Hz, stereo\n',
+  );
+  assert.equal(mixed.hasAudio, true, 'a real second audio stream still counts');
+  assert.match(mixed.audioCodec, /^aac \(LC\)/);
+});
+
+test('remux leaves a phantom declared audio stream unmapped and still completes', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mikozora-remux-phantom-'));
+  const input = join(root, 'v-combined.media');
+  const output = join(root, 'episode.mp4');
+  await writeFile(input, Buffer.alloc(64));
+  const phantomProbe = 'Duration: 00:00:06.00, start: 1.466667, bitrate: 1000 kb/s\n'
+    + 'Stream #0:0[0x100]: Video: h264 (High) ([27][0][0][0] / 0x001B), yuv420p, 640x360\n'
+    + 'Stream #0:1[0x101]: Audio: aac ([15][0][0][0] / 0x000F), 0 channels, fltp\n';
+  const fake = fakeFfmpeg([
+    phantomProbe, // input declares audio it never delivers
+    probeText({ audio: '' }), // copy output is the (correct) video-only result
+  ]);
+  const result = await remuxToMp4({ ffmpegPath: 'ffmpeg', inputs: [input], output, spawnImpl: fake.spawnImpl, runImpl: fake.runImpl });
+  assert.equal(result.hasAudio, false);
+  assert.equal(result.transcoded, false);
+  assert.equal(fake.runs.length, 1);
+  assert.ok(!fake.runs[0].includes('0:a?'), 'the frameless audio stream is never mapped');
 });
 
 test('a conversion failure reports what ffmpeg actually said, without local paths', async () => {

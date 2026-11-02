@@ -105,10 +105,20 @@ export function parseFfmpegInfo(stderr) {
         stream.height = Number(size[2]);
       }
     }
+    if (stream.type === 'audio') {
+      // A transport stream can declare an audio PID in its PMT that never
+      // carries a single frame (packagers that split audio into its own
+      // rendition often leave the declaration behind in the video
+      // variant). ffmpeg reports such a phantom with no sample rate and
+      // "0 channels"; counting it as sound makes a silent variant look
+      // muxed, suppresses separate-audio pairing, and sends conversion
+      // after a stream it can neither mux nor encode.
+      if (!/\b\d+\s*Hz\b/.test(line) || /,\s*0 channels\b/.test(line)) stream.phantom = true;
+    }
     streams.push(stream);
   }
   const video = streams.find((stream) => stream.type === 'video') || null;
-  const audio = streams.find((stream) => stream.type === 'audio') || null;
+  const audio = streams.find((stream) => stream.type === 'audio' && !stream.phantom) || null;
   return {
     duration,
     streams,
@@ -202,7 +212,12 @@ export async function remuxToMp4({
     catch { probes.push(null); }
   }
   let useSeparate = separateAudio && files.length > 1;
-  if (useSeparate && probes[1] && !probes[1].hasAudio && probes[0]?.hasAudio) useSeparate = false;
+  // A separate-audio file that probing shows carries no real audio (a junk
+  // body, or only a declared-but-empty phantom stream) must never be
+  // mapped: `1:a:0` would match nothing — or a frameless stream — and
+  // every conversion attempt would fail. The video input then stands
+  // alone; its own muxed audio wins when it has any.
+  if (useSeparate && probes[1] && !probes[1].hasAudio) useSeparate = false;
   const activeFiles = useSeparate ? files.slice(0, 2) : [files[0]];
   const audioProbe = useSeparate ? probes[1] : probes[0];
   const inputHasAudio = audioProbe ? !!audioProbe.hasAudio : null;
@@ -211,9 +226,17 @@ export async function remuxToMp4({
   if (!duration) duration = probes[0]?.duration || audioProbe?.duration || 0;
 
   const inputArgs = activeFiles.flatMap((file) => ['-i', file]);
+  // When the video input declares an audio stream that carries no frames
+  // (the phantom probing already discounted), leave it unmapped: mapping
+  // it makes the MP4 muxer/encoder choke on a channel-less, packet-less
+  // stream even though the picture converts fine.
+  const phantomOnlyAudio = !useSeparate && !!probes[0] && !probes[0].hasAudio
+    && !!probes[0].streams?.some((stream) => stream.type === 'audio');
   const mapArgs = useSeparate
     ? ['-map', '0:v:0', '-map', '1:a:0']
-    : ['-map', '0:v:0', '-map', '0:a?'];
+    : phantomOnlyAudio
+      ? ['-map', '0:v:0']
+      : ['-map', '0:v:0', '-map', '0:a?'];
   const common = ['-y', ...inputArgs, ...mapArgs, '-sn', '-dn'];
   const tail = ['-movflags', '+faststart', '-f', 'mp4', output];
   // libx264 with yuv420p rejects odd frame sizes, which cropped encodes
