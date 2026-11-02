@@ -49,6 +49,14 @@ function bridgeCall(method, ...args) {
   });
 }
 const bridgeRequest = url => bridgeCall('request', url);
+// Windows uses the web player. Before showing it, tell the desktop shell
+// which source episode supplied the embeds so the shell can reproduce the
+// Android player's source-origin Referer. Android has its native player;
+// browsers keep their ordinary referrer behavior.
+export async function setPlayerReferer(episodeUrl) {
+  if (!isDesktopApp() || typeof window.MokuBridge.setPlayerReferer !== 'function') return;
+  try { await bridgeCall('setPlayerReferer', episodeUrl); } catch { /* still attempt playback */ }
+}
 export function hasEpisodeUpdates() { return isAndroid() && typeof window.MokuBridge.episodeUpdates === 'function'; }
 export async function syncEpisodeTitles(items, onOpen=false) { return JSON.parse(await bridgeCall('syncEpisodeTitles', JSON.stringify(items), !!onOpen)); }
 export async function getEpisodeUpdates() { return JSON.parse(await bridgeCall('episodeUpdates')); }

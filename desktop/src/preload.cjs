@@ -20,6 +20,7 @@ if (protocol === 'mikozora:') {
   contextBridge.exposeInMainWorld('MokuBridge', {
     platform: 'desktop',
     request: call('request'),
+    setPlayerReferer: call('setPlayerReferer'),
     saveBackupFile: call('saveBackupFile'),
     openBackupFile: call('openBackupFile'),
     setAppearance: fire('setAppearance'),

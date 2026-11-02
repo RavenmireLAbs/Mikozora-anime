@@ -6,7 +6,7 @@ import {
   ExternalLink, Sparkles, SlidersHorizontal, Film, LoaderCircle, AlertCircle,
   Trash2, RotateCcw, FolderHeart, CircleHelp, ShieldCheck, Plus, ListVideo, Download, HardDrive, ListChecks, CheckCircle2, Heart, FolderPlus, Pencil, Folder, Flame, Bell, Sun, Moon, EyeOff
 } from 'lucide-react';
-import { SOURCES, getCatalog, getDetail, getFeatured, getTrending, getDiscoverAnime, getServers, imageUrl, isAndroid, clearNetworkCache, getDownloads, getDownloadOptions, enqueueDownloads, removeDownload, openDownload, getExportSettings, chooseDownloadFolder, clearDownloadFolder, exportDownload, openExport, hasEpisodeUpdates, syncEpisodeTitles, getEpisodeUpdates, checkEpisodes, setEpisodeAutomatic, setEpisodeAlerts, markEpisodeRead, fetchLatestRelease, exportBackupToFile, readBackupFromFile, isDesktopApp, hasNativeDownloads } from './data';
+import { SOURCES, getCatalog, getDetail, getFeatured, getTrending, getDiscoverAnime, getServers, imageUrl, isAndroid, clearNetworkCache, getDownloads, getDownloadOptions, enqueueDownloads, removeDownload, openDownload, getExportSettings, chooseDownloadFolder, clearDownloadFolder, exportDownload, openExport, hasEpisodeUpdates, syncEpisodeTitles, getEpisodeUpdates, checkEpisodes, setEpisodeAutomatic, setEpisodeAlerts, markEpisodeRead, fetchLatestRelease, exportBackupToFile, readBackupFromFile, isDesktopApp, hasNativeDownloads, setPlayerReferer } from './data';
 import { buildPlaybackPlaylist, compactPlaybackPlaylist } from './playback';
 import { monitoredTitles, unreadByTitle } from './episode-updates';
 import { COLLECTIONS_KEY, FAVOURITES_ID, titleKey, normalizeCollections, collectionNameError, createCollection, renameCollection, deleteCollection, setCollectionItems, setTitleCollections, toggleFavourite, removeTitleFromCollections } from './collections';
@@ -524,7 +524,7 @@ function PlayerModal({player,close,onEpisode,watched}) {
 
   return <div className="modal-backdrop" role="presentation" onMouseDown={close}><div className="player-modal" role="dialog" aria-modal="true" aria-label="Episode player" onMouseDown={e=>e.stopPropagation()}>
     <div className="player-header"><div><span className="eyebrow">NOW PLAYING</span><h2>{player.item.title}</h2><p>Episode {player.episode.number} · {sourceName(player.item.source)}</p></div><button className="icon-btn" onClick={close} aria-label="Close player"><X size={20}/></button></div>
-    <div className="iframe-wrap"><iframe key={`${player.episode.url}|${player.servers[current]?.url||''}`} src={player.servers[current]?.url} title={`${player.item.title} episode ${player.episode.number}`} allow="autoplay; fullscreen; picture-in-picture" allowFullScreen referrerPolicy="no-referrer-when-downgrade"/></div>
+    <div className="iframe-wrap"><iframe key={`${player.episode.url}|${player.servers[current]?.url||''}`} src={player.servers[current]?.url} title={`${player.item.title} episode ${player.episode.number}`} allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowFullScreen referrerPolicy="no-referrer-when-downgrade"/></div>
     {episodes.length>1&&<section className="player-episode-browser" aria-label="Episode navigation">
       <div className="player-episode-heading"><span>EPISODES</span><strong aria-live="polite">{episodeIndex+1} of {episodes.length}</strong></div>
       <div className="player-episode-nav">
@@ -792,6 +792,8 @@ function App() {
       const servers=await getServers(item.source,episode);
       if(request!==playbackRequest.current)return false;
       if(!servers.length)throw new Error('No available video servers were found. Try the original site.');
+      await setPlayerReferer(episode.url);
+      if(request!==playbackRequest.current)return false;
       remember(item,episode);
       setStoredProgress(prev=>recordWatch(prev,item,episode,playlist.episodes,Date.now()));
       const episodeIndex=Math.max(0,playlist.currentIndex);

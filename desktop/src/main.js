@@ -6,7 +6,7 @@
 // proxy, page fetches through the MokuBridge-compatible IPC bridge in
 // bridge.js, and everything the UI stores (library, progress, backups)
 // keeps the exact Android formats — an Android backup file imports as-is.
-import { app, BrowserWindow, Menu, protocol, shell, ipcMain } from 'electron';
+import { app, BrowserWindow, Menu, protocol, shell, ipcMain, session } from 'electron';
 import { join, extname, normalize } from 'node:path';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { allowedSource, allowedProjectRelease } from './lib/allowlist.js';
 import { get as httpGet } from './lib/http.js';
 import { backgroundFor } from './lib/appearance.js';
+import { cleanUserAgent, playerEmbedHeaders } from './lib/player-network.js';
 import { registerBridge } from './bridge.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -63,6 +64,19 @@ function cacheImage(key, entry) {
 }
 
 function webRoot() { return join(app.getAppPath(), 'web'); }
+
+// Set over IPC immediately before the web player opens. This is the origin
+// of the source page that supplied the currently selected embed.
+let currentPlayerReferer = '';
+
+function installPlayerNetwork() {
+  const ses = session.defaultSession;
+  const browserUserAgent = cleanUserAgent(typeof ses.getUserAgent === 'function' ? ses.getUserAgent() : '');
+  if (browserUserAgent && typeof ses.setUserAgent === 'function') ses.setUserAgent(browserUserAgent);
+  ses.webRequest.onBeforeSendHeaders({ urls: ['https://*/*'] }, (details, callback) => {
+    callback({ cancel: false, requestHeaders: playerEmbedHeaders(details, currentPlayerReferer) });
+  });
+}
 
 async function handleAppRequest(request) {
   try {
@@ -149,8 +163,9 @@ if (!app.requestSingleInstanceLock()) {
   Menu.setApplicationMenu(null);
   app.whenReady().then(() => {
     store = createStore();
+    installPlayerNetwork();
     protocol.handle('mikozora', handleAppRequest);
-    registerBridge(ipcMain, () => win, store);
+    registerBridge(ipcMain, () => win, store, (referer) => { currentPlayerReferer = referer; });
     createWindow();
   });
   app.on('window-all-closed', () => app.quit());

@@ -11,6 +11,7 @@ import { readFile, writeFile, stat } from 'node:fs/promises';
 import { allowedSource, allowedProjectRelease } from './lib/allowlist.js';
 import { getText } from './lib/http.js';
 import { normalizeAppearance, backgroundFor } from './lib/appearance.js';
+import { playerRefererForEpisode } from './lib/player-network.js';
 
 // Android chunks at 20000 chars for Binder limits; desktop can use fewer,
 // bigger pieces. The page joins chunks until `done`, so size is invisible.
@@ -70,13 +71,19 @@ function fromApp(event) {
   return typeof url === 'string' && url.startsWith('mikozora://');
 }
 
-export function registerBridge(ipcMain, getWindow, store) {
+export function registerBridge(ipcMain, getWindow, store, setPlayerReferer = () => {}) {
   ipcMain.on('moku:bridge', async (event, payload) => {
     const { method, id, args } = payload || {};
     if (!fromApp(event) || typeof id !== 'string' || !/^[0-9]{1,12}$/.test(id)) return;
     try {
       let out;
       if (method === 'request') out = await getText(String(args?.[0] ?? ''));
+      else if (method === 'setPlayerReferer') {
+        const referer = playerRefererForEpisode(String(args?.[0] ?? ''));
+        if (!referer) throw new Error('Invalid episode URL.');
+        setPlayerReferer(referer);
+        out = '{"ok":true}';
+      }
       else if (method === 'saveBackupFile') out = await saveBackupFile(getWindow(), args?.[0], args?.[1]);
       else if (method === 'openBackupFile') out = await openBackupFile(getWindow());
       else throw new Error('Not available in the Windows app yet.');

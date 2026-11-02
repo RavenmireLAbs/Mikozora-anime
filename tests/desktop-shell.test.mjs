@@ -16,6 +16,7 @@ test('desktop preload exposes the bridge only on the app origin, stage 1 methods
   assert.match(preload, /request: call\('request'\)/);
   assert.match(preload, /saveBackupFile: call\('saveBackupFile'\)/);
   assert.match(preload, /openBackupFile: call\('openBackupFile'\)/);
+  assert.match(preload, /setPlayerReferer: call\('setPlayerReferer'\)/);
   // Unimplemented stages stay absent so the UI's capability probes degrade.
   assert.ok(!/openPlayer\s*:/.test(preload));
   assert.ok(!/downloads\s*:/.test(preload));
@@ -26,6 +27,8 @@ test('desktop bridge mirrors the Android chunk protocol and re-checks the sender
   assert.match(bridge, /__mokuNativeChunk/);
   assert.match(bridge, /startsWith\('mikozora:\/\/'\)/);
   assert.match(bridge, /method === 'request'/);
+  assert.match(bridge, /method === 'setPlayerReferer'/);
+  assert.match(bridge, /playerRefererForEpisode/);
   assert.match(bridge, /showSaveDialog/);
   assert.match(bridge, /showOpenDialog/);
   assert.match(bridge, /allowedSource\(url\) \|\| allowedProjectRelease\(url\)/);
@@ -35,6 +38,9 @@ test('desktop window is sandboxed and packaging ships installer + portable', () 
   assert.match(main, /contextIsolation: true/);
   assert.match(main, /nodeIntegration: false/);
   assert.match(main, /sandbox: true/);
+  assert.match(main, /onBeforeSendHeaders/);
+  assert.match(main, /playerEmbedHeaders/);
+  assert.match(main, /setUserAgent\(browserUserAgent\)/);
   assert.match(main, /registerSchemesAsPrivileged/);
   assert.equal(desktopPkg.main, 'src/main.js');
   assert.match(builder, /target: nsis/);
