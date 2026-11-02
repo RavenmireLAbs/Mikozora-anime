@@ -1,13 +1,23 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; the app shows only that newest entry.
-export const APP_VERSION = '0.26.0';
+export const APP_VERSION = '0.27.0';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.26.0',
+    version: '0.27.0',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Google Drive sync, without another sync app', description: 'Settings → Device Sync can now use Google Drive directly on Android and Windows. Choose Google Drive as the sync method, connect the same Google account on both devices, and Mikozora keeps one small sync file per device in a visible “Mikozora” folder in that account’s Drive. No FolderSync, Autosync, Drive for Desktop, or manually paired shared folder is needed.' },
+      { title: 'Your account, your sync files', description: 'Drive sync uses the Google account connected on each device, so a user’s files stay in that user’s own Drive—not in the developer’s account. Mikozora asks Google only for per-file access to files it creates, plus the account email so Settings can show which account is connected. Shared-folder sync remains available if you prefer it.' },
+      { title: 'The same careful two-way merge', description: 'Library titles, collections, history, watch progress, appearance, content preferences and Smart Downloads settings merge in both directions, including later deletions, collection changes and episodes marked unwatched. Sync runs when Mikozora opens, when you return to it, periodically while it stays open, and shortly after synced data changes; Sync now remains in Settings. Downloaded episodes, queues and other device-specific state stay on each device.' },
+      { title: 'Private to your account, not end-to-end encrypted', description: 'Devices need internet access when they sync, but they do not need to be online at the same time. Google and anyone who can access the connected account or its Mikozora folder can read the title and watch metadata in the sync files, so use an account you trust. Disconnecting removes that device’s stored Google authorization and stops syncing, while deliberately leaving the Drive folder and files where they are.' },
+    ],
+  },
+  {
+    version: '0.26.0',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Sync Android and Windows through a folder you already trust', description: 'Settings → Device Sync can now connect Mikozora on Android and Windows through the same folder kept by Syncthing, OneDrive, Dropbox, Google Drive, a NAS, or another file-sync service. Choose that folder on both devices; each copy of Mikozora writes only its own small sync file and your chosen service carries it. No Mikozora account is needed, and the devices do not need to be online at the same time.' },
       { title: 'Your space comes with you', description: 'Library titles, collections, history, watch progress, appearance, content preferences and Smart Downloads settings merge in both directions when Mikozora opens, when you return to it, and shortly after something changes; Sync now is there whenever you want it. Later deletions, collection changes and episodes marked unwatched sync too, while a fresh device’s untouched default settings will not overwrite choices you already made on the other device.' },
