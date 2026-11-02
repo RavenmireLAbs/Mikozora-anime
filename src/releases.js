@@ -1,13 +1,20 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; older entries remain available.
-export const APP_VERSION = '0.24.4';
+export const APP_VERSION = '0.24.5';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.24.4',
+    version: '0.24.5',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Windows downloads work from image-disguised servers', description: 'Some servers, including HD-1, hide each video segment behind a tiny image. Android sees through that disguise, but the Windows converter treated the combined download as a 1×1 picture and stopped with “Could not convert this downloaded stream to MP4”. Mikozora now removes the image disguise from every segment before the episode is combined and converted. Retry an episode that failed this way and the parts already on your computer are cleaned and reused instead of downloading again. Android is unchanged.' },
+    ],
+  },
+  {
+    version: '0.24.4',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Windows downloads from split-audio servers keep their sound', description: 'Some servers (the HD-1 server among them) serve a video stream that declares an audio track which never actually carries any sound — the real audio is a separate stream. On Windows that empty declaration fooled Mikozora into treating the video as already having sound, so the separate audio was never paired and the download then failed at conversion, while other servers such as Vidstream worked. Mikozora now recognises an audio declaration with nothing behind it, pairs the server’s real audio stream, and converts the result with sound. Retry an episode that failed this way and it reuses the parts already downloaded. Android is unchanged.' },
     ],

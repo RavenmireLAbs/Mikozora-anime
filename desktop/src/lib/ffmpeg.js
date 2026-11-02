@@ -176,8 +176,20 @@ async function inspectOutput(ffmpegPath, file, { spawnImpl } = {}) {
 // instead of a generic "unsupported format".
 function conversionDetail(stderr) {
   const lines = String(stderr || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  const interesting = lines.filter((line) => /error|invalid|unable|failed|matches no streams|not divisible|unknown|unsupported|could not|no such file|permission/i.test(line));
-  const raw = interesting[interesting.length - 1] || lines[lines.length - 1] || '';
+  // ffmpeg ends most failures with wrapper summaries such as "Conversion
+  // failed!" or "Error while opening encoder". Those say nothing about the
+  // underlying stream, so prefer the last specific complaint before them.
+  const generic = /^(?:Conversion failed!?|Error (?:initializing output stream|while opening encoder|opening output file|submitting a packet to the muxer|muxing a packet)\b.*)$/i;
+  const interesting = lines.filter((line) => !generic.test(line)
+    && /error|invalid|unable|failed|matches no streams|not divisible|unknown|unsupported|could not|no such file|permission/i.test(line));
+  // An input/decoding complaint is usually the root cause; encoder geometry
+  // and muxing errors after it are often just downstream symptoms.
+  const inputComplaint = interesting.find((line) => /invalid .*signature|inflate returned error|invalid data found|error while decoding stream/i.test(line));
+  const raw = inputComplaint
+    || interesting[interesting.length - 1]
+    || lines.filter((line) => !generic.test(line)).at(-1)
+    || lines[lines.length - 1]
+    || '';
   return raw
     .replace(/'[^']*'/g, "'[file]'")
     .replace(/[A-Za-z]:[\\/][^\s]+/g, '[file]')
