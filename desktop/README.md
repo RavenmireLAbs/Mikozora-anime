@@ -34,6 +34,16 @@ notification that opens Downloads. Windows work stops when Mikozora is
 fully quit, and Windows does not expose a reliable metered-connection
 signal to the app, so the Android unmetered-only switch is not offered.
 
+Folder-based Device Sync uses `DeviceSyncService`
+(`desktop/src/lib/device-sync-service.js`) behind the same bridge contract
+as Android's `SyncStore`. The selected folder is stored separately from the
+download/export folder under the `deviceSyncFolder` settings key. The
+Windows service only lists, reads and atomically replaces bounded
+top-level `mikozora-sync-<platform>-<16-hex-device-id>.json` files; payload
+validation and merging stay in the shared `src/device-sync.js`. The folder
+is expected to be the same Syncthing, OneDrive, Dropbox, Google Drive, NAS
+or equivalent folder selected in **Settings → Device Sync** on Android.
+
 ## Run it locally (any OS with Node)
 
 ```sh

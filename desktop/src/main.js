@@ -20,6 +20,7 @@ import { registerBridge } from './bridge.js';
 import { DownloadService } from './lib/download-service.js';
 import { EpisodeStore } from './lib/episode-store.js';
 import { EpisodeService } from './lib/episode-service.js';
+import { DeviceSyncService } from './lib/device-sync-service.js';
 import { createFfmpegProcessor } from './lib/ffmpeg.js';
 import ffmpegStaticPath from 'ffmpeg-static';
 
@@ -39,6 +40,7 @@ protocol.registerSchemesAsPrivileged([
 let store = { get: (key, fallback) => fallback, set() {}, flush() {} };
 let downloadService = null;
 let episodeService = null;
+let deviceSyncService = null;
 let tray = null;
 let quitting = false;
 let episodeNotification = null;
@@ -363,8 +365,9 @@ if (!app.requestSingleInstanceLock()) {
       notificationsSupported: () => Notification.isSupported(),
     });
     episodeService.start().then(() => syncTray(episodeService.state())).catch(() => {});
+    deviceSyncService = new DeviceSyncService({ store });
     protocol.handle('mikozora', handleAppRequest);
-    registerBridge(ipcMain, () => win, store, (referer) => { currentPlayerReferer = referer; }, downloadService, episodeService);
+    registerBridge(ipcMain, () => win, store, (referer) => { currentPlayerReferer = referer; }, downloadService, episodeService, deviceSyncService);
     createWindow();
   });
   app.on('window-all-closed', () => { if (!tray) app.quit(); });

@@ -58,6 +58,8 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
     private volatile boolean closed = false;
     private static final int PICK_DOWNLOAD_FOLDER = 3181;
     private String pendingFolderRequest;
+    private static final int PICK_SYNC_FOLDER = 3184;
+    private String pendingSyncFolderRequest;
     private static final int CREATE_BACKUP_FILE = 3182;
     private static final int OPEN_BACKUP_FILE = 3183;
     private String pendingBackupSave;
@@ -67,7 +69,7 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        if(state!=null){pendingFolderRequest=state.getString("folderRequestId");pendingBackupSave=state.getString("backupSaveRequestId");pendingBackupOpen=state.getString("backupOpenRequestId");openUpdates.set(state.getBoolean("openUpdates",false));openDownloads.set(state.getBoolean("openDownloads",false));}
+        if(state!=null){pendingFolderRequest=state.getString("folderRequestId");pendingSyncFolderRequest=state.getString("syncFolderRequestId");pendingBackupSave=state.getString("backupSaveRequestId");pendingBackupOpen=state.getString("backupOpenRequestId");openUpdates.set(state.getBoolean("openUpdates",false));openDownloads.set(state.getBoolean("openDownloads",false));}
         if(getIntent()!=null&&getIntent().getBooleanExtra(EpisodeNotifier.EXTRA_OPEN,false)){openUpdates.set(true);getIntent().removeExtra(EpisodeNotifier.EXTRA_OPEN);}
         if(getIntent()!=null&&getIntent().getBooleanExtra(DownloadWorker.EXTRA_OPEN_DOWNLOADS,false)){openDownloads.set(true);getIntent().removeExtra(DownloadWorker.EXTRA_OPEN_DOWNLOADS);}
         EpisodeNotifier.ensureChannel(this);
@@ -350,7 +352,7 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
         @JavascriptInterface public void chooseDownloadFolder(String id) {
             if(id==null||!id.matches("[0-9]{1,12}"))return;
             runOnUiThread(()->{
-                if(pendingFolderRequest!=null){sendChunks(id,"","A folder picker is already open.");return;}
+                if(pendingFolderRequest!=null||pendingSyncFolderRequest!=null){sendChunks(id,"","A folder picker is already open.");return;}
                 try {
                     pendingFolderRequest=id;
                     Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
@@ -386,6 +388,39 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
                     startActivityForResult(picker,OPEN_BACKUP_FILE);
                 }catch(Exception e){pendingBackupOpen=null;sendChunks(id,"","No file picker is available on this device.");}
             });
+        }
+        @JavascriptInterface public void deviceSyncSettings(String id) {
+            if(id==null||!id.matches("[0-9]{1,12}"))return;
+            requests.execute(()->{try{sendChunks(id,SyncStore.settings(MainActivity.this).toString(),null);}
+                catch(Exception e){sendChunks(id,"","Could not read sync folder settings.");}});
+        }
+        @JavascriptInterface public void chooseDeviceSyncFolder(String id) {
+            if(id==null||!id.matches("[0-9]{1,12}"))return;
+            runOnUiThread(()->{
+                if(pendingSyncFolderRequest!=null||pendingFolderRequest!=null){sendChunks(id,"","A folder picker is already open.");return;}
+                try {
+                    pendingSyncFolderRequest=id;
+                    Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+                    picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                        |Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION|Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
+                    startActivityForResult(picker,PICK_SYNC_FOLDER);
+                }catch(Exception e){pendingSyncFolderRequest=null;sendChunks(id,"","No folder picker is available on this device.");}
+            });
+        }
+        @JavascriptInterface public void clearDeviceSyncFolder(String id) {
+            if(id==null||!id.matches("[0-9]{1,12}"))return;
+            requests.execute(()->{try{sendChunks(id,SyncStore.clearFolder(MainActivity.this).toString(),null);}
+                catch(Exception e){sendChunks(id,"","Could not update the sync folder.");}});
+        }
+        @JavascriptInterface public void readDeviceSyncFolder(String id) {
+            if(id==null||!id.matches("[0-9]{1,12}"))return;
+            requests.execute(()->{try{sendChunks(id,SyncStore.readFolder(MainActivity.this).toString(),null);}
+                catch(Exception e){sendChunks(id,"",SyncStore.safeMessage(e));}});
+        }
+        @JavascriptInterface public void writeDeviceSyncFile(String id,String name,String text) {
+            if(id==null||!id.matches("[0-9]{1,12}"))return;
+            requests.execute(()->{try{sendChunks(id,SyncStore.writeFile(MainActivity.this,name,text).toString(),null);}
+                catch(Exception e){sendChunks(id,"",SyncStore.safeMessage(e));}});
         }
         @JavascriptInterface public void clearDownloadFolder(String id) {
             if(id==null||!id.matches("[0-9]{1,12}"))return;
@@ -472,6 +507,7 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
     @Override protected void onSaveInstanceState(Bundle out) {
         super.onSaveInstanceState(out);
         if(pendingFolderRequest!=null)out.putString("folderRequestId",pendingFolderRequest);
+        if(pendingSyncFolderRequest!=null)out.putString("syncFolderRequestId",pendingSyncFolderRequest);
         if(pendingBackupSave!=null)out.putString("backupSaveRequestId",pendingBackupSave);
         if(pendingBackupOpen!=null)out.putString("backupOpenRequestId",pendingBackupOpen);
         out.putBoolean("openUpdates",openUpdates.get());
@@ -481,6 +517,7 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
         super.onActivityResult(requestCode,resultCode,data);
         if(requestCode==CREATE_BACKUP_FILE){finishBackupSave(resultCode,data);return;}
         if(requestCode==OPEN_BACKUP_FILE){finishBackupOpen(resultCode,data);return;}
+        if(requestCode==PICK_SYNC_FOLDER){finishSyncFolderPick(resultCode,data);return;}
         if(requestCode!=PICK_DOWNLOAD_FOLDER)return;
         String request=pendingFolderRequest;pendingFolderRequest=null;
         if(request==null)return;
@@ -497,6 +534,24 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
             getContentResolver().takePersistableUriPermission(tree,grants);
             requests.execute(()->{try{sendChunks(request,ExportStore.saveFolder(this,tree).toString(),null);}
                 catch(Exception e){sendChunks(request,"",ExportStore.safeMessage(e));}});
+        }catch(Exception e){sendChunks(request,"","Could not keep access to this folder. Try another folder.");}
+    }
+    private void finishSyncFolderPick(int resultCode,Intent data) {
+        String request=pendingSyncFolderRequest;pendingSyncFolderRequest=null;
+        if(request==null)return;
+        if(resultCode!=RESULT_OK||data==null||data.getData()==null) {
+            requests.execute(()->{try{JSONObject state=SyncStore.settings(this);state.put("canceled",true);sendChunks(request,state.toString(),null);}
+                catch(Exception e){sendChunks(request,"","Could not read sync folder settings.");}});
+            return;
+        }
+        Uri tree=data.getData();
+        int grants=data.getFlags()&(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        try {
+            if(grants!=(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION))
+                throw new SecurityException("Folder does not allow reading and writing");
+            getContentResolver().takePersistableUriPermission(tree,grants);
+            requests.execute(()->{try{sendChunks(request,SyncStore.saveFolder(this,tree).toString(),null);}
+                catch(Exception e){sendChunks(request,"",SyncStore.safeMessage(e));}});
         }catch(Exception e){sendChunks(request,"","Could not keep access to this folder. Try another folder.");}
     }
     private void finishBackupSave(int resultCode,Intent data) {

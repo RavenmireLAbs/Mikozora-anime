@@ -68,6 +68,11 @@ if (protocol === 'mikozora:') {
     },
     saveBackupFile: call('saveBackupFile'),
     openBackupFile: call('openBackupFile'),
+    deviceSyncSettings: call('deviceSyncSettings'),
+    chooseDeviceSyncFolder: call('chooseDeviceSyncFolder'),
+    clearDeviceSyncFolder: call('clearDeviceSyncFolder'),
+    readDeviceSyncFolder: call('readDeviceSyncFolder'),
+    writeDeviceSyncFile: call('writeDeviceSyncFile'),
     setAppearance: fire('setAppearance'),
     openExternal: fire('openExternal'),
   });
