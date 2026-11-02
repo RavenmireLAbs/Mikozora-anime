@@ -1,13 +1,20 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; older entries remain available.
-export const APP_VERSION = '0.24.2';
+export const APP_VERSION = '0.24.3';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.24.2',
+    version: '0.24.3',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Windows conversion gets more chances to succeed', description: 'After the sound fix in 0.24.2, some Windows downloads could stop at “Could not convert this downloaded stream to MP4” when converting that server’s video for the built-in player failed on the first attempt. Mikozora now converts only the part the player cannot handle — video or audio — when it can, retries with a more forgiving conversion, and checks paired audio files before using them. If an episode still cannot be converted, the error now shows the converter’s actual reason. Retrying a failed episode reuses the parts already downloaded, so it goes straight back to conversion. Android is unchanged.' },
+    ],
+  },
+  {
+    version: '0.24.2',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Windows downloads keep their sound', description: 'Some Windows downloads finished as “Ready to watch offline” but the saved episode had no sound — and some would not play at all. Certain servers keep the audio in a separate stream that the download did not pair, or serve a video format the built-in player cannot decode. Mikozora now pairs the server’s audio stream, converts anything the player cannot handle, and only counts a download as complete when the finished file really has picture and sound.' },
       { title: 'Already-saved broken copies are flagged', description: 'Episodes saved without sound by earlier Windows versions are detected when Mikozora starts and marked as failed with an explanation, so you can download them again instead of wondering why the player stays black. Healthy downloads are untouched. Android is unchanged in this release.' },

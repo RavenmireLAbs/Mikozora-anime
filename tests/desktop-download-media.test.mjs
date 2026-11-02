@@ -296,8 +296,9 @@ test('the in-app player needs 8-bit H.264 with AAC/MP3 audio', () => {
 // Fake-ffmpeg harness: probes answer from a queue of stderr texts, copy and
 // transcode runs just create the output file. This exercises remuxToMp4's
 // decision logic without a real ffmpeg binary.
-function fakeFfmpeg(probeTexts) {
+function fakeFfmpeg(probeTexts, runResults = []) {
   const queue = [...probeTexts];
+  const results = [...runResults];
   const runs = [];
   const spawnImpl = () => {
     const child = new EventEmitter();
@@ -315,7 +316,7 @@ function fakeFfmpeg(probeTexts) {
   const runImpl = async (args) => {
     runs.push(args);
     await writeFile(args[args.length - 1], Buffer.alloc(256));
-    return { code: 0, signal: '', stderr: '' };
+    return results.shift() || { code: 0, signal: '', stderr: '' };
   };
   return { spawnImpl, runImpl, runs, remaining: () => queue.length };
 }
@@ -371,4 +372,68 @@ test('remux still completes a genuinely silent source by stream copy', async () 
   assert.equal(result.transcoded, false);
   assert.equal(result.hasAudio, false);
   assert.equal(fake.runs.length, 1);
+});
+
+test('remux transcodes only the audio when the video is already playable', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mikozora-remux-ac3-'));
+  const input = join(root, 'v-combined.media');
+  const output = join(root, 'episode.mp4');
+  await writeFile(input, Buffer.alloc(64));
+  const ac3 = 'ac3 (ac-3 / 0x332D6361), 48000 Hz, 5.1(side)';
+  const fake = fakeFfmpeg([
+    probeText({ audio: ac3 }), // input probe
+    probeText({ audio: ac3 }), // copy is complete but the player cannot decode AC3
+    probeText(), // targeted output: copied video + AAC audio
+  ]);
+  const result = await remuxToMp4({ ffmpegPath: 'ffmpeg', inputs: [input], output, spawnImpl: fake.spawnImpl, runImpl: fake.runImpl });
+  assert.equal(result.transcoded, true);
+  assert.equal(fake.runs.length, 2);
+  const targeted = fake.runs[1];
+  assert.ok(targeted.includes('copy'), 'playable video is copied, not re-encoded');
+  assert.ok(!targeted.includes('libx264'));
+});
+
+test('remux ignores a separate-audio file that carries no audio when the video is muxed', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mikozora-remux-junk-audio-'));
+  const video = join(root, 'v-combined.media');
+  const junk = join(root, 'a-combined.media');
+  const output = join(root, 'episode.mp4');
+  await writeFile(video, Buffer.alloc(64));
+  await writeFile(junk, Buffer.alloc(64));
+  const fake = fakeFfmpeg([
+    probeText(), // video file: muxed h264+aac
+    'Duration: 00:00:06.00, start: 0.000000, bitrate: 10 kb/s\n', // "audio" file: no streams at all
+    probeText(), // copy output
+  ]);
+  const result = await remuxToMp4({
+    ffmpegPath: 'ffmpeg', inputs: [video, junk], output, separateAudio: true,
+    spawnImpl: fake.spawnImpl, runImpl: fake.runImpl,
+  });
+  assert.equal(result.hasAudio, true);
+  assert.equal(fake.runs.length, 1);
+  assert.equal(fake.runs[0].filter((arg) => arg === '-i').length, 1, 'the junk second input is dropped');
+  assert.ok(fake.runs[0].includes('0:a?'));
+});
+
+test('a conversion failure reports what ffmpeg actually said, without local paths', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mikozora-remux-failure-'));
+  const input = join(root, 'v-combined.media');
+  const output = join(root, 'episode.mp4');
+  await writeFile(input, Buffer.alloc(64));
+  const failure = {
+    code: 1,
+    signal: '',
+    stderr: "[mpegts @ 0x1] Opening 'C:\\Users\\someone\\AppData\\episode.processing.mp4' for writing\n[libx264 @ 0x2] height not divisible by 2 (638x359)\nError while opening encoder\n",
+  };
+  const fake = fakeFfmpeg([probeText()], [failure, failure, failure]);
+  await assert.rejects(
+    remuxToMp4({ ffmpegPath: 'ffmpeg', inputs: [input], output, spawnImpl: fake.spawnImpl, runImpl: fake.runImpl }),
+    (error) => {
+      assert.match(error.message, /Could not convert this downloaded stream to MP4\./);
+      assert.match(error.message, /Error while opening encoder/);
+      assert.ok(!/someone|AppData|C:\\/.test(error.message), 'no local paths leak into the message');
+      return true;
+    },
+  );
+  assert.equal(fake.runs.length, 3, 'copy plus both transcode plans were attempted');
 });
