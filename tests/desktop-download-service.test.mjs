@@ -274,3 +274,119 @@ test('queued records recover on service startup', async () => {
   assert.equal(record.id, id);
   await service.shutdown();
 });
+
+// Regression: older builds could mark a silent MP4 as "Ready to watch
+// offline". On startup such a legacy file is probed once: broken copies go
+// back to failed (file removed so a retry really downloads again) while
+// healthy ones are remembered and skipped on later starts.
+test('startup revalidates legacy completed downloads and fails silent copies', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mikozora-legacy-repair-'));
+  const baseDir = join(root, 'downloads');
+  const brokenId = downloadIdFor('sogo', 'https://animesogo.to/watch/broken-episode-1');
+  const healthyId = downloadIdFor('sogo', 'https://animesogo.to/watch/healthy-episode-1');
+  const seed = (id, slug, added) => ({
+    id,
+    item: { source: 'sogo', url: `https://animesogo.to/watch/${slug}`, title: 'Legacy', image: '', type: 'TV' },
+    episode: { url: `https://animesogo.to/watch/${slug}-episode-1`, number: '1', title: '', ids: 'x' },
+    language: 'english', serverChoice: 'auto', qualityChoice: 'best',
+    status: 'completed', storageMode: 'private', localBytes: 5, bytes: 5, progress: 100,
+    subtitleDescription: 'No subtitles', added,
+  });
+  await mkdir(baseDir, { recursive: true });
+  await writeFile(join(baseDir, 'downloads.json'), JSON.stringify([
+    seed(brokenId, 'broken', 1),
+    seed(healthyId, 'healthy', 2),
+  ]));
+  for (const id of [brokenId, healthyId]) {
+    await mkdir(join(baseDir, 'media', id), { recursive: true });
+    await writeFile(join(baseDir, 'media', id, 'episode.mp4'), 'video');
+  }
+
+  const service = new DownloadService({
+    baseDir,
+    resolver: {
+      resolve: async () => { throw new Error('must not resolve during migration'); },
+      downloadOptions: async () => ({ servers: [], unavailable: 0 }),
+    },
+    mediaProcessor: {
+      remux: async () => { throw new Error('must not convert during migration'); },
+      probe: async (file) => (String(file).includes(brokenId)
+        ? { hasVideo: true, hasAudio: false }
+        : { hasVideo: true, hasAudio: true }),
+    },
+    publicUrlImpl: async (url) => new URL(url),
+    safeGetImpl: async () => Buffer.alloc(0),
+    safeFetchImpl: async () => { throw new Error('must not fetch during migration'); },
+  });
+  await service.init();
+
+  const records = await service.list();
+  const broken = records.find((record) => record.id === brokenId);
+  const healthy = records.find((record) => record.id === healthyId);
+  assert.equal(broken.status, 'failed');
+  assert.match(broken.error, /no sound/);
+  await assert.rejects(access(join(baseDir, 'media', brokenId, 'episode.mp4')), 'broken private copy is removed so a retry downloads fresh');
+  assert.equal(healthy.status, 'completed');
+  assert.equal(healthy.hasAudio, true);
+  await access(join(baseDir, 'media', healthyId, 'episode.mp4'));
+  await service.shutdown();
+});
+
+test('a download known to have no audio can still be saved to a folder', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mikozora-silent-export-'));
+  const baseDir = join(root, 'downloads');
+  const exportRoot = join(root, 'chosen-folder');
+  await mkdir(exportRoot, { recursive: true });
+  const settings = new Map();
+  const service = new DownloadService({
+    baseDir,
+    store: {
+      get: (key, fallback) => (settings.has(key) ? settings.get(key) : fallback),
+      set: (key, value) => settings.set(key, value),
+      flush: () => {},
+    },
+    resolver: {
+      resolve: async () => ({
+        url: 'https://cdn.example/silent.mp4', mime: 'video/mp4', referer: '', host: 'Fixture',
+        serverLabel: 'Fixture', subtitleDescription: 'No subtitles', fixedHeight: 360, tracks: [], files: [],
+      }),
+      downloadOptions: async () => ({ servers: [], unavailable: 0 }),
+    },
+    mediaProcessor: {
+      remux: async ({ output }) => {
+        const data = Buffer.from('silent-video');
+        await writeFile(output, data);
+        return { bytes: data.length, width: 640, height: 360, hasVideo: true, hasAudio: false };
+      },
+      probe: async () => ({ hasVideo: true, hasAudio: false }),
+    },
+    publicUrlImpl: async (url) => new URL(url),
+    safeGetImpl: async () => Buffer.alloc(0),
+    safeFetchImpl: async (url) => ({ response: new Response('silent-source'), url: new URL(url) }),
+  });
+  await service.init();
+
+  const payload = {
+    episodes: [{
+      item: { source: 'sogo', url: 'https://animesogo.to/watch/silent', title: 'Silent Series', image: '', type: 'TV' },
+      episode: { url: 'https://animesogo.to/watch/silent-episode-1', number: '1', title: 'Episode 1', ids: 'x' },
+    }],
+    language: 'english', server: 'auto', quality: 'best',
+  };
+  const id = downloadIdFor('sogo', payload.episodes[0].episode.url);
+  await service.enqueue(JSON.stringify(payload));
+  const completed = await waitFor(async () => {
+    const found = (await service.list()).find((item) => item.id === id);
+    return found?.status === 'completed' ? found : null;
+  }, 'silent download to complete');
+  assert.equal(completed.hasAudio, false);
+
+  assert.equal((await service.setDownloadFolder(exportRoot)).granted, true);
+  assert.deepEqual(await service.queueExport(id), { queued: true });
+  const exported = await waitFor(async () => {
+    const found = (await service.list()).find((item) => item.id === id);
+    return found?.exportStatus === 'completed' ? found : null;
+  }, 'silent download to export');
+  assert.equal(exported.status, 'completed');
+  await service.shutdown();
+});

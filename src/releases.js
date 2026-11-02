@@ -1,13 +1,21 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; older entries remain available.
-export const APP_VERSION = '0.24.1';
+export const APP_VERSION = '0.24.2';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.24.1',
+    version: '0.24.2',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Windows downloads keep their sound', description: 'Some Windows downloads finished as “Ready to watch offline” but the saved episode had no sound — and some would not play at all. Certain servers keep the audio in a separate stream that the download did not pair, or serve a video format the built-in player cannot decode. Mikozora now pairs the server’s audio stream, converts anything the player cannot handle, and only counts a download as complete when the finished file really has picture and sound.' },
+      { title: 'Already-saved broken copies are flagged', description: 'Episodes saved without sound by earlier Windows versions are detected when Mikozora starts and marked as failed with an explanation, so you can download them again instead of wondering why the player stays black. Healthy downloads are untouched. Android is unchanged in this release.' },
+    ],
+  },
+  {
+    version: '0.24.1',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Windows updates download the Windows build', description: 'In the Windows app, “Download update” was saving the Android APK instead of the Windows installer. The update banner and Settings → About → App updates now download the Windows Setup build on Windows, as intended. If an earlier click left a Mikozora .apk file in your Windows Downloads folder, you can simply delete it. Android updates are unchanged.' },
     ],
