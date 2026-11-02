@@ -53,6 +53,6 @@ dependencies {
     implementation 'androidx.media3:media3-muxer:1.4.1'
     implementation 'androidx.work:work-runtime:2.9.1'
     implementation 'androidx.concurrent:concurrent-futures:1.0.0'
-    implementation 'com.google.android.gms:play-services-auth:21.3.0'
+    implementation 'com.google.android.gms:play-services-auth:21.4.0'
     implementation 'org.jsoup:jsoup:1.17.2'
 }

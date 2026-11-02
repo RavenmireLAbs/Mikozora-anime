@@ -74,7 +74,7 @@ test('Android authorizes Google Drive interactively only for connect and keeps R
   const store = read('android/app/src/main/java/app/moku/anime/GoogleDriveSyncStore.java');
   const gradle = read('android/app/build.gradle');
 
-  assert.match(gradle, /play-services-auth:21\.3\.0/);
+  assert.match(gradle, /play-services-auth:21\.4\.0/);
   assert.match(main, /GOOGLE_DRIVE_AUTHORIZE = 3185/);
   assert.match(main, /pendingGoogleDriveRequest=state\.getString\("googleDriveRequestId"\)/);
   assert.match(main, /out\.putString\("googleDriveRequestId",pendingGoogleDriveRequest\)/);

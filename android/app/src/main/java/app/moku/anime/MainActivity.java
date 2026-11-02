@@ -29,6 +29,7 @@ import com.google.android.gms.auth.api.identity.AuthorizationResult;
 import com.google.android.gms.auth.api.identity.Identity;
 import com.google.android.gms.auth.api.identity.RevokeAccessRequest;
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount;
+import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.ApiException;
 import com.google.android.gms.common.api.CommonStatusCodes;
 import com.google.android.gms.common.api.Scope;
@@ -694,7 +695,7 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
                 return GoogleDriveSyncStore.RECONNECT_MESSAGE;
             if (status == CommonStatusCodes.CANCELED)
                 return "Google sign-in was canceled.";
-            if (status == CommonStatusCodes.SERVICE_MISSING
+            if (status == ConnectionResult.SERVICE_MISSING
                     || status == CommonStatusCodes.SERVICE_VERSION_UPDATE_REQUIRED
                     || status == CommonStatusCodes.SERVICE_DISABLED
                     || status == CommonStatusCodes.API_NOT_CONNECTED)
