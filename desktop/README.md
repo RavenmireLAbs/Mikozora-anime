@@ -9,6 +9,12 @@ allowlists are ported 1:1 from `Network.java`
 the Android formats — a backup exported on Android (Settings → Your data)
 imports straight into the Windows app and vice versa.
 
+Downloads live under Electron's per-user `userData/downloads` folder.
+Expiring media URLs stay in the main process; provider/media requests use
+the Node equivalent of Android's `SafeHttp`, HLS renditions are downloaded
+with resume support, and completed media is converted to MP4 with the
+bundled FFmpeg binary for the built-in offline player and folder export.
+
 ## Run it locally (any OS with Node)
 
 ```sh
@@ -43,12 +49,13 @@ desktop and the APK on Android.
 
 ## Roadmap (staged parity with Android)
 
-- **Stage 1 (this release):** shell + core bridge — browsing/search,
-  streaming in the built-in player (episode rail, watched checks),
+- **Stage 1:** shell + core bridge — browsing/search, streaming in the
+  built-in player (episode rail, watched checks),
   library/collections/history/Continue Watching, themes, backup &
   restore, update checks, external links.
-- **Stage 2:** downloads & offline playback (porting `VideoResolver` /
-  `DownloadWorker` to Node with ffmpeg muxing) and folder export.
+- **Stage 2 (this release):** downloads & offline playback
+  (`VideoResolver`/`DownloadWorker` ported to Node with FFmpeg muxing),
+  resumable direct/HLS transfers, subtitles, and verified folder export.
 - **Stage 3:** background new-episode alerts with a system-tray resident
   checker and Windows notifications (porting `EpisodeStore`/`EpisodeFetcher`).
 

@@ -2,10 +2,10 @@
 // (see MainActivity.java). Calls arrive over IPC as { method, id, args }
 // and results return by evaluating
 // window.__mokuNativeChunk(id, chunk, done, error) in the page, exactly
-// like the Android bridge. Stage 1 implements the core methods (network,
-// backup files, external links, appearance); the UI probes for the rest
-// (openPlayer, downloads, episode updates) and degrades gracefully until
-// they land in later desktop stages.
+// like the Android bridge. The implemented surface covers networking,
+// backup files, appearance, external links, downloads/offline playback and
+// folder export. Episode alerts remain absent until the tray-resident stage,
+// so the shared UI continues to degrade that one feature gracefully.
 import { dialog, shell } from 'electron';
 import { readFile, writeFile, stat } from 'node:fs/promises';
 import { allowedSource, allowedProjectRelease } from './lib/allowlist.js';
@@ -50,6 +50,37 @@ async function saveBackupFile(win, name, text) {
   return '{"saved":true}';
 }
 
+let folderPickerOpen = false;
+
+async function chooseDownloadFolder(win, service) {
+  if (!service) throw new Error('Downloads are unavailable in this Windows build.');
+  if (folderPickerOpen) throw new Error('A folder picker is already open.');
+  folderPickerOpen = true;
+  try {
+    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+      title: 'Choose where playable copies are saved',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (canceled || !filePaths?.length) {
+      return JSON.stringify({ ...(await service.exportSettings()), canceled: true });
+    }
+    return JSON.stringify(await service.setDownloadFolder(filePaths[0]));
+  } finally {
+    folderPickerOpen = false;
+  }
+}
+
+function downloadOptionsError(error) {
+  const message = String(error?.message || '');
+  const known = message.length < 180 && (
+    message === 'Server check superseded.'
+    || message.startsWith('No Mikozora-compatible download server')
+    || message.startsWith('No compatible download server')
+    || message.startsWith('No compatible subtitled AnimeBash')
+  );
+  return known ? message : 'Could not check server qualities. Try again or use Automatic.';
+}
+
 async function openBackupFile(win) {
   const { canceled, filePaths } = await dialog.showOpenDialog(win, {
     title: 'Restore a Mikozora backup',
@@ -71,7 +102,11 @@ function fromApp(event) {
   return typeof url === 'string' && url.startsWith('mikozora://');
 }
 
-export function registerBridge(ipcMain, getWindow, store, setPlayerReferer = () => {}) {
+export function registerBridge(ipcMain, getWindow, store, setPlayerReferer = () => {}, downloadService = null) {
+  const requireDownloads = () => {
+    if (!downloadService) throw new Error('Downloads are unavailable in this Windows build.');
+    return downloadService;
+  };
   ipcMain.on('moku:bridge', async (event, payload) => {
     const { method, id, args } = payload || {};
     if (!fromApp(event) || typeof id !== 'string' || !/^[0-9]{1,12}$/.test(id)) return;
@@ -84,6 +119,17 @@ export function registerBridge(ipcMain, getWindow, store, setPlayerReferer = () 
         setPlayerReferer(referer);
         out = '{"ok":true}';
       }
+      else if (method === 'downloads') out = JSON.stringify(await requireDownloads().list());
+      else if (method === 'downloadOptions') {
+        try { out = JSON.stringify(await requireDownloads().downloadOptions(String(args?.[0] ?? ''))); }
+        catch (err) { throw new Error(downloadOptionsError(err)); }
+      }
+      else if (method === 'enqueueDownloads') out = JSON.stringify(await requireDownloads().enqueue(String(args?.[0] ?? '')));
+      else if (method === 'removeDownload') { await requireDownloads().remove(String(args?.[0] ?? '')); out = 'ok'; }
+      else if (method === 'exportSettings') out = JSON.stringify(await requireDownloads().exportSettings());
+      else if (method === 'chooseDownloadFolder') out = await chooseDownloadFolder(getWindow(), requireDownloads());
+      else if (method === 'clearDownloadFolder') out = JSON.stringify(await requireDownloads().clearDownloadFolder());
+      else if (method === 'exportDownload') out = JSON.stringify(await requireDownloads().queueExport(String(args?.[0] ?? '')));
       else if (method === 'saveBackupFile') out = await saveBackupFile(getWindow(), args?.[0], args?.[1]);
       else if (method === 'openBackupFile') out = await openBackupFile(getWindow());
       else throw new Error('Not available in the Windows app yet.');
@@ -101,6 +147,31 @@ export function registerBridge(ipcMain, getWindow, store, setPlayerReferer = () 
       const appearance = normalizeAppearance({ mode: args?.[0], accent: args?.[1] });
       store.set('appearance', appearance);
       getWindow()?.setBackgroundColor(backgroundFor(appearance));
+    } else if (method === 'openDownload') {
+      const id = String(args?.[0] ?? '');
+      (async () => {
+        const contents = event.sender;
+        if (!downloadService || !/^[a-f0-9]{32}$/.test(id) || !contents || contents.isDestroyed()) return;
+        const token = await downloadService.createPlaybackToken(id).catch(() => null);
+        const script = token
+          ? `window.__mokuOpenOfflineDownload&&window.__mokuOpenOfflineDownload(${JSON.stringify({ id, token })});`
+          : `window.__mokuOfflineDownloadError&&window.__mokuOfflineDownloadError('This episode has not finished downloading');`;
+        contents.executeJavaScript(script, true).catch(() => {});
+      })();
+    } else if (method === 'openExport') {
+      const id = String(args?.[0] ?? '');
+      (async () => {
+        if (!downloadService || !/^[a-f0-9]{32}$/.test(id)) return;
+        const file = await downloadService.exportFile(id).catch(() => '');
+        if (!file) return;
+        const error = await shell.openPath(file);
+        if (error) {
+          event.sender?.executeJavaScript(
+            `window.__mokuOfflineDownloadError&&window.__mokuOfflineDownloadError('Could not open the exported file. Check the folder and install a video player.');`,
+            true,
+          ).catch(() => {});
+        }
+      })();
     } else if (method === 'openExternal') {
       const url = String(args?.[0] ?? '');
       if (allowedSource(url) || allowedProjectRelease(url)) shell.openExternal(url).catch(() => {});

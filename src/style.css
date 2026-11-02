@@ -172,3 +172,11 @@
 /* Manual watched toggle on episode rows (beside the download button). */
 .episode-watched-toggle{width:38px;height:38px;display:grid;place-items:center;border:1px solid #2a302b;border-radius:999px;background:#171b19;color:#909a8e;flex:none}
 .episode-watched-toggle.on{background:#c8ee99;border-color:#c8ee99;color:#101312}
+
+
+/* Built-in Windows offline player. */
+.offline-player-modal{background:#171b19;border-color:#2a302b}
+.offline-video-wrap{aspect-ratio:16/9;background:#101312;position:relative}
+.offline-video-wrap video{width:100%;height:100%;display:block;object-fit:contain;background:#101312}
+.offline-player-note{display:flex;gap:7px;align-items:flex-start;color:#909a8e;font-size:11px;line-height:1.5;margin:0;padding:13px 22px 18px}
+.offline-player-error{color:#e0c999}

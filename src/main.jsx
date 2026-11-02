@@ -418,15 +418,15 @@ function DownloadModal({request,close,submit}) {
       <div className="quality-hint" role="status">{options.loading?<><LoaderCircle size={14} className="spin"/> Checking available servers and qualities…</>:options.error?<><AlertCircle size={14}/> {options.error} <button onClick={()=>setAttempt(x=>x+1)}>Retry</button></>:<><Check size={14}/>{chosen?.note || (options.servers.length?`${options.servers.length} compatible server${options.servers.length===1?'':'s'} found for episode ${sample.number}.`:'No compatible servers were confirmed; Automatic may not work.')}{options.unavailable>0?' Some servers could not be checked.':''}</>}</div>
       {count>1&&<p className="quality-batch-hint">Choices are based on episode {sample.number}. Each episode must offer the selected server and quality, or that episode will fail rather than silently switch.</p>}
       <div className="download-explainer"><ShieldCheck size={18}/><p>{request.item.source==='xin'?'Only supported servers are shown. AnimeXin subtitles are usually burned into the video in the selected language.':englishOnly?`${sourceName(request.item.source)} downloads identifiable English subtitle tracks only. If English is unavailable, the video may be saved without subtitles.`:'Only compatible servers are shown. Subtitles and languages depend on the selected third-party server.'}</p></div>
-      <p className="download-caution">Best HLS quality is capped at 1080p. Downloads use temporary app space; if you choose a folder, Mikozora removes its private copy after the saved video and subtitles are verified. Downloads can be large and may use mobile data.</p>
-      {!hasNativeDownloads()&&<p className="preview-note"><AlertCircle size={15}/> {isDesktopApp()?'Downloads are coming to the Windows app in a later update.':'Downloads work in the Android app, not the browser preview.'}</p>}
+      <p className="download-caution">Best HLS quality is capped at 1080p. Downloads use temporary app space; if you choose a folder, Mikozora removes its private copy after the saved video and subtitles are verified. Downloads can be large{isDesktopApp()?' and converting HLS can take a while.':' and may use mobile data.'}</p>
+      {!hasNativeDownloads()&&<p className="preview-note"><AlertCircle size={15}/> {isDesktopApp()?'Downloads are unavailable in this Windows build.':'Downloads work in the Android app, not the browser preview.'}</p>}
       <div className="download-dialog-actions"><button className="btn secondary" onClick={close}>Cancel</button><button className="btn primary" disabled={!hasNativeDownloads()||working} onClick={confirm}>{working?<LoaderCircle size={16} className="spin"/>:<Download size={16}/>} Add to queue</button></div>
     </div></div></div>;
 }
 function DownloadsPage({items,loading,remove,retry,change,browse,folder,saveCopy,openSettings}) {
   const statusText={queued:'Waiting for network or a queue slot',resolving:'Finding a supported mirror',downloading:'Downloading',completed:'Ready to watch offline',failed:'Download failed',paused:'Waiting to resume',removing:'Removing'};
   return <div className="content page-content"><div className="page-heading"><div><div className="eyebrow">A LITTLE SOMETHING FOR LATER</div><h1>Ready when you are<span>.</span></h1><p>Your offline episodes and download queue, saved on this device.</p></div><div className="heading-art"><HardDrive size={32}/><span>✦</span></div></div>
-    {!hasNativeDownloads()?<Empty icon={Download} title="Take your stories offline" body={isDesktopApp()?"Downloads are coming to the Windows app in a later update. Until then, episodes stream in the built-in player.":"Open Mikozora on Android to download individual episodes or select a batch. The browser preview cannot store episodes."} action={()=>browse('all')} actionLabel="Browse titles"/>:
+    {!hasNativeDownloads()?<Empty icon={Download} title="Take your stories offline" body={isDesktopApp()?"Downloads are unavailable in this Windows build. Episodes still stream in the built-in player.":"Open Mikozora on Android to download individual episodes or select a batch. The browser preview cannot store episodes."} action={()=>browse('all')} actionLabel="Browse titles"/>:
       loading&&!items.length?<div className="episode-loading"><LoaderCircle size={18} className="spin"/> Loading downloads...</div>:
       items.length?<div className="downloads-list">{items.map(d=>{
         const progress=typeof d.progress==='number'?Math.max(0,Math.min(100,d.progress)):null;
@@ -482,7 +482,7 @@ function AppearanceSettings({appearance,changeAppearance}) {
   </section>;
 }
 function SettingsPage({library,history,clearLibrary,clearHistory,openLicenses,openReleaseNotes,folder,chooseFolder,usePrivate,updates,updatesAvailable,changeAutomatic,changeAlerts,notificationPermission,appearance,changeAppearance,contentPrefs,changeContentPrefs,appUpdate,pendingUpdate,updateStatus,checkUpdate,changeAutoCheck,downloadUpdate,exportBackup,importBackup}) {
-  const current=!hasNativeDownloads()?(isDesktopApp()?'Coming to the Windows app soon':'Available in the Android app'):!folder?.configured?'Mikozora only · no external folder selected':folder.granted?folder.name||'Selected folder':'Folder access lost · choose it again';
+  const current=!hasNativeDownloads()?(isDesktopApp()?'Unavailable in this Windows build':'Available in the Android app'):!folder?.configured?'Mikozora only · no external folder selected':folder.granted?folder.name||'Selected folder':'Folder access lost · choose it again';
   const notificationText=!updatesAvailable?'Available in the Android app':updates.notificationStatus==='allowed'?'Allowed in Android':updates.notificationStatus==='permission'?'Android notification permission is needed':updates.notificationStatus==='channel-blocked'?'New episode channel is blocked in Android':'Notifications are blocked in Android';
   const updateText=pendingUpdate?`Mikozora ${pendingUpdate.version} is ready — you’re on ${APP_VERSION}.`:updateStatus.phase==='checking'?'Checking GitHub for a newer version…':updateStatus.phase==='error'?(updateStatus.message||'Could not check just now. Try again in a moment.'):appUpdate.lastCheck?`You’re up to date · Checked ${prettyTime(appUpdate.lastCheck)}`:`You’re on Mikozora ${APP_VERSION} · Not checked yet`;
   return <div className="content page-content"><div className="page-heading"><div><div className="eyebrow">MAKE YOURSELF AT HOME</div><h1>Your space, your way<span>.</span></h1><p>A simple little place for your anime.</p></div><div className="heading-art"><Settings2 size={32}/><span>✦</span></div></div>
@@ -536,6 +536,46 @@ function PlayerModal({player,close,onEpisode,watched}) {
     </section>}
     <div className="player-controls"><label>VIDEO SERVER<select value={current} onChange={e=>setCurrent(Number(e.target.value))}>{player.servers.map((s,i)=><option value={i} key={i}>{s.name}</option>)}</select></label><button className="btn secondary" onClick={()=>external(player.episode.url)}>Open source <ExternalLink size={15}/></button></div>
     <p className="player-disclaimer">Video is provided by the selected third-party server. If it doesn’t load here, try another server or open the original site.</p>
+  </div></div>;
+}
+function OfflinePlayerModal({entry,close}) {
+  const videoRef=useRef(null); const saveTick=useRef(0); const [failed,setFailed]=useState(false);
+  const download=entry.download||{};
+  const tracks=download.storageMode==='folder'?(Array.isArray(download.exportTracks)?download.exportTracks:[]):(Array.isArray(download.tracks)?download.tracks:[]);
+  const token=encodeURIComponent(entry.token||'');
+  const positionKey='moku.offlinePositions.v1';
+  const savePosition=()=>{
+    const video=videoRef.current;if(!video||!Number.isFinite(video.duration)||!video.duration)return;
+    try{
+      const all=JSON.parse(localStorage.getItem(positionKey)||'{}');
+      if(video.currentTime>5&&video.currentTime<video.duration-10)all[entry.id]=Math.floor(video.currentTime);else delete all[entry.id];
+      localStorage.setItem(positionKey,JSON.stringify(all));
+    }catch{/* position memory is best-effort */}
+  };
+  const closePlayer=()=>{savePosition();close();};
+  useEffect(()=>{
+    const key=e=>{if(e.key==='Escape')closePlayer();};
+    window.addEventListener('keydown',key);
+    return()=>window.removeEventListener('keydown',key);
+  },[entry.id]);
+  const restorePosition=()=>{
+    const video=videoRef.current;if(!video||!Number.isFinite(video.duration))return;
+    try{
+      const all=JSON.parse(localStorage.getItem(positionKey)||'{}');
+      const saved=Number(all[entry.id])||0;
+      if(saved>5&&saved<video.duration-10)video.currentTime=saved;
+    }catch{/* start at the beginning */}
+  };
+  const rememberPosition=()=>{
+    const now=Date.now();if(now-saveTick.current<5000)return;saveTick.current=now;savePosition();
+  };
+  return <div className="modal-backdrop" role="presentation" onMouseDown={closePlayer}><div className="player-modal offline-player-modal" role="dialog" aria-modal="true" aria-label="Offline episode player" onMouseDown={e=>e.stopPropagation()}>
+    <div className="player-header"><div><span className="eyebrow">OFFLINE · SAVED ON THIS PC</span><h2>{download.item?.title||'Downloaded episode'}</h2><p>Episode {download.episode?.number||''}{download.item?.source?` · ${sourceName(download.item.source)}`:''}</p></div><button className="icon-btn" onClick={closePlayer} aria-label="Close offline player"><X size={20}/></button></div>
+    <div className="offline-video-wrap"><video ref={videoRef} controls autoPlay playsInline preload="metadata" onLoadedMetadata={restorePosition} onTimeUpdate={rememberPosition} onPause={savePosition} onEnded={savePosition} onError={()=>setFailed(true)}>
+      <source src={`mikozora://app/api/download/${entry.id}/video?token=${token}`} type="video/mp4"/>
+      {tracks.map((track,index)=><track key={`${track.file||track.path||index}-${index}`} kind="subtitles" src={`mikozora://app/api/download/${entry.id}/subtitle/${index}?token=${token}`} srcLang={track.language||'und'} label={track.label||`Subtitles ${index+1}`} default={!!track.preferred||index===0}/>)}
+    </video></div>
+    {failed?<p className="offline-player-note offline-player-error"><AlertCircle size={14}/> Could not play this saved file. Check that it still exists, or remove and download the episode again.</p>:<p className="offline-player-note"><Check size={14}/> Playing only from this computer. Your place is remembered on this device.</p>}
   </div></div>;
 }
 function LicenseModal({close}) {
@@ -628,7 +668,7 @@ function App() {
   const [activeCollection,setActiveCollection]=useState('all'); const [collectionDialog,setCollectionDialog]=useState(null);
   useEffect(()=>{try{localStorage.setItem(COLLECTIONS_KEY,JSON.stringify(collections))}catch{/* storage can be disabled */}},[collections]);
   const [browseSource,setBrowseSource]=useState('all'); const [query,setQuery]=useState('');
-  const [refreshKey,setRefreshKey]=useState(0); const [player,setPlayer]=useState(null); const [licenses,setLicenses]=useState(false); const [downloadModal,setDownloadModal]=useState(null); const [downloads,setDownloads]=useState([]); const [downloadsLoading,setDownloadsLoading]=useState(true); const [busy,setBusy]=useState(''); const [toast,setToast]=useState('');
+  const [refreshKey,setRefreshKey]=useState(0); const [player,setPlayer]=useState(null); const [offlinePlayer,setOfflinePlayer]=useState(null); const [licenses,setLicenses]=useState(false); const [downloadModal,setDownloadModal]=useState(null); const [downloads,setDownloads]=useState([]); const [downloadsLoading,setDownloadsLoading]=useState(true); const [busy,setBusy]=useState(''); const [toast,setToast]=useState('');
   const [contentPrefs,setContentPrefs]=useState(initialContent);
   const hideNsfw=contentPrefs.hideNsfw;
   const changeContentPrefs=patch=>{
@@ -647,6 +687,8 @@ function App() {
   const playbackRequest=useRef(0);
   const nativeEpisodePending=useRef(false);
   const playRef=useRef(null);
+  const downloadsRef=useRef([]);
+  useEffect(()=>{downloadsRef.current=downloads;},[downloads]);
   const monitored=useMemo(()=>monitoredTitles(library,collections),[library,collections]);
   const unreadTitles=useMemo(()=>unreadByTitle(updates.updates),[updates.updates]);
   useEffect(()=>{ window.history.replaceState({page:'home'},'',location.pathname+location.search+'#home'); const listener=e=>setRoute(e.state||{page:'home'});window.addEventListener('popstate',listener);return()=>window.removeEventListener('popstate',listener); },[]);
@@ -678,7 +720,7 @@ function App() {
     if(!experience&&updatesAvailable&&updates.watchedCount>0&&updates.alerts&&updates.notificationStatus==='permission'&&!updates.permissionAsked)
       try{window.MokuBridge.episodeNotificationPermission(true)}catch{}
   },[experience,updatesAvailable,updates.watchedCount,updates.alerts,updates.notificationStatus,updates.permissionAsked]);
-  useEffect(()=>{window.__handleAndroidBack=()=>{if(experience){finishExperience();return true;}if(collectionDialog){setCollectionDialog(null);return true;}if(downloadModal){setDownloadModal(null);return true;}if(player){setPlayer(null);return true;}if(licenses){setLicenses(false);return true;}if(route.page!=='home'){window.history.back();return true;}return false;};},[experience,player,route,licenses,downloadModal,collectionDialog]);
+  useEffect(()=>{window.__handleAndroidBack=()=>{if(experience){finishExperience();return true;}if(collectionDialog){setCollectionDialog(null);return true;}if(downloadModal){setDownloadModal(null);return true;}if(offlinePlayer){setOfflinePlayer(null);return true;}if(player){setPlayer(null);return true;}if(licenses){setLicenses(false);return true;}if(route.page!=='home'){window.history.back();return true;}return false;};},[experience,player,offlinePlayer,route,licenses,downloadModal,collectionDialog]);
   useEffect(()=>{
     const report=message=>{try{window.MokuBridge?.playerNavigationError?.(message);}catch{}};
     const handler=async(index,url)=>{
@@ -716,6 +758,23 @@ function App() {
     return()=>{
       if(window.__mokuPlayerEpisode===handler)delete window.__mokuPlayerEpisode;
       if(window.__mokuPlayerClosed===closed)delete window.__mokuPlayerClosed;
+    };
+  },[]);
+  useEffect(()=>{
+    const openOffline=entry=>{
+      if(!entry?.id||!entry?.token)return;
+      setOfflinePlayer({...entry,download:downloadsRef.current.find(d=>d.id===entry.id)||null});
+      getDownloads().then(items=>{
+        setDownloads(items);
+        setOfflinePlayer(prev=>prev?.id===entry.id?{...prev,download:items.find(d=>d.id===entry.id)||prev.download}:prev);
+      }).catch(()=>{});
+    };
+    const offlineError=message=>setToast(message||'Could not open the offline episode.');
+    window.__mokuOpenOfflineDownload=openOffline;
+    window.__mokuOfflineDownloadError=offlineError;
+    return()=>{
+      if(window.__mokuOpenOfflineDownload===openOffline)delete window.__mokuOpenOfflineDownload;
+      if(window.__mokuOfflineDownloadError===offlineError)delete window.__mokuOfflineDownloadError;
     };
   },[]);
   useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(''),3200);return()=>clearTimeout(t)},[toast]);
@@ -915,7 +974,7 @@ function App() {
     {route.page==='history'&&<HistoryPage items={history.filter(entry=>!hideNsfw||!isNsfw(entry.item))} resume={resume} open={open} clear={clearHistory} browse={browse}/>}
     {route.page==='sources'&&<SourcesPage browse={browse}/>}
     {route.page==='settings'&&<SettingsPage library={library} history={history} clearLibrary={clearLibrary} clearHistory={clearHistory} openLicenses={()=>setLicenses(true)} openReleaseNotes={()=>setExperience({mode:'update',manual:true})} folder={folder} chooseFolder={chooseFolder} usePrivate={usePrivate} updates={updates} updatesAvailable={updatesAvailable} changeAutomatic={changeAutomatic} changeAlerts={changeAlerts} notificationPermission={notificationPermission} appearance={appearance} changeAppearance={changeAppearance} contentPrefs={contentPrefs} changeContentPrefs={changeContentPrefs} appUpdate={appUpdate} pendingUpdate={pendingUpdate} updateStatus={updateStatus} checkUpdate={checkAppUpdate} changeAutoCheck={changeAutoCheck} downloadUpdate={downloadAppUpdate} exportBackup={exportBackup} importBackup={importBackup}/>}
-  </main></div><BottomNav page={route.page} go={go}/>{collectionDialog?.kind==='new'&&<CollectionNameDialog close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='rename'&&<CollectionNameDialog editing value={collections.find(c=>c.id===collectionDialog.id)?.name||''} close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='title'&&<TitleCollectionsDialog item={collectionDialog.item} collections={collections} close={()=>setCollectionDialog(null)} submit={selected=>saveTitleCollectionChoices(collectionDialog.item,selected)}/>}{collectionDialog?.kind==='members'&&collections.find(c=>c.id===collectionDialog.id)&&<CollectionMembersDialog collection={collections.find(c=>c.id===collectionDialog.id)} items={hideNsfw?library.filter(item=>!isNsfw(item)):library} close={()=>setCollectionDialog(null)} submit={keys=>saveCollectionMembers(collectionDialog.id,keys)}/>} {player&&<PlayerModal key={player.episode.url} player={player} close={()=>setPlayer(null)} onEpisode={episode=>play(player.item,episode,{playlist:player.episodes})} watched={watchedUrlSet(progress,history,player.item)}/>}{licenses&&<LicenseModal close={()=>setLicenses(false)}/>}{downloadModal&&<DownloadModal request={downloadModal} close={()=>setDownloadModal(null)} submit={submitDownload}/>}{busy&&<div className="busy-overlay"><div><LoaderCircle size={20} className="spin"/><span>{busy}</span></div></div>}{toast&&<div className="toast"><Check size={16}/>{toast}</div>}</div>;
+  </main></div><BottomNav page={route.page} go={go}/>{collectionDialog?.kind==='new'&&<CollectionNameDialog close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='rename'&&<CollectionNameDialog editing value={collections.find(c=>c.id===collectionDialog.id)?.name||''} close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='title'&&<TitleCollectionsDialog item={collectionDialog.item} collections={collections} close={()=>setCollectionDialog(null)} submit={selected=>saveTitleCollectionChoices(collectionDialog.item,selected)}/>}{collectionDialog?.kind==='members'&&collections.find(c=>c.id===collectionDialog.id)&&<CollectionMembersDialog collection={collections.find(c=>c.id===collectionDialog.id)} items={hideNsfw?library.filter(item=>!isNsfw(item)):library} close={()=>setCollectionDialog(null)} submit={keys=>saveCollectionMembers(collectionDialog.id,keys)}/>} {offlinePlayer&&<OfflinePlayerModal entry={offlinePlayer} close={()=>setOfflinePlayer(null)}/>}{player&&<PlayerModal key={player.episode.url} player={player} close={()=>setPlayer(null)} onEpisode={episode=>play(player.item,episode,{playlist:player.episodes})} watched={watchedUrlSet(progress,history,player.item)}/>}{licenses&&<LicenseModal close={()=>setLicenses(false)}/>}{downloadModal&&<DownloadModal request={downloadModal} close={()=>setDownloadModal(null)} submit={submitDownload}/>}{busy&&<div className="busy-overlay"><div><LoaderCircle size={20} className="spin"/><span>{busy}</span></div></div>}{toast&&<div className="toast"><Check size={16}/>{toast}</div>}</div>;
 }
 
 createRoot(document.getElementById('root')).render(<App/>);

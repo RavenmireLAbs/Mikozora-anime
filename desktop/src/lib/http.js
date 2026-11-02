@@ -3,14 +3,17 @@
 // bounded response sizes, and the same headers Android sends.
 import { checkUrl, refererFor, UA } from './allowlist.js';
 
-async function fetchChecked(raw, document, timeoutMs) {
+async function fetchChecked(raw, document, timeoutMs, options = {}) {
   let current = checkUrl(raw, document);
+  const signals = [AbortSignal.timeout(timeoutMs)];
+  if (options.signal) signals.push(options.signal);
+  const signal = signals.length === 1 ? signals[0] : AbortSignal.any(signals);
   for (let redirects = 0; redirects <= 4; redirects++) {
     const res = await fetch(current, {
       redirect: 'manual',
       // Android bounds connect at 20s and each read at 25s; one overall
       // deadline is the fetch equivalent and is at least as strict.
-      signal: AbortSignal.timeout(timeoutMs),
+      signal,
       headers: {
         'User-Agent': UA,
         'Referer': refererFor(current),
@@ -50,8 +53,8 @@ async function readCapped(res, limit) {
 }
 
 // Returns { data: Buffer, type } like Network.Result.
-export async function get(raw, document, timeoutMs = 30000) {
-  const res = await fetchChecked(raw, document, timeoutMs);
+export async function get(raw, document, timeoutMs = 30000, options = {}) {
+  const res = await fetchChecked(raw, document, timeoutMs, options);
   const headerType = res.headers.get('content-type');
   const type = headerType || (document ? 'text/plain' : 'application/octet-stream');
   if (!document && !type.toLowerCase().startsWith('image/')) {
@@ -62,8 +65,8 @@ export async function get(raw, document, timeoutMs = 30000) {
   return { data, type: type.split(';')[0] };
 }
 
-export async function getText(raw, timeoutMs) {
-  const { data } = await get(raw, true, timeoutMs);
+export async function getText(raw, timeoutMs, options = {}) {
+  const { data } = await get(raw, true, timeoutMs, options);
   return data.toString('utf8');
 }
 

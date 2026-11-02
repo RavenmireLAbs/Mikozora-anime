@@ -73,6 +73,11 @@ html[data-themed] .episode-row.watched .episode-number{background:var(--moku-bg-
 html[data-themed] .player-episode-chip.watched{color:var(--moku-text-9db894,#9db894);border-color:var(--moku-border-33402f,#33402f)}
 html[data-themed] .episode-watched-toggle{border:1px solid var(--moku-border-2a302b,#2a302b);background:var(--moku-bg-171b19,#171b19);color:var(--moku-text-909a8e,#909a8e)}
 html[data-themed] .episode-watched-toggle.on{background:var(--moku-bg-c8ee99,#c8ee99);border-color:var(--moku-border-c8ee99,#c8ee99);color:var(--moku-text-101312,#101312)}
+html[data-themed] .offline-player-modal{background:var(--moku-bg-171b19,#171b19);border-color:var(--moku-border-2a302b,#2a302b)}
+html[data-themed] .offline-video-wrap{background:var(--moku-bg-101312,#101312)}
+html[data-themed] .offline-video-wrap video{background:var(--moku-bg-101312,#101312)}
+html[data-themed] .offline-player-note{color:var(--moku-text-909a8e,#909a8e)}
+html[data-themed] .offline-player-error{color:var(--moku-text-e0c999,#e0c999)}
 
 html[data-themed]{background:var(--bg)}
 /* Hero and detail art stay dark, with independently readable text and controls. */
