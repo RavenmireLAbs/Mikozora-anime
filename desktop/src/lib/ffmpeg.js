@@ -137,25 +137,42 @@ export async function probeMedia(ffmpegPath, file, options = {}) {
 // reliably decodes 8-bit H.264 video with AAC/MP3 audio. A stream copy in
 // any other codec (HEVC, AV1, 10-bit H.264, AC3…) would "complete" yet
 // show a black or silent player, so such copies must be transcoded.
-export function playableInApp(info) {
-  if (!info?.hasVideo) return false;
-  if (!/^h264\b/i.test(info.videoCodec || '') || /high 10/i.test(info.videoCodec || '')) return false;
-  if (info.hasAudio && !/^(aac|mp3)\b/i.test(info.audioCodec || '')) return false;
-  return true;
+function videoPlayable(info) {
+  return !!info?.hasVideo
+    && /^h264\b/i.test(info.videoCodec || '')
+    && !/high 10/i.test(info.videoCodec || '');
 }
 
-async function validateOutput(ffmpegPath, file, { requireAudio = false, requirePlayable = false, spawnImpl } = {}) {
+function audioPlayable(info) {
+  return !info?.hasAudio || /^(aac|mp3)\b/i.test(info.audioCodec || '');
+}
+
+export function playableInApp(info) {
+  return videoPlayable(info) && audioPlayable(info);
+}
+
+async function inspectOutput(ffmpegPath, file, { spawnImpl } = {}) {
   let size = 0;
   try { size = (await stat(file)).size; } catch { size = 0; }
-  if (size < 128) throw new Error('The converted video was incomplete');
-  const info = await probeMedia(ffmpegPath, file, { spawnImpl });
-  if (!info.hasVideo || (requireAudio && !info.hasAudio)) {
-    throw new Error('The converted video is missing a readable video or audio track');
-  }
-  if (requirePlayable && !playableInApp(info)) {
-    throw new Error('The converted video uses a format the in-app player cannot play');
-  }
-  return { ...info, bytes: size };
+  if (size < 128) return null;
+  try {
+    const info = await probeMedia(ffmpegPath, file, { spawnImpl });
+    return { ...info, bytes: size };
+  } catch { return null; }
+}
+
+// The last meaningful ffmpeg complaint, with local paths stripped, so a
+// conversion failure tells the user (and us) what actually went wrong
+// instead of a generic "unsupported format".
+function conversionDetail(stderr) {
+  const lines = String(stderr || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const interesting = lines.filter((line) => /error|invalid|unable|failed|matches no streams|not divisible|unknown|unsupported|could not|no such file|permission/i.test(line));
+  const raw = interesting[interesting.length - 1] || lines[lines.length - 1] || '';
+  return raw
+    .replace(/'[^']*'/g, "'[file]'")
+    .replace(/[A-Za-z]:[\\/][^\s]+/g, '[file]')
+    .replace(/\/(?:[^\s/]+\/)+[^\s]*/g, '[file]')
+    .slice(0, 120);
 }
 
 export async function remuxToMp4({
@@ -173,59 +190,93 @@ export async function remuxToMp4({
   const files = (inputs || []).filter(Boolean);
   if (!files.length) throw new Error('No downloaded media was available to convert');
   const run = runImpl || ((args, extra = {}) => runFfmpeg({ ffmpegPath, args, signal, duration, onProgress, spawnImpl, ...extra }));
-  const inputArgs = files.flatMap((file) => ['-i', file]);
-  const mapArgs = separateAudio && files.length > 1
+
+  // Probe each input once. This decides the AAC bitstream filter, whether
+  // the finished MP4 must contain sound (a video-only result once passed
+  // validation and was marked ready to watch), and whether a supposed
+  // separate-audio file really carries audio — if it does not but the
+  // video file does, the video's muxed audio wins over a broken mapping.
+  const probes = [];
+  for (const file of files) {
+    try { probes.push(await probeMedia(ffmpegPath, file, { spawnImpl })); }
+    catch { probes.push(null); }
+  }
+  let useSeparate = separateAudio && files.length > 1;
+  if (useSeparate && probes[1] && !probes[1].hasAudio && probes[0]?.hasAudio) useSeparate = false;
+  const activeFiles = useSeparate ? files.slice(0, 2) : [files[0]];
+  const audioProbe = useSeparate ? probes[1] : probes[0];
+  const inputHasAudio = audioProbe ? !!audioProbe.hasAudio : null;
+  const mustKeepAudio = requireAudio || inputHasAudio === true;
+  const useAacFilter = /^aac\b/i.test(audioProbe?.audioCodec || '');
+  if (!duration) duration = probes[0]?.duration || audioProbe?.duration || 0;
+
+  const inputArgs = activeFiles.flatMap((file) => ['-i', file]);
+  const mapArgs = useSeparate
     ? ['-map', '0:v:0', '-map', '1:a:0']
     : ['-map', '0:v:0', '-map', '0:a?'];
-
-  // TS audio commonly arrives as AAC in ADTS; probing locally lets us apply
-  // the ASC bitstream filter only when the selected audio really is AAC.
-  // The same probe records whether the downloaded media carries sound at
-  // all: if it does, the finished MP4 must keep it. (Before this, a
-  // video-only result still validated and was marked ready to watch.)
-  let useAacFilter = false;
-  let inputHasAudio = null;
-  try {
-    const probeInput = separateAudio && files[1] ? files[1] : files[0];
-    const info = await probeMedia(ffmpegPath, probeInput, { spawnImpl });
-    useAacFilter = /^aac\b/i.test(info.audioCodec || '');
-    inputHasAudio = !!info.hasAudio;
-    if (!duration && info.duration) duration = info.duration;
-  } catch { /* copy/transcode below will surface a clearer failure */ }
-  const mustKeepAudio = requireAudio || inputHasAudio === true;
-
   const common = ['-y', ...inputArgs, ...mapArgs, '-sn', '-dn'];
-  const copyArgs = [
-    ...common,
-    '-c', 'copy',
-    ...(useAacFilter ? ['-bsf:a', 'aac_adtstoasc'] : []),
-    '-movflags', '+faststart',
-    '-f', 'mp4', output,
-  ];
-  const copy = await run(copyArgs);
-  if (copy.code === 0) {
-    try {
-      const info = await validateOutput(ffmpegPath, output, { requireAudio: mustKeepAudio, requirePlayable: true, spawnImpl });
-      return { output, transcoded: false, ...info };
-    } catch { /* fall through to a compatibility transcode */ }
-  }
-  if (signal?.aborted) throw abortError();
-  await rm(output, { force: true }).catch(() => {});
+  const tail = ['-movflags', '+faststart', '-f', 'mp4', output];
+  // libx264 with yuv420p rejects odd frame sizes, which cropped encodes
+  // do publish; scale to even dimensions (a no-op for normal sizes).
+  const videoTranscode = ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '22', '-pix_fmt', 'yuv420p', '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2'];
+  const audioCopy = ['-c:a', 'copy', ...(useAacFilter ? ['-bsf:a', 'aac_adtstoasc'] : [])];
+  const audioTranscode = ['-c:a', 'aac', '-b:a', '160k'];
+  const audioTranscodeSafe = ['-c:a', 'aac', '-b:a', '160k', '-ac', '2', '-ar', '48000'];
 
-  const transcodeArgs = [
-    ...common,
-    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '22', '-pix_fmt', 'yuv420p',
-    '-c:a', 'aac', '-b:a', '160k',
-    '-movflags', '+faststart',
-    '-f', 'mp4', output,
-  ];
-  const transcoded = await run(transcodeArgs);
-  if (transcoded.code !== 0) {
+  const complete = (info) => !!info?.hasVideo && (!mustKeepAudio || !!info.hasAudio);
+  const acceptable = (info) => complete(info) && playableInApp(info);
+
+  let lastDetail = '';
+  const attempt = async (args) => {
+    if (signal?.aborted) throw abortError();
     await rm(output, { force: true }).catch(() => {});
-    throw new Error('Could not convert this downloaded stream to MP4. The host format may be unsupported.');
+    const result = await run(args);
+    if (signal?.aborted) throw abortError();
+    if (result.code !== 0) {
+      lastDetail = conversionDetail(result.stderr);
+      return null;
+    }
+    const info = await inspectOutput(ffmpegPath, output, { spawnImpl });
+    if (!info) lastDetail = conversionDetail(result.stderr) || 'the converted file could not be read back';
+    return info;
+  };
+
+  // 1. Stream copy — the fast path most hosts need.
+  let info = await attempt([...common, '-c', 'copy', ...(useAacFilter ? ['-bsf:a', 'aac_adtstoasc'] : []), ...tail]);
+  let transcoded = false;
+  if (!acceptable(info)) {
+    // 2. Convert only what the player cannot handle (everything when the
+    // copy came out incomplete), then 3. a hardened full transcode. Hosts
+    // differ in odd ways — frame sizes and audio layouts a single rigid
+    // fallback chokes on — so conversion gets more than one chance, and
+    // the final failure says what ffmpeg actually complained about.
+    const needsVideo = !videoPlayable(info) || !complete(info);
+    const needsAudio = !audioPlayable(info) || !complete(info);
+    const plans = [
+      [...common, ...(needsVideo ? videoTranscode : ['-c:v', 'copy']), ...(needsAudio ? audioTranscode : audioCopy), ...tail],
+      [...common, ...videoTranscode, ...audioTranscodeSafe, ...tail],
+    ];
+    const seen = new Set();
+    for (const args of plans) {
+      const key = args.join('\n');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      info = await attempt(args);
+      transcoded = true;
+      if (acceptable(info)) break;
+    }
   }
-  const info = await validateOutput(ffmpegPath, output, { requireAudio: mustKeepAudio, requirePlayable: true, spawnImpl });
-  return { output, transcoded: true, ...info };
+
+  if (!acceptable(info)) {
+    await rm(output, { force: true }).catch(() => {});
+    if (info && !complete(info)) throw new Error('The converted video is missing a readable video or audio track');
+    if (info) {
+      const codec = (value) => String(value || '').split(/[\s(]/)[0] || 'none';
+      throw new Error(`The converted video uses a format the in-app player cannot play (${codec(info.videoCodec)} video, ${codec(info.audioCodec)} audio)`);
+    }
+    throw new Error(`Could not convert this downloaded stream to MP4.${lastDetail ? ` ${lastDetail}` : ' The host format may be unsupported.'}`);
+  }
+  return { output, transcoded, ...info };
 }
 
 export function createFfmpegProcessor(ffmpegPath, options = {}) {
