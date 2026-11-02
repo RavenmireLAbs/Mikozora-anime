@@ -4,9 +4,9 @@ import {
   Home, Compass, Bookmark, History, Layers3, Settings2, Search, ArrowRight,
   ArrowUpRight, ChevronLeft, ChevronRight, Play, Check, RefreshCw, X, Clock3,
   ExternalLink, Sparkles, SlidersHorizontal, Film, LoaderCircle, AlertCircle,
-  Trash2, RotateCcw, FolderHeart, CircleHelp, ShieldCheck, Plus, ListVideo, Download, HardDrive, ListChecks, CheckCircle2, Heart, FolderPlus, Pencil, Folder, Flame, Bell, Sun, Moon, EyeOff
+  Trash2, RotateCcw, FolderHeart, CircleHelp, ShieldCheck, Plus, ListVideo, Download, HardDrive, ListChecks, CheckCircle2, Heart, FolderPlus, Pencil, Folder, Flame, Bell, Sun, Moon, EyeOff, Cloud
 } from 'lucide-react';
-import { SOURCES, getCatalog, getDetail, getFeatured, getTrending, getDiscoverAnime, getServers, imageUrl, isAndroid, clearNetworkCache, getDownloads, getDownloadOptions, enqueueDownloads, removeDownload, openDownload, getExportSettings, chooseDownloadFolder, clearDownloadFolder, exportDownload, openExport, hasEpisodeUpdates, syncEpisodeTitles, getEpisodeUpdates, checkEpisodes, setEpisodeAutomatic, setEpisodeAlerts, markEpisodeRead, fetchLatestRelease, exportBackupToFile, readBackupFromFile, isDesktopApp, hasNativeDownloads, setPlayerReferer, hasDeviceSync, getDeviceSyncSettings, chooseDeviceSyncFolder, clearDeviceSyncFolder, readDeviceSyncFolder, writeDeviceSyncFile } from './data';
+import { SOURCES, getCatalog, getDetail, getFeatured, getTrending, getDiscoverAnime, getServers, imageUrl, isAndroid, clearNetworkCache, getDownloads, getDownloadOptions, enqueueDownloads, removeDownload, openDownload, getExportSettings, chooseDownloadFolder, clearDownloadFolder, exportDownload, openExport, hasEpisodeUpdates, syncEpisodeTitles, getEpisodeUpdates, checkEpisodes, setEpisodeAutomatic, setEpisodeAlerts, markEpisodeRead, fetchLatestRelease, exportBackupToFile, readBackupFromFile, isDesktopApp, hasNativeDownloads, setPlayerReferer, hasDeviceSync, getDeviceSyncSettings, chooseDeviceSyncFolder, clearDeviceSyncFolder, readDeviceSyncFolder, writeDeviceSyncFile, hasGoogleDriveSync, getGoogleDriveSyncSettings, connectGoogleDriveSync, disconnectGoogleDriveSync, readGoogleDriveSyncFiles, writeGoogleDriveSyncFile } from './data';
 import { buildPlaybackPlaylist, compactPlaybackPlaylist } from './playback';
 import { monitoredTitles, unreadByTitle } from './episode-updates';
 import { SMART_DOWNLOADS_KEY, readSmartDownloads, saveSmartDownloads, smartTitleSelection, smartDownloadsForSync, withDownloadPreset } from './smart-downloads';
@@ -17,7 +17,7 @@ import { APP_VERSION, RELEASES, startupExperience, completeExperience } from './
 import { DEFAULT_UPDATE_STATE, readUpdateState, saveUpdateState, shouldCheckOnForeground, shouldCheckOnLaunch, withCheckResult, visibleUpdate, dismissUpdate, updateDownloadUrl } from './update';
 import { APPEARANCE_KEY, ACCENTS, MODES, DEFAULT_APPEARANCE, readAppearance, saveAppearance, applyAppearance, syncNativeAppearance } from './appearance';
 import { CONTENT_KEY, GENRES, DEFAULT_CONTENT_PREFS, readContentPrefs, saveContentPrefs, isNsfw, ratingOf, yearOf, filterTitles } from './content';
-import { markDeviceSyncPublished, prepareDeviceSync, publicDeviceSyncMeta, readDeviceSyncMeta, setDeviceSyncAuto, stableStringify } from './device-sync';
+import { markDeviceSyncPublished, prepareDeviceSync, publicDeviceSyncMeta, readDeviceSyncMeta, resetDeviceSyncPublication, setDeviceSyncAuto, setDeviceSyncTransport, stableStringify } from './device-sync';
 import './style.css';
 import './theme-generated.css';
 import './appearance.css';
@@ -523,31 +523,48 @@ function AppearanceSettings({appearance,changeAppearance}) {
     </div>
   </section>;
 }
-function DeviceSyncSettings({available=false,folder={},meta={},status={},choose=()=>{},disconnect=()=>{},syncNow=()=>{},changeAuto=()=>{}}) {
-  const busy=['syncing','choosing','disconnecting'].includes(status.phase);
+function DeviceSyncSettings({available=false,folderAvailable=false,googleAvailable=false,folder={},google={},meta={},status={},changeTransport=()=>{},choose=()=>{},disconnect=()=>{},connectGoogle=()=>{},disconnectGoogle=()=>{},syncNow=()=>{},changeAuto=()=>{}}) {
+  const busy=['syncing','choosing','connecting','disconnecting'].includes(status.phase);
+  const transport=meta.transport==='google'?'google':'folder';
+  const googleMode=transport==='google';
   const otherDevice=isDesktopApp()?'Android phone or tablet':'Windows PC';
-  const folderText=!available?(isDesktopApp()?'Update Mikozora for Windows to use device sync':'Available in the Android app')
+  const updateText=isDesktopApp()?'Update Mikozora for Windows to use device sync':'Available in the Android app';
+  const folderText=!folderAvailable?updateText
     :!folder.configured?'No shared folder selected'
       :folder.granted?(folder.name||'Selected folder'):'Folder access lost · choose it again';
+  const googleText=!googleAvailable?updateText
+    :google.needsSetup?(google.setupMessage||'Google Drive is not configured in this Mikozora build yet.')
+      :google.needsReconnect?`${google.account||google.name||'Google Drive'} · reconnect needed`
+        :google.granted?(google.account||google.name||'Connected to Google Drive')
+          :google.configured?'Google Drive connection needs attention':'Not connected';
+  const activeConfigured=googleMode?!!google.configured:!!folder.configured;
+  const activeGranted=googleMode?!!google.granted:!!folder.granted;
   const peerText=`${status.peerCount||0} other ${status.peerCount===1?'device':'devices'} found`;
   const deviceText=meta.deviceName||(isDesktopApp()?'This Windows PC':'This Android device');
   const statusText=status.phase==='syncing'?'Syncing now…'
     :status.phase==='choosing'?'Waiting for a folder choice…'
-      :status.phase==='disconnecting'?'Disconnecting…'
-        :meta.lastSyncAt?`Last synced ${prettyTime(meta.lastSyncAt)}`
-          :folder.granted?'Not synced yet':`Choose the same shared folder here and on your ${otherDevice}.`;
+      :status.phase==='connecting'?'Waiting for Google sign-in…'
+        :status.phase==='disconnecting'?'Disconnecting…'
+          :meta.lastSyncAt?`Last synced ${prettyTime(meta.lastSyncAt)}`
+            :activeGranted?'Not synced yet':googleMode?`Connect the same Google account here and on your ${otherDevice}.`:`Choose the same shared folder here and on your ${otherDevice}.`;
   const ignoredText=status.ignoredPeerFiles?` · ${status.ignoredPeerFiles} unreadable sync ${status.ignoredPeerFiles===1?'file':'files'} ignored`:'';
+  const methodText=googleMode?'Mikozora signs in to Google Drive directly and uses its own “Mikozora” folder there.':'Your own file-sync service carries Mikozora’s small sync files between devices.';
   return <div className="settings-group device-sync-settings">
     <div className="settings-title">DEVICE SYNC <span>ANDROID ↔ WINDOWS</span></div>
-    <div className="setting-row"><div className="setting-icon"><FolderHeart size={19}/></div><div><strong>Shared sync folder</strong><p className="folder-name">{folderText}</p></div><button onClick={choose} disabled={!available||busy}>{status.phase==='choosing'?'Choosing…':folder.configured?'Change':'Choose folder'}</button></div>
-    <div className="setting-row"><div className="setting-icon"><RefreshCw size={19} className={status.phase==='syncing'?'spin':''}/></div><div><strong>Sync now</strong><p>{statusText}{folder.configured?<> · {peerText} · This device: {deviceText}{ignoredText}</>:''}</p></div><button onClick={syncNow} disabled={!available||!folder.granted||busy}>{status.phase==='syncing'?'Syncing…':'Sync'}</button></div>
+    <div className="setting-row"><div className="setting-icon"><RefreshCw size={19}/></div><div><strong>Sync method</strong><p>{methodText}</p></div><select className="smart-select" aria-label="Device sync method" value={transport} disabled={!available||busy} onChange={event=>changeTransport(event.target.value)}><option value="folder">Shared folder</option><option value="google">Google Drive</option></select></div>
+    {!googleMode&&<div className="setting-row"><div className="setting-icon"><FolderHeart size={19}/></div><div><strong>Shared sync folder</strong><p className="folder-name">{folderText}</p></div><button onClick={choose} disabled={!folderAvailable||busy}>{status.phase==='choosing'?'Choosing…':folder.configured?'Change':'Choose folder'}</button></div>}
+    {googleMode&&<div className="setting-row"><div className="setting-icon"><Cloud size={19}/></div><div><strong>Google Drive</strong><p className="folder-name">{googleText}</p></div><button onClick={connectGoogle} disabled={!googleAvailable||google.needsSetup||busy}>{status.phase==='connecting'?'Connecting…':google.granted?'Change':google.configured?'Reconnect':'Connect'}</button></div>}
+    <div className="setting-row"><div className="setting-icon"><RefreshCw size={19} className={status.phase==='syncing'?'spin':''}/></div><div><strong>Sync now</strong><p>{statusText}{activeConfigured?<> · {peerText} · This device: {deviceText}{ignoredText}</>:''}</p></div><button onClick={syncNow} disabled={!available||!activeGranted||busy}>{status.phase==='syncing'?'Syncing…':'Sync'}</button></div>
     <div className="setting-row"><div className="setting-icon"><CheckCircle2 size={19}/></div><div><strong>Automatic sync</strong><p>When Mikozora opens, when you return to it, and shortly after your library or settings change.</p></div><button aria-label="Automatic device sync" aria-pressed={meta.autoSync!==false} disabled={!available||busy} onClick={()=>changeAuto(meta.autoSync===false)}>{meta.autoSync===false?'Off':'On'}</button></div>
     {status.phase==='error'&&status.message&&<div className="updates-error" role="alert"><AlertCircle size={16}/><span>{status.message}</span></div>}
     <div className="folder-explainer device-sync-explainer">
-      <p>Choose a folder that Syncthing, OneDrive, Dropbox, Google Drive, a NAS, or another service already keeps on both devices. Mikozora writes only its own small JSON sync file there; your chosen service carries it between devices, so they do not need to be online at the same time. Choose that same folder on your {otherDevice} too.</p>
+      {!googleMode&&<><p>Choose a folder that Syncthing, OneDrive, Dropbox, a NAS, or another service already keeps on both devices. Mikozora writes only its own small JSON sync file there; your chosen service carries it between devices, so they do not need to be online at the same time. Choose that same folder on your {otherDevice} too. If the folder is carried by Google Drive, Android may require a local folder kept in Drive by another sync app; the Google Drive method above avoids that extra app.</p>
+      <p><strong>Privacy:</strong> anyone or any service that can read this folder can see the title and watch metadata in Mikozora’s sync files. Use only a folder and sync service you trust. Disconnecting stops future reads and writes, but leaves files already in the folder untouched.</p></>}
+      {googleMode&&<><p>Connect the same Google account here and on your {otherDevice}. Mikozora asks Google only for access to files Mikozora itself creates, makes a visible “Mikozora” folder in Drive, and stores one small JSON sync file per device there. No folder-sync app is needed. Both devices need internet access when they sync, but they do not need to be online at the same time.</p>
+      <p><strong>Privacy:</strong> Google and anyone who can access that Google account or folder can see the title and watch metadata in Mikozora’s sync files; they are not end-to-end encrypted. Disconnecting removes this device’s stored Google authorization and stops future syncing, but leaves the Drive folder and files untouched.</p></>}
       <p>Library titles, collections, history, watch progress, appearance, content preferences and Smart Downloads settings merge both ways—including later deletions, collection changes and episodes marked unwatched. Downloaded episodes and queues, download/export folder choices, app-update choices, offline playback positions, and episode-alert state stay on each device.</p>
-      <p><strong>Privacy:</strong> anyone or any service that can read this folder can see the title and watch metadata in Mikozora’s sync files. Use only a folder and sync service you trust. Disconnecting stops future reads and writes, but leaves files already in the folder untouched.</p>
-      {folder.configured&&<button className="text-link" onClick={disconnect} disabled={busy}>{status.phase==='disconnecting'?'Disconnecting…':'Disconnect this device'}</button>}
+      {!googleMode&&folder.configured&&<button className="text-link" onClick={disconnect} disabled={busy}>{status.phase==='disconnecting'?'Disconnecting…':'Disconnect this device'}</button>}
+      {googleMode&&google.configured&&<button className="text-link" onClick={disconnectGoogle} disabled={busy}>{status.phase==='disconnecting'?'Disconnecting…':'Disconnect Google Drive'}</button>}
     </div>
   </div>;
 }
@@ -801,10 +818,13 @@ function App() {
   const [smartDownloads,setSmartDownloadsState]=useState(()=>readSmartDownloads(window.localStorage));
   const [folder,setFolder]=useState({configured:false,granted:false,name:''});
   const deviceSyncPlatform=isDesktopApp()?'windows':'android';
-  const deviceSyncAvailable=hasDeviceSync();
+  const folderSyncAvailable=hasDeviceSync();
+  const googleSyncAvailable=hasGoogleDriveSync();
+  const deviceSyncAvailable=folderSyncAvailable||googleSyncAvailable;
   const [deviceSyncFolder,setDeviceSyncFolder]=useState({configured:false,granted:false,name:''});
+  const [deviceSyncGoogle,setDeviceSyncGoogle]=useState({transport:'google',available:googleSyncAvailable,configured:false,granted:false,needsSetup:false,needsReconnect:false,account:'',displayName:'',name:'Google Drive',folderName:'Mikozora',setupMessage:''});
   const [deviceSyncMeta,setDeviceSyncMeta]=useState(()=>{
-    const fallback={deviceId:'',deviceName:'',platform:deviceSyncPlatform,autoSync:true,revision:0,lastSyncAt:0,lastPublishedAt:0};
+    const fallback={deviceId:'',deviceName:'',platform:deviceSyncPlatform,transport:'folder',autoSync:true,revision:0,lastSyncAt:0,lastPublishedAt:0};
     if(!deviceSyncAvailable)return fallback;
     try{return publicDeviceSyncMeta(readDeviceSyncMeta(window.localStorage,deviceSyncPlatform,{create:true}));}catch{return fallback;}
   });
@@ -1010,6 +1030,20 @@ function App() {
       if(!wasEnabled&&normalized.enabled&&updatesAvailable&&!updates.automatic)void updateAction(()=>setEpisodeAutomatic(true));
     }
   };
+  const normalizeGoogleSyncSettings=value=>({
+    transport:'google',
+    available:googleSyncAvailable,
+    configured:!!value?.configured,
+    granted:!!value?.granted,
+    needsSetup:!!value?.needsSetup,
+    needsReconnect:!!value?.needsReconnect,
+    account:typeof value?.account==='string'?value.account:'',
+    displayName:typeof value?.displayName==='string'?value.displayName:'',
+    name:typeof value?.name==='string'&&value.name?value.name:'Google Drive',
+    folderName:typeof value?.folderName==='string'&&value.folderName?value.folderName:'Mikozora',
+    setupMessage:typeof value?.setupMessage==='string'?value.setupMessage:'',
+    ...(value?.canceled?{canceled:true}:{}),
+  });
   const runDeviceSync=async({manual=false,reason='auto'}={})=>{
     if(!deviceSyncAvailable)return null;
     if(deviceSyncPromise.current){
@@ -1028,12 +1062,22 @@ function App() {
     const task=(async()=>{
       setDeviceSyncStatus(previous=>({...previous,phase:'syncing',message:''}));
       try{
-        const settings=await getDeviceSyncSettings();
-        setDeviceSyncFolder(settings);
         const identity=publicDeviceSyncMeta(readDeviceSyncMeta(window.localStorage,deviceSyncPlatform,{create:true}));
         setDeviceSyncMeta(identity);
+        const transport=identity.transport==='google'?'google':'folder';
+        let settings;
+        if(transport==='google'){
+          if(!googleSyncAvailable)throw new Error('Google Drive sync is unavailable in this Mikozora build. Update Mikozora or use a shared folder.');
+          settings=normalizeGoogleSyncSettings(await getGoogleDriveSyncSettings());
+          setDeviceSyncGoogle(settings);
+          if(settings.needsSetup)throw new Error(settings.setupMessage||'Google Drive is not configured in this Mikozora build yet.');
+        }else{
+          if(!folderSyncAvailable)throw new Error('Shared-folder sync is unavailable in this Mikozora build. Update Mikozora or use Google Drive.');
+          settings=await getDeviceSyncSettings();
+          setDeviceSyncFolder(settings);
+        }
         if(!settings.configured){
-          const message='Choose a sync folder first.';
+          const message=transport==='google'?'Connect Google Drive first.':'Choose a sync folder first.';
           if(manual){
             deviceSyncError.current=message;
             setDeviceSyncStatus(previous=>({...previous,phase:'error',message}));
@@ -1042,22 +1086,27 @@ function App() {
           }
           return null;
         }
-        if(!settings.granted)throw new Error('Sync folder access was lost. Choose the folder again in Settings.');
+        if(!settings.granted){
+          throw new Error(transport==='google'
+            ?(settings.needsReconnect?'Google Drive needs to be reconnected. Connect Google Drive again in Settings.':'Google Drive connection needs attention. Reconnect Google Drive in Settings.')
+            :'Sync folder access was lost. Choose the folder again in Settings.');
+        }
         if(!manual&&!identity.autoSync){
           setDeviceSyncStatus(previous=>({...previous,phase:'idle',message:''}));
           return null;
         }
 
-        const listing=await readDeviceSyncFolder();
+        const listing=transport==='google'?await readGoogleDriveSyncFiles():await readDeviceSyncFolder();
         // Flush and prepare in the same synchronous turn so an edit made while
-        // the native folder was being read is included in this merge rather
+        // the native transport was being read is included in this merge rather
         // than overwritten by it. Applying to React follows immediately.
         flushDeviceSyncState();
         const prepared=prepareDeviceSync(window.localStorage,listing.files||[],{platform:deviceSyncPlatform,now:Date.now()});
         applyDeviceSyncSnapshot(prepared.data);
         let publishedIdentity=prepared.identity;
         if(prepared.shouldWrite){
-          await writeDeviceSyncFile(prepared.fileName,prepared.payloadText);
+          if(transport==='google')await writeGoogleDriveSyncFile(prepared.fileName,prepared.payloadText);
+          else await writeDeviceSyncFile(prepared.fileName,prepared.payloadText);
           publishedIdentity=markDeviceSyncPublished(window.localStorage,prepared.signature,prepared.revision,Date.now());
         }
         deviceSyncError.current='';
@@ -1087,13 +1136,19 @@ function App() {
     if(!deviceSyncAvailable)return;
     let active=true;
     try{setDeviceSyncMeta(publicDeviceSyncMeta(readDeviceSyncMeta(window.localStorage,deviceSyncPlatform,{create:true})));}catch{}
-    const load=()=>getDeviceSyncSettings()
-      .then(value=>{if(active)setDeviceSyncFolder(value);})
-      .catch(e=>{if(active&&route.page==='settings'){const message=e?.message||'Could not read sync folder settings.';deviceSyncError.current=message;setDeviceSyncStatus(previous=>({...previous,phase:'error',message}));}});
+    const report=(e,fallback)=>{if(active&&route.page==='settings'){const message=e?.message||fallback;deviceSyncError.current=message;setDeviceSyncStatus(previous=>({...previous,phase:'error',message}));}};
+    const load=()=>{
+      if(folderSyncAvailable)getDeviceSyncSettings()
+        .then(value=>{if(active)setDeviceSyncFolder(value);})
+        .catch(e=>report(e,'Could not read sync folder settings.'));
+      if(googleSyncAvailable)getGoogleDriveSyncSettings()
+        .then(value=>{if(active)setDeviceSyncGoogle(normalizeGoogleSyncSettings(value));})
+        .catch(e=>report(e,'Could not read Google Drive sync settings.'));
+    };
     load();
     if(route.page==='settings')window.addEventListener('focus',load);
     return ()=>{active=false;window.removeEventListener('focus',load);};
-  },[deviceSyncAvailable,route.page]);
+  },[deviceSyncAvailable,folderSyncAvailable,googleSyncAvailable,route.page]);
   useEffect(()=>{
     if(experience||!deviceSyncAvailable)return;
     const timer=setTimeout(()=>{void deviceSyncRun.current?.({reason:'startup'});},1200);
@@ -1116,7 +1171,7 @@ function App() {
     }
   };
   const chooseSyncFolder=async()=>{
-    if(!deviceSyncAvailable||deviceSyncAction.current)return;
+    if(!folderSyncAvailable||deviceSyncAction.current)return;
     deviceSyncAction.current=true;
     setDeviceSyncStatus(previous=>({...previous,phase:'choosing',message:''}));
     try{
@@ -1128,7 +1183,10 @@ function App() {
         return;
       }
       if(!next?.granted)throw new Error('The folder did not grant read and write access.');
-      try{setDeviceSyncMeta(publicDeviceSyncMeta(readDeviceSyncMeta(window.localStorage,deviceSyncPlatform,{create:true})));}catch{}
+      try{
+        setDeviceSyncTransport(window.localStorage,'folder',deviceSyncPlatform);
+        setDeviceSyncMeta(resetDeviceSyncPublication(window.localStorage,deviceSyncPlatform));
+      }catch{}
       deviceSyncAction.current=false;
       const result=await deviceSyncRun.current?.({manual:true,reason:'folder'});
       if(result)setToast(result.changed?'Devices synced · updates applied':'Sync folder connected');
@@ -1143,7 +1201,7 @@ function App() {
     }
   };
   const disconnectSyncFolder=async()=>{
-    if(!deviceSyncAvailable||deviceSyncAction.current)return;
+    if(!folderSyncAvailable||deviceSyncAction.current)return;
     if(!window.confirm('Disconnect this device from the sync folder?\n\nMikozora will stop reading and writing that folder. Sync files already there will stay there.'))return;
     deviceSyncAction.current=true;
     setDeviceSyncStatus(previous=>({...previous,phase:'disconnecting',message:''}));
@@ -1161,6 +1219,69 @@ function App() {
     }finally{
       deviceSyncAction.current=false;
     }
+  };
+  const connectGoogleDrive=async()=>{
+    if(!googleSyncAvailable||deviceSyncAction.current)return;
+    deviceSyncAction.current=true;
+    setDeviceSyncStatus(previous=>({...previous,phase:'connecting',message:''}));
+    try{
+      await waitForDeviceSyncIdle();
+      const next=normalizeGoogleSyncSettings(await connectGoogleDriveSync());
+      setDeviceSyncGoogle(next);
+      if(next?.canceled){
+        setDeviceSyncStatus(previous=>({...previous,phase:'idle',message:''}));
+        return;
+      }
+      if(next?.needsSetup)throw new Error(next.setupMessage||'Google Drive is not configured in this Mikozora build yet.');
+      if(!next?.granted)throw new Error(next?.needsReconnect?'Google Drive needs to be reconnected. Connect Google Drive again in Settings.':'Google Drive did not grant access.');
+      try{
+        setDeviceSyncTransport(window.localStorage,'google',deviceSyncPlatform);
+        setDeviceSyncMeta(resetDeviceSyncPublication(window.localStorage,deviceSyncPlatform));
+      }catch{}
+      deviceSyncAction.current=false;
+      const result=await deviceSyncRun.current?.({manual:true,reason:'google'});
+      if(result)setToast(result.changed?'Google Drive synced · updates applied':'Google Drive connected');
+      else if(deviceSyncError.current)setToast(deviceSyncError.current);
+    }catch(e){
+      const message=e?.message||'Could not connect Google Drive.';
+      deviceSyncError.current=message;
+      setDeviceSyncStatus(previous=>({...previous,phase:'error',message}));
+      setToast(message);
+      if(googleSyncAvailable)getGoogleDriveSyncSettings().then(value=>setDeviceSyncGoogle(normalizeGoogleSyncSettings(value))).catch(()=>{});
+    }finally{
+      deviceSyncAction.current=false;
+    }
+  };
+  const disconnectGoogleDrive=async()=>{
+    if(!googleSyncAvailable||deviceSyncAction.current)return;
+    if(!window.confirm('Disconnect Google Drive on this device?\n\nMikozora will remove its stored Google authorization here and stop syncing. The Mikozora folder and sync files already in Google Drive will stay there.'))return;
+    deviceSyncAction.current=true;
+    setDeviceSyncStatus(previous=>({...previous,phase:'disconnecting',message:''}));
+    try{
+      await waitForDeviceSyncIdle();
+      const next=normalizeGoogleSyncSettings(await disconnectGoogleDriveSync());
+      setDeviceSyncGoogle(next);
+      setDeviceSyncStatus({phase:'idle',message:'',peerCount:0,ignoredPeerFiles:0});
+      setToast('Google Drive disconnected · Drive files were left in place');
+    }catch(e){
+      const message=e?.message||'Could not disconnect Google Drive.';
+      deviceSyncError.current=message;
+      setDeviceSyncStatus(previous=>({...previous,phase:'error',message}));
+      setToast(message);
+    }finally{
+      deviceSyncAction.current=false;
+    }
+  };
+  const changeDeviceSyncTransport=transport=>{
+    const nextTransport=transport==='google'?'google':'folder';
+    try{
+      const next=setDeviceSyncTransport(window.localStorage,nextTransport,deviceSyncPlatform);
+      setDeviceSyncMeta(next);
+      setDeviceSyncStatus(previous=>({...previous,phase:'idle',message:''}));
+      setToast(nextTransport==='google'?'Google Drive sync selected':'Shared-folder sync selected');
+      const activeGranted=nextTransport==='google'?deviceSyncGoogle.granted:deviceSyncFolder.granted;
+      if(activeGranted)void deviceSyncRun.current?.({reason:'change'});
+    }catch(e){setToast(e?.message||'Could not change the sync method.');}
   };
   const changeDeviceSyncAuto=enabled=>{
     try{
@@ -1369,7 +1490,7 @@ function App() {
     {route.page==='downloads'&&<DownloadsPage items={downloads} loading={downloadsLoading} remove={deleteDownload} retry={retryDownload} change={d=>setDownloadModal({item:d.item,episodes:[d.episode],language:d.language||'english',serverChoice:d.serverChoice||'auto',subtitleMode:d.subtitleMode||'auto',subtitleSelection:Array.isArray(d.subtitleSelection)?d.subtitleSelection:[]})} browse={browse} folder={folder} saveCopy={saveCopy} openSettings={()=>go('settings')} playOffline={playOffline}/>}
     {route.page==='history'&&<HistoryPage items={history.filter(entry=>!hideNsfw||!isNsfw(entry.item))} resume={resume} open={open} clear={clearHistory} browse={browse}/>}
     {route.page==='sources'&&<SourcesPage browse={browse}/>}
-    {route.page==='settings'&&<SettingsPage library={library} history={history} clearLibrary={clearLibrary} clearHistory={clearHistory} openLicenses={()=>setLicenses(true)} openReleaseNotes={()=>setExperience({mode:'update',manual:true})} folder={folder} chooseFolder={chooseFolder} usePrivate={usePrivate} updates={updates} updatesAvailable={updatesAvailable} changeAutomatic={changeAutomatic} changeAlerts={changeAlerts} notificationPermission={notificationPermission} appearance={appearance} changeAppearance={changeAppearance} contentPrefs={contentPrefs} changeContentPrefs={changeContentPrefs} appUpdate={appUpdate} pendingUpdate={pendingUpdate} updateStatus={updateStatus} checkUpdate={checkAppUpdate} changeAutoCheck={changeAutoCheck} downloadUpdate={downloadAppUpdate} exportBackup={exportBackup} importBackup={importBackup} smartDownloads={smartDownloads} changeSmartDownloads={changeSmartDownloads} deviceSync={{available:deviceSyncAvailable,folder:deviceSyncFolder,meta:deviceSyncMeta,status:deviceSyncStatus,choose:chooseSyncFolder,disconnect:disconnectSyncFolder,syncNow:syncDevicesNow,changeAuto:changeDeviceSyncAuto}}/>}
+    {route.page==='settings'&&<SettingsPage library={library} history={history} clearLibrary={clearLibrary} clearHistory={clearHistory} openLicenses={()=>setLicenses(true)} openReleaseNotes={()=>setExperience({mode:'update',manual:true})} folder={folder} chooseFolder={chooseFolder} usePrivate={usePrivate} updates={updates} updatesAvailable={updatesAvailable} changeAutomatic={changeAutomatic} changeAlerts={changeAlerts} notificationPermission={notificationPermission} appearance={appearance} changeAppearance={changeAppearance} contentPrefs={contentPrefs} changeContentPrefs={changeContentPrefs} appUpdate={appUpdate} pendingUpdate={pendingUpdate} updateStatus={updateStatus} checkUpdate={checkAppUpdate} changeAutoCheck={changeAutoCheck} downloadUpdate={downloadAppUpdate} exportBackup={exportBackup} importBackup={importBackup} smartDownloads={smartDownloads} changeSmartDownloads={changeSmartDownloads} deviceSync={{available:deviceSyncAvailable,folderAvailable:folderSyncAvailable,googleAvailable:googleSyncAvailable,folder:deviceSyncFolder,google:deviceSyncGoogle,meta:deviceSyncMeta,status:deviceSyncStatus,changeTransport:changeDeviceSyncTransport,choose:chooseSyncFolder,disconnect:disconnectSyncFolder,connectGoogle:connectGoogleDrive,disconnectGoogle:disconnectGoogleDrive,syncNow:syncDevicesNow,changeAuto:changeDeviceSyncAuto}}/>}
   </main></div><BottomNav page={route.page} go={go}/>{collectionDialog?.kind==='new'&&<CollectionNameDialog close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='rename'&&<CollectionNameDialog editing value={collections.find(c=>c.id===collectionDialog.id)?.name||''} close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='title'&&<TitleCollectionsDialog item={collectionDialog.item} collections={collections} close={()=>setCollectionDialog(null)} submit={selected=>saveTitleCollectionChoices(collectionDialog.item,selected)}/>}{collectionDialog?.kind==='members'&&collections.find(c=>c.id===collectionDialog.id)&&<CollectionMembersDialog collection={collections.find(c=>c.id===collectionDialog.id)} items={hideNsfw?library.filter(item=>!isNsfw(item)):library} close={()=>setCollectionDialog(null)} submit={keys=>saveCollectionMembers(collectionDialog.id,keys)}/>} {offlinePlayer&&<OfflinePlayerModal entry={offlinePlayer} close={()=>setOfflinePlayer(null)}/>}{player&&<PlayerModal key={player.episode.url} player={player} close={()=>setPlayer(null)} onEpisode={episode=>play(player.item,episode,{playlist:player.episodes})} watched={watchedUrlSet(progress,history,player.item)}/>}{licenses&&<LicenseModal close={()=>setLicenses(false)}/>}{downloadModal&&<DownloadModal request={downloadModal} close={()=>setDownloadModal(null)} submit={submitDownload}/>}{busy&&<div className="busy-overlay"><div><LoaderCircle size={20} className="spin"/><span>{busy}</span></div></div>}{toast&&<div className="toast"><Check size={16}/>{toast}</div>}</div>;
 }
 

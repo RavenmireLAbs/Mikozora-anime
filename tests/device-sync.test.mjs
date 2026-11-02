@@ -7,6 +7,8 @@ import {
   parseDeviceSyncFile,
   prepareDeviceSync,
   readDeviceSyncMeta,
+  resetDeviceSyncPublication,
+  setDeviceSyncTransport,
   snapshotFromStorage,
 } from '../src/device-sync.js';
 import { APPEARANCE_KEY } from '../src/appearance.js';
@@ -68,6 +70,33 @@ test('prepares a bounded own-device file and does not republish an unchanged sna
   const second = prepareDeviceSync(store, [], { platform: 'android', now: 2000 });
   assert.equal(second.shouldWrite, false);
   assert.equal(second.revision, first.revision);
+});
+
+test('transport choice stays local and reconnecting a transport forces one republish', () => {
+  const store = seed(new Store(), {
+    library: [item(1)],
+    collections: [{ id: 'favourites', name: 'Favourites', items: [keyOf(item(1))] }],
+    history: [],
+    progress: [],
+    appearance: { mode: 'dark', accent: 'blue' },
+    content: { hideNsfw: false },
+    smartDownloads: { enabled: false },
+  }, 'android', 'aaaaaaaaaaaaaaaa');
+
+  const first = publish(store, [], 'android', 1000);
+  assert.equal(first.shouldWrite, true);
+  assert.equal(prepareDeviceSync(store, [], { platform: 'android', now: 2000 }).shouldWrite, false);
+
+  const googleMeta = setDeviceSyncTransport(store, 'google', 'android');
+  assert.equal(googleMeta.transport, 'google');
+  assert.equal(JSON.parse(store.getItem(DEVICE_SYNC_KEY)).transport, 'google');
+  assert.equal(Object.hasOwn(first.payload, 'transport'), false, 'transport must not travel in sync payloads');
+
+  resetDeviceSyncPublication(store, 'android');
+  const republished = prepareDeviceSync(store, [], { platform: 'android', now: 3000 });
+  assert.equal(republished.shouldWrite, true, 'a newly connected Drive folder may not contain this device file yet');
+  assert.equal(republished.revision, first.revision + 1);
+  assert.equal(setDeviceSyncTransport(store, 'carrier-pigeon', 'android').transport, 'folder');
 });
 
 test('two devices converge on library, collections, progress and settings additions', () => {

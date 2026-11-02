@@ -90,7 +90,7 @@ Android may ask you to allow installs from your file manager. On Android 13+, no
 
 ## Build the Android project
 
-Requirements: Node.js 20+, Java 17, Android SDK Platform 35 and Android build tools. Gradle downloads AndroidX Media3, WorkManager, OkHttp and jsoup from the configured repositories. The committed `android/app/src/main/assets/web/` already contains the built UI, so opening the `android` folder in Android Studio and building `debug` works without Node until the UI is changed.
+Requirements: Node.js 20+, Java 17, Android SDK Platform 35 and Android build tools. Gradle downloads AndroidX Media3, WorkManager, Google Play services Auth, OkHttp and jsoup from the configured repositories. The committed `android/app/src/main/assets/web/` already contains the built UI, so opening the `android` folder in Android Studio and building `debug` works without Node until the UI is changed. Direct Google Drive device sync additionally requires the one-time Google Cloud project and Windows secret setup in [`docs/GOOGLE_DRIVE_SYNC.md`](docs/GOOGLE_DRIVE_SYNC.md); without it, shared-folder sync remains available and Drive sync reports that setup is needed.
 
 After changing the web UI:
 

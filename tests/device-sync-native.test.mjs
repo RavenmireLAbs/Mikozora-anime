@@ -15,12 +15,17 @@ test('shared data layer exposes the bounded device-sync bridge contract', () => 
     'clearDeviceSyncFolder',
     'readDeviceSyncFolder',
     'writeDeviceSyncFile',
+    'googleDriveSyncSettings',
+    'connectGoogleDriveSync',
+    'disconnectGoogleDriveSync',
+    'readGoogleDriveSyncFiles',
+    'writeGoogleDriveSyncFile',
   ]) {
     assert.ok(data.includes(`typeof window.MokuBridge.${method} === 'function'`), `feature check for ${method}`);
     assert.ok(data.includes(`bridgeCall('${method}'`), `wrapper for ${method}`);
   }
-  assert.match(data, /\['chooseDownloadFolder', 'chooseDeviceSyncFolder', 'saveBackupFile', 'openBackupFile'\]\.includes\(method\) \? 300000/);
-  assert.match(data, /\['readDeviceSyncFolder', 'writeDeviceSyncFile'\]\.includes\(method\) \? 120000/);
+  assert.match(data, /\['chooseDownloadFolder', 'chooseDeviceSyncFolder', 'connectGoogleDriveSync', 'saveBackupFile', 'openBackupFile'\]\.includes\(method\) \? 300000/);
+  assert.match(data, /\['readDeviceSyncFolder', 'writeDeviceSyncFile', 'readGoogleDriveSyncFiles', 'writeGoogleDriveSyncFile'\]\.includes\(method\) \? 120000/);
   assert.match(data, /return \{ files: Array\.isArray\(result\?\.files\) \? result\.files : \[\] \}/);
 
   // Device identity, tombstones and publish state are per-installation data.
@@ -64,11 +69,52 @@ test('Android keeps the sync folder in a separate persisted SAF grant', () => {
   assert.match(store, /Files already placed in the user's shared folder stay there/);
 });
 
-test('Windows exposes the same five calls through the isolated preload and service', () => {
+test('Android authorizes Google Drive interactively only for connect and keeps REST access bounded', () => {
+  const main = read('android/app/src/main/java/app/moku/anime/MainActivity.java');
+  const store = read('android/app/src/main/java/app/moku/anime/GoogleDriveSyncStore.java');
+  const gradle = read('android/app/build.gradle');
+
+  assert.match(gradle, /play-services-auth:21\.3\.0/);
+  assert.match(main, /GOOGLE_DRIVE_AUTHORIZE = 3185/);
+  assert.match(main, /pendingGoogleDriveRequest=state\.getString\("googleDriveRequestId"\)/);
+  assert.match(main, /out\.putString\("googleDriveRequestId",pendingGoogleDriveRequest\)/);
+  assert.match(main, /googleDriveSyncSettings\(String id\)/);
+  assert.match(main, /connectGoogleDriveSync\(String id\)/);
+  assert.match(main, /disconnectGoogleDriveSync\(String id\)/);
+  assert.match(main, /readGoogleDriveSyncFiles\(String id\)/);
+  assert.match(main, /writeGoogleDriveSyncFile\(String id,String name,String text\)/);
+  assert.match(main, /authorizeGoogleDrive\(id,true/);
+  assert.match(main, /authorizeGoogleDrive\(id,false/);
+  assert.match(main, /Identity\.getAuthorizationClient\(this\)\.authorize\(request\)/);
+  assert.match(main, /startIntentSenderForResult\(/);
+  assert.match(main, /getAuthorizationResultFromIntent\(data\)/);
+  assert.match(main, /RevokeAccessRequest\.builder\(\)/);
+  assert.match(main, /https:\/\/www\.googleapis\.com\/auth\/drive\.file/);
+  assert.match(main, /CommonStatusCodes\.DEVELOPER_ERROR/);
+
+  assert.match(store, /PREFS = "moku_google_drive_sync"/);
+  assert.match(store, /FOLDER_NAME = "Mikozora"/);
+  assert.match(store, /mikozora-sync-\(android\|windows\)-\[a-f0-9\]\{16\}/);
+  assert.match(store, /MAX_FILE_BYTES = 8 \* 1024 \* 1024/);
+  assert.match(store, /MAX_FILES = 12/);
+  assert.match(store, /MAX_TOTAL_BYTES = 24 \* 1024 \* 1024/);
+  assert.match(store, /www\.googleapis\.com/);
+  assert.match(store, /openidconnect\.googleapis\.com/);
+  assert.match(store, /setInstanceFollowRedirects\(false\)/);
+  assert.match(store, /Authorization", "Bearer " \+ accessToken/);
+  assert.match(store, /Files already in the visible Mikozora Drive folder stay there/);
+  assert.ok(!store.includes('SharedPreferences.Editor putString("accessToken"'), 'Android must not persist Drive access tokens');
+});
+
+test('Windows exposes folder and Google Drive sync through the isolated preload and services', () => {
   const preload = read('desktop/src/preload.cjs');
   const bridge = read('desktop/src/bridge.js');
   const main = read('desktop/src/main.js');
   const service = read('desktop/src/lib/device-sync-service.js');
+  const googleService = read('desktop/src/lib/google-drive-sync-service.js');
+  const googleConfig = read('desktop/src/lib/google-drive-config.js');
+  const desktopWorkflow = read('.github/workflows/desktop.yml');
+  const googleDocs = read('docs/GOOGLE_DRIVE_SYNC.md');
 
   for (const method of [
     'deviceSyncSettings',
@@ -76,17 +122,41 @@ test('Windows exposes the same five calls through the isolated preload and servi
     'clearDeviceSyncFolder',
     'readDeviceSyncFolder',
     'writeDeviceSyncFile',
+    'googleDriveSyncSettings',
+    'connectGoogleDriveSync',
+    'disconnectGoogleDriveSync',
+    'readGoogleDriveSyncFiles',
+    'writeGoogleDriveSyncFile',
   ]) {
     assert.ok(preload.includes(`${method}: call('${method}')`), `preload for ${method}`);
     assert.ok(bridge.includes(`method === '${method}'`), `dispatch for ${method}`);
   }
-  assert.match(bridge, /downloadService = null, episodeService = null, deviceSyncService = null/);
+  assert.match(bridge, /downloadService = null, episodeService = null, deviceSyncService = null, googleDriveSyncService = null/);
   assert.match(bridge, /const requireDeviceSync = \(\) =>/);
+  assert.match(bridge, /const requireGoogleDriveSync = \(\) =>/);
   assert.match(bridge, /async function chooseDeviceSyncFolder\(win, service\)/);
   assert.match(bridge, /if \(folderPickerOpen\) throw new Error\('A folder picker is already open\.'\)/);
   assert.match(main, /import \{ DeviceSyncService \} from '\.\/lib\/device-sync-service\.js'/);
+  assert.match(main, /import \{ GoogleDriveSyncService \} from '\.\/lib\/google-drive-sync-service\.js'/);
   assert.match(main, /deviceSyncService = new DeviceSyncService\(\{ store \}\)/);
-  assert.match(main, /downloadService, episodeService, deviceSyncService\)/);
+  assert.match(main, /googleDriveSyncService = new GoogleDriveSyncService\(\{/);
+  assert.match(main, /safeStorage\.encryptString/);
+  assert.match(main, /safeStorage\.decryptString/);
+  assert.match(main, /MIKOZORA_GOOGLE_CLIENT_ID/);
+  assert.match(main, /downloadService, episodeService, deviceSyncService, googleDriveSyncService\)/);
+  assert.match(googleConfig, /GOOGLE_DRIVE_CLIENT_ID = ''/);
+  assert.match(googleConfig, /GOOGLE_DRIVE_CLIENT_SECRET = ''/);
+  assert.match(googleService, /https:\/\/www\.googleapis\.com\/auth\/drive\.file/);
+  assert.match(googleService, /code_challenge_method', 'S256'/);
+  assert.match(googleService, /access_type', 'offline'/);
+  assert.match(googleService, /127\.0\.0\.1/);
+  assert.match(googleService, /GOOGLE_DRIVE_SYNC_FOLDER_NAME = 'Mikozora'/);
+  assert.match(googleService, /DEVICE_SYNC_FILE_PATTERN/);
+  assert.match(desktopWorkflow, /MIKOZORA_GOOGLE_DESKTOP_CLIENT_ID/);
+  assert.match(desktopWorkflow, /node scripts\/write-google-config\.mjs/);
+  assert.match(googleDocs, /app\.moku\.anime/);
+  assert.match(googleDocs, /MIKOZORA_GOOGLE_DESKTOP_CLIENT_SECRET/);
+  assert.match(googleDocs, /same.*Google Cloud\s+project/s);
 
   assert.match(service, /const STORE_KEY = 'deviceSyncFolder'/);
   assert.ok(!service.includes("'downloadFolder'"), 'sync folder must not reuse the download-folder record');
@@ -102,20 +172,24 @@ test('Windows exposes the same five calls through the isolated preload and servi
 test('shared UI merges in place and publishes only after the native write succeeds', () => {
   const ui = read('src/main.jsx');
 
-  assert.match(ui, /hasDeviceSync, getDeviceSyncSettings, chooseDeviceSyncFolder, clearDeviceSyncFolder, readDeviceSyncFolder, writeDeviceSyncFile/);
-  assert.match(ui, /markDeviceSyncPublished, prepareDeviceSync, publicDeviceSyncMeta, readDeviceSyncMeta, setDeviceSyncAuto, stableStringify/);
+  assert.match(ui, /hasDeviceSync, getDeviceSyncSettings, chooseDeviceSyncFolder, clearDeviceSyncFolder, readDeviceSyncFolder, writeDeviceSyncFile, hasGoogleDriveSync, getGoogleDriveSyncSettings, connectGoogleDriveSync, disconnectGoogleDriveSync, readGoogleDriveSyncFiles, writeGoogleDriveSyncFile/);
+  assert.match(ui, /markDeviceSyncPublished, prepareDeviceSync, publicDeviceSyncMeta, readDeviceSyncMeta, resetDeviceSyncPublication, setDeviceSyncAuto, setDeviceSyncTransport, stableStringify/);
   assert.match(ui, /function DeviceSyncSettings/);
+  assert.match(ui, /Sync method/);
   assert.match(ui, /Shared sync folder/);
+  assert.match(ui, /Google Drive/);
   assert.match(ui, /Automatic sync/);
   assert.match(ui, /anyone or any service that can read this folder can see/);
+  assert.match(ui, /not end-to-end encrypted/);
   assert.match(ui, /Downloaded episodes and queues/);
   assert.match(ui, /<DeviceSyncSettings \{\.\.\.deviceSync\}\/>/);
-  assert.match(ui, /deviceSync=\{\{available:deviceSyncAvailable,folder:deviceSyncFolder,meta:deviceSyncMeta,status:deviceSyncStatus,choose:chooseSyncFolder,disconnect:disconnectSyncFolder,syncNow:syncDevicesNow,changeAuto:changeDeviceSyncAuto\}\}/);
+  assert.match(ui, /deviceSync=\{\{available:deviceSyncAvailable,folderAvailable:folderSyncAvailable,googleAvailable:googleSyncAvailable,folder:deviceSyncFolder,google:deviceSyncGoogle,meta:deviceSyncMeta,status:deviceSyncStatus,changeTransport:changeDeviceSyncTransport,choose:chooseSyncFolder,disconnect:disconnectSyncFolder,connectGoogle:connectGoogleDrive,disconnectGoogle:disconnectGoogleDrive,syncNow:syncDevicesNow,changeAuto:changeDeviceSyncAuto\}\}/);
 
-  for (const reason of ['startup', 'focus', 'periodic', 'change', 'manual', 'folder']) {
+  for (const reason of ['startup', 'focus', 'periodic', 'change', 'manual', 'folder', 'google']) {
     assert.ok(ui.includes(`reason:'${reason}'`));
   }
   assert.match(ui, /flushDeviceSyncState\(\);\s*const prepared=prepareDeviceSync/);
+  assert.match(ui, /await writeGoogleDriveSyncFile\(prepared\.fileName,prepared\.payloadText\)/);
   assert.match(ui, /await writeDeviceSyncFile\(prepared\.fileName,prepared\.payloadText\);\s*publishedIdentity=markDeviceSyncPublished/);
 
   const start = ui.indexOf('const runDeviceSync=');

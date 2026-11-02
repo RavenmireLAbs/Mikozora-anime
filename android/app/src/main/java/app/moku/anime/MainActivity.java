@@ -2,9 +2,11 @@ package app.moku.anime;
 
 import android.app.Activity;
 import android.Manifest;
+import android.accounts.Account;
 import android.content.pm.PackageManager;
 import android.app.AlertDialog;
 import android.content.Intent;
+import android.content.IntentSender;
 import android.content.ClipData;
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -22,6 +24,14 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
+import com.google.android.gms.auth.api.identity.AuthorizationRequest;
+import com.google.android.gms.auth.api.identity.AuthorizationResult;
+import com.google.android.gms.auth.api.identity.Identity;
+import com.google.android.gms.auth.api.identity.RevokeAccessRequest;
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount;
+import com.google.android.gms.common.api.ApiException;
+import com.google.android.gms.common.api.CommonStatusCodes;
+import com.google.android.gms.common.api.Scope;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.ByteArrayInputStream;
@@ -30,7 +40,9 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -38,6 +50,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class MainActivity extends Activity implements PlayerNavigation.RequestListener {
+    private interface GoogleDriveTokenUse {
+        void use(String requestId, AuthorizationResult result);
+    }
+
     private WebView web;
     private final ExecutorService requests = Executors.newFixedThreadPool(6);
     // Ten independent catalog requests must not starve folder and download controls.
@@ -65,11 +81,17 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
     private String pendingBackupSave;
     private String pendingBackupText;
     private String pendingBackupOpen;
+    private static final int GOOGLE_DRIVE_AUTHORIZE = 3185;
+    private static final String GOOGLE_DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+    private static final String GOOGLE_EMAIL_SCOPE = "https://www.googleapis.com/auth/userinfo.email";
+    private String pendingGoogleDriveRequest;
+    private GoogleDriveTokenUse pendingGoogleDriveUse;
+    private volatile boolean googleDriveAuthInProgress = false;
     private static final String HOME = "https://" + Network.APP_HOST + "/index.html";
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        if(state!=null){pendingFolderRequest=state.getString("folderRequestId");pendingSyncFolderRequest=state.getString("syncFolderRequestId");pendingBackupSave=state.getString("backupSaveRequestId");pendingBackupOpen=state.getString("backupOpenRequestId");openUpdates.set(state.getBoolean("openUpdates",false));openDownloads.set(state.getBoolean("openDownloads",false));}
+        if(state!=null){pendingFolderRequest=state.getString("folderRequestId");pendingSyncFolderRequest=state.getString("syncFolderRequestId");pendingBackupSave=state.getString("backupSaveRequestId");pendingBackupOpen=state.getString("backupOpenRequestId");pendingGoogleDriveRequest=state.getString("googleDriveRequestId");googleDriveAuthInProgress=pendingGoogleDriveRequest!=null;openUpdates.set(state.getBoolean("openUpdates",false));openDownloads.set(state.getBoolean("openDownloads",false));}
         if(getIntent()!=null&&getIntent().getBooleanExtra(EpisodeNotifier.EXTRA_OPEN,false)){openUpdates.set(true);getIntent().removeExtra(EpisodeNotifier.EXTRA_OPEN);}
         if(getIntent()!=null&&getIntent().getBooleanExtra(DownloadWorker.EXTRA_OPEN_DOWNLOADS,false)){openDownloads.set(true);getIntent().removeExtra(DownloadWorker.EXTRA_OPEN_DOWNLOADS);}
         EpisodeNotifier.ensureChannel(this);
@@ -422,6 +444,48 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
             requests.execute(()->{try{sendChunks(id,SyncStore.writeFile(MainActivity.this,name,text).toString(),null);}
                 catch(Exception e){sendChunks(id,"",SyncStore.safeMessage(e));}});
         }
+        @JavascriptInterface public void googleDriveSyncSettings(String id) {
+            if(id==null||!id.matches("[0-9]{1,12}"))return;
+            requests.execute(()->{try{sendChunks(id,GoogleDriveSyncStore.settings(MainActivity.this).toString(),null);}
+                catch(Exception e){sendChunks(id,"","Could not read Google Drive sync settings.");}});
+        }
+        @JavascriptInterface public void connectGoogleDriveSync(String id) {
+            if(id==null||!id.matches("[0-9]{1,12}"))return;
+            runOnUiThread(()->{
+                if(pendingFolderRequest!=null||pendingSyncFolderRequest!=null){sendChunks(id,"","A folder picker is already open.");return;}
+                authorizeGoogleDrive(id,true,(request,result)->finishGoogleDriveConnect(request,result));
+            });
+        }
+        @JavascriptInterface public void disconnectGoogleDriveSync(String id) {
+            if(id==null||!id.matches("[0-9]{1,12}"))return;
+            runOnUiThread(()->disconnectGoogleDrive(id));
+        }
+        @JavascriptInterface public void readGoogleDriveSyncFiles(String id) {
+            if(id==null||!id.matches("[0-9]{1,12}"))return;
+            runOnUiThread(()->{
+                if(!GoogleDriveSyncStore.isConnected(MainActivity.this)){sendChunks(id,"",GoogleDriveSyncStore.RECONNECT_MESSAGE);return;}
+                authorizeGoogleDrive(id,false,(request,result)->requests.execute(()->{
+                    try{sendChunks(request,GoogleDriveSyncStore.readFiles(MainActivity.this,result.getAccessToken()).toString(),null);}
+                    catch(Exception e){
+                        if(GoogleDriveSyncStore.isAuthorizationError(e))GoogleDriveSyncStore.markNeedsReconnect(MainActivity.this);
+                        sendChunks(request,"",GoogleDriveSyncStore.safeMessage(e));
+                    }
+                }));
+            });
+        }
+        @JavascriptInterface public void writeGoogleDriveSyncFile(String id,String name,String text) {
+            if(id==null||!id.matches("[0-9]{1,12}"))return;
+            runOnUiThread(()->{
+                if(!GoogleDriveSyncStore.isConnected(MainActivity.this)){sendChunks(id,"",GoogleDriveSyncStore.RECONNECT_MESSAGE);return;}
+                authorizeGoogleDrive(id,false,(request,result)->requests.execute(()->{
+                    try{sendChunks(request,GoogleDriveSyncStore.writeFile(MainActivity.this,result.getAccessToken(),name,text).toString(),null);}
+                    catch(Exception e){
+                        if(GoogleDriveSyncStore.isAuthorizationError(e))GoogleDriveSyncStore.markNeedsReconnect(MainActivity.this);
+                        sendChunks(request,"",GoogleDriveSyncStore.safeMessage(e));
+                    }
+                }));
+            });
+        }
         @JavascriptInterface public void clearDownloadFolder(String id) {
             if(id==null||!id.matches("[0-9]{1,12}"))return;
             requests.execute(()->{try{sendChunks(id,ExportStore.clearFolder(MainActivity.this).toString(),null);}
@@ -465,6 +529,180 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
         if(message!=null&&(message.startsWith("Add a title")||message.startsWith("Too many collection")||message.startsWith("A collection title")||message.startsWith("Collection snapshot")))return message;
         return "Could not read or schedule episode updates. Please try again.";
     }
+    private static List<Scope> googleDriveScopes() {
+        return Arrays.asList(
+            new Scope(GOOGLE_DRIVE_FILE_SCOPE),
+            new Scope(GOOGLE_EMAIL_SCOPE)
+        );
+    }
+
+    private void authorizeGoogleDrive(String requestId, boolean interactive, GoogleDriveTokenUse use) {
+        if (googleDriveAuthInProgress || pendingGoogleDriveRequest != null) {
+            sendChunks(requestId, "", "Google Drive sign-in is already in progress.");
+            return;
+        }
+        googleDriveAuthInProgress = true;
+        try {
+            AuthorizationRequest request = AuthorizationRequest.builder()
+                .setRequestedScopes(googleDriveScopes())
+                .build();
+            Identity.getAuthorizationClient(this).authorize(request)
+                .addOnSuccessListener(this, result -> {
+                    if (result.hasResolution()) {
+                        if (!interactive || result.getPendingIntent() == null) {
+                            googleDriveAuthInProgress = false;
+                            GoogleDriveSyncStore.markNeedsReconnect(this);
+                            sendChunks(requestId, "", GoogleDriveSyncStore.RECONNECT_MESSAGE);
+                            return;
+                        }
+                        pendingGoogleDriveRequest = requestId;
+                        pendingGoogleDriveUse = use;
+                        try {
+                            startIntentSenderForResult(
+                                result.getPendingIntent().getIntentSender(),
+                                GOOGLE_DRIVE_AUTHORIZE, null, 0, 0, 0, null);
+                        } catch (IntentSender.SendIntentException e) {
+                            pendingGoogleDriveRequest = null;
+                            pendingGoogleDriveUse = null;
+                            googleDriveAuthInProgress = false;
+                            sendChunks(requestId, "", "Could not open Google sign-in. Try again.");
+                        }
+                        return;
+                    }
+                    googleDriveAuthInProgress = false;
+                    handleGoogleDriveAuthorization(requestId, result, use);
+                })
+                .addOnFailureListener(this, error -> {
+                    googleDriveAuthInProgress = false;
+                    sendChunks(requestId, "", googleDriveAuthMessage(error));
+                });
+        } catch (Exception error) {
+            googleDriveAuthInProgress = false;
+            sendChunks(requestId, "", googleDriveAuthMessage(error));
+        }
+    }
+
+    private void handleGoogleDriveAuthorization(String requestId, AuthorizationResult result, GoogleDriveTokenUse use) {
+        String token = result == null ? null : result.getAccessToken();
+        if (token == null || token.trim().isEmpty()) {
+            sendChunks(requestId, "", GoogleDriveSyncStore.RECONNECT_MESSAGE);
+            return;
+        }
+        try {
+            List<String> granted = result.getGrantedScopes();
+            if (granted != null && !granted.isEmpty()
+                    && !granted.contains(GOOGLE_DRIVE_FILE_SCOPE)) {
+                sendChunks(requestId, "", "Google Drive permission was not granted. Connect again and allow Mikozora to use files it creates.");
+                return;
+            }
+        } catch (Exception ignored) {}
+        if (use != null) use.use(requestId, result);
+        else finishGoogleDriveConnect(requestId, result);
+    }
+
+    private void finishGoogleDriveConnect(String requestId, AuthorizationResult result) {
+        requests.execute(() -> {
+            try {
+                String token = result.getAccessToken();
+                String account = "";
+                String displayName = "";
+                try {
+                    GoogleSignInAccount googleAccount = result.toGoogleSignInAccount();
+                    if (googleAccount != null) {
+                        account = googleAccount.getEmail() == null ? "" : googleAccount.getEmail();
+                        displayName = googleAccount.getDisplayName() == null ? "" : googleAccount.getDisplayName();
+                        if (account.isEmpty() && googleAccount.getAccount() != null)
+                            account = googleAccount.getAccount().name == null ? "" : googleAccount.getAccount().name;
+                    }
+                } catch (Exception ignored) {}
+                JSONObject profile = GoogleDriveSyncStore.profile(token);
+                String profileAccount = profile.optString("account", "");
+                String profileName = profile.optString("displayName", "");
+                if (!profileAccount.isEmpty()) account = profileAccount;
+                if (!profileName.isEmpty()) displayName = profileName;
+                String folderId = GoogleDriveSyncStore.ensureFolder(this, token);
+                JSONObject settings = GoogleDriveSyncStore.saveConnected(this, account, displayName, folderId);
+                sendChunks(requestId, settings.toString(), null);
+            } catch (Exception error) {
+                if (GoogleDriveSyncStore.isAuthorizationError(error)) GoogleDriveSyncStore.markNeedsReconnect(this);
+                sendChunks(requestId, "", GoogleDriveSyncStore.safeMessage(error));
+            }
+        });
+    }
+
+    private void disconnectGoogleDrive(String requestId) {
+        Runnable finish = () -> requests.execute(() -> {
+            try { sendChunks(requestId, GoogleDriveSyncStore.clear(this).toString(), null); }
+            catch (Exception error) { sendChunks(requestId, "", GoogleDriveSyncStore.safeMessage(error)); }
+        });
+        String account = GoogleDriveSyncStore.account(this);
+        if (account == null || account.trim().isEmpty()) {
+            finish.run();
+            return;
+        }
+        try {
+            RevokeAccessRequest request = RevokeAccessRequest.builder()
+                .setAccount(new Account(account, "com.google"))
+                .setScopes(googleDriveScopes())
+                .build();
+            Identity.getAuthorizationClient(this).revokeAccess(request)
+                .addOnSuccessListener(this, ignored -> finish.run())
+                .addOnFailureListener(this, ignored -> finish.run());
+        } catch (Exception ignored) {
+            finish.run();
+        }
+    }
+
+    private void finishGoogleDriveAuthorization(int resultCode, Intent data) {
+        String request = pendingGoogleDriveRequest;
+        GoogleDriveTokenUse use = pendingGoogleDriveUse;
+        pendingGoogleDriveRequest = null;
+        pendingGoogleDriveUse = null;
+        googleDriveAuthInProgress = false;
+        if (request == null) return;
+        if (resultCode != RESULT_OK || data == null) {
+            requests.execute(() -> {
+                try {
+                    JSONObject state = GoogleDriveSyncStore.settings(this);
+                    state.put("canceled", true);
+                    sendChunks(request, state.toString(), null);
+                } catch (Exception error) {
+                    sendChunks(request, "", "Google sign-in was canceled.");
+                }
+            });
+            return;
+        }
+        try {
+            AuthorizationResult result = Identity.getAuthorizationClient(this)
+                .getAuthorizationResultFromIntent(data);
+            handleGoogleDriveAuthorization(request, result, use);
+        } catch (ApiException error) {
+            sendChunks(request, "", googleDriveAuthMessage(error));
+        } catch (Exception error) {
+            sendChunks(request, "", googleDriveAuthMessage(error));
+        }
+    }
+
+    private static String googleDriveAuthMessage(Exception error) {
+        if (error instanceof ApiException) {
+            int status = ((ApiException) error).getStatusCode();
+            if (status == CommonStatusCodes.DEVELOPER_ERROR)
+                return "Google Drive is not configured for this Mikozora build yet.";
+            if (status == CommonStatusCodes.NETWORK_ERROR)
+                return "Could not reach Google. Check your internet connection and try again.";
+            if (status == CommonStatusCodes.SIGN_IN_REQUIRED)
+                return GoogleDriveSyncStore.RECONNECT_MESSAGE;
+            if (status == CommonStatusCodes.CANCELED)
+                return "Google sign-in was canceled.";
+            if (status == CommonStatusCodes.SERVICE_MISSING
+                    || status == CommonStatusCodes.SERVICE_VERSION_UPDATE_REQUIRED
+                    || status == CommonStatusCodes.SERVICE_DISABLED
+                    || status == CommonStatusCodes.API_NOT_CONNECTED)
+                return "Google Play services is needed for Google Drive sign-in on Android.";
+        }
+        return "Could not authorize Google Drive. Try connecting again.";
+    }
+
     private void signalUpdates(){
         runOnUiThread(()->{if(!closed&&web!=null)web.evaluateJavascript("window.dispatchEvent(new Event('moku-updates-changed'))",null);});
     }
@@ -510,6 +748,7 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
         if(pendingSyncFolderRequest!=null)out.putString("syncFolderRequestId",pendingSyncFolderRequest);
         if(pendingBackupSave!=null)out.putString("backupSaveRequestId",pendingBackupSave);
         if(pendingBackupOpen!=null)out.putString("backupOpenRequestId",pendingBackupOpen);
+        if(pendingGoogleDriveRequest!=null)out.putString("googleDriveRequestId",pendingGoogleDriveRequest);
         out.putBoolean("openUpdates",openUpdates.get());
         out.putBoolean("openDownloads",openDownloads.get());
     }
@@ -517,6 +756,7 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
         super.onActivityResult(requestCode,resultCode,data);
         if(requestCode==CREATE_BACKUP_FILE){finishBackupSave(resultCode,data);return;}
         if(requestCode==OPEN_BACKUP_FILE){finishBackupOpen(resultCode,data);return;}
+        if(requestCode==GOOGLE_DRIVE_AUTHORIZE){finishGoogleDriveAuthorization(resultCode,data);return;}
         if(requestCode==PICK_SYNC_FOLDER){finishSyncFolderPick(resultCode,data);return;}
         if(requestCode!=PICK_DOWNLOAD_FOLDER)return;
         String request=pendingFolderRequest;pendingFolderRequest=null;
