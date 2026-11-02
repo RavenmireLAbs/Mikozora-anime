@@ -15,6 +15,9 @@ files:
   - build/icon.png
   - package.json
 asar: true
+# The ffmpeg executable cannot run from inside the ASAR archive.
+asarUnpack:
+  - node_modules/ffmpeg-static/**
 win:
   target:
     - target: nsis

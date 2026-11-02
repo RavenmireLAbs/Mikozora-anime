@@ -1,13 +1,23 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; older entries remain available.
-export const APP_VERSION = '0.21.1';
+export const APP_VERSION = '0.22.0';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.21.1',
+    version: '0.22.0',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Downloads arrive on Windows', description: 'The Windows app can now download episodes for offline viewing, just like Android. Queue a single episode or a batch, choose an available server and quality, and Mikozora resolves the media privately, saves the right subtitles and converts streams into playable MP4 files.' },
+      { title: 'Watch without a connection', description: 'Completed downloads open in a built-in offline player on Windows, with saved subtitle tracks and your place remembered on that computer. Interrupted downloads resume their saved work when they can instead of starting over.' },
+      { title: 'Keep a folder copy', description: 'Choose a download folder on Windows and Mikozora can save one folder per series with the episode MP4 and matching subtitles. New downloads are copied automatically, older ones can be saved with “Save to folder”, and every copy is verified before the in-app copy is removed.' },
+      { title: 'Android stays just as it was', description: 'Android downloads, offline playback and folder export are unchanged. Background new-episode alerts are the remaining Windows feature still to come.' },
+    ],
+  },
+  {
+    version: '0.21.1',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Windows playback fixed', description: 'Third-party video hosts could reject episodes in the Windows app with a 410 error because the player embed arrived from the app’s private origin instead of the source site that supplied it. Windows now presents the same source-origin context as the Android player. Android playback is unchanged.' },
     ],

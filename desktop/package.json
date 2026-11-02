@@ -1,8 +1,8 @@
 {
   "name": "mikozora",
   "productName": "Mikozora",
-  "version": "0.21.1",
-  "description": "Mikozora for Windows — browse, watch and track anime and donghua.",
+  "version": "0.22.0",
+  "description": "Mikozora for Windows \u2014 browse, watch and track anime and donghua.",
   "private": true,
   "type": "module",
   "main": "src/main.js",
@@ -14,5 +14,9 @@
   "devDependencies": {
     "electron": "^45.2.1",
     "electron-builder": "^26.18.0"
+  },
+  "dependencies": {
+    "ffmpeg-static": "^5.3.0",
+    "linkedom": "^0.18.15"
   }
 }

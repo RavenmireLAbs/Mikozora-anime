@@ -8,14 +8,18 @@
 // keeps the exact Android formats — an Android backup file imports as-is.
 import { app, BrowserWindow, Menu, protocol, shell, ipcMain, session } from 'electron';
 import { join, extname, normalize } from 'node:path';
-import { readFileSync, writeFileSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { createReadStream, readFileSync, writeFileSync } from 'node:fs';
+import { readFile, stat } from 'node:fs/promises';
+import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { allowedSource, allowedProjectRelease } from './lib/allowlist.js';
 import { get as httpGet } from './lib/http.js';
 import { backgroundFor } from './lib/appearance.js';
 import { cleanUserAgent, playerEmbedHeaders } from './lib/player-network.js';
 import { registerBridge } from './bridge.js';
+import { DownloadService } from './lib/download-service.js';
+import { createFfmpegProcessor } from './lib/ffmpeg.js';
+import ffmpegStaticPath from 'ffmpeg-static';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const APP_ORIGIN = 'mikozora://app';
@@ -27,6 +31,12 @@ protocol.registerSchemesAsPrivileged([
 
 // --- tiny settings store (appearance + window bounds) in userData ---
 let store = { get: (key, fallback) => fallback, set() {}, flush() {} };
+let downloadService = null;
+
+function bundledFfmpegPath() {
+  const raw = typeof ffmpegStaticPath === 'string' ? ffmpegStaticPath : '';
+  return raw ? raw.replace(/app\.asar(?=$|[\\/])/, 'app.asar.unpacked') : '';
+}
 function createStore() {
   const file = join(app.getPath('userData'), 'settings.json');
   let values = {};
@@ -78,9 +88,86 @@ function installPlayerNetwork() {
   });
 }
 
+function parseRange(header, size) {
+  if (!header) return { start: 0, end: size - 1, status: 200 };
+  const match = /^bytes=(\d*)-(\d*)$/.exec(String(header).trim());
+  if (!match || (!match[1] && !match[2])) return null;
+  let start;
+  let end;
+  if (!match[1]) {
+    const suffix = Number(match[2]);
+    if (!suffix) return null;
+    start = Math.max(0, size - suffix);
+    end = size - 1;
+  } else {
+    start = Number(match[1]);
+    end = match[2] ? Math.min(Number(match[2]), size - 1) : size - 1;
+  }
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start >= size || end < start) return null;
+  return { start, end, status: 206 };
+}
+
+async function handleDownloadRequest(request, url, id, subtitleIndex) {
+  const token = url.searchParams.get('token') || '';
+  if (!downloadService || !downloadService.validPlaybackToken(id, token)) {
+    return new Response('Not found', { status: 404 });
+  }
+  const source = await downloadService.playableSource(id);
+  if (!source) return new Response('Not found', { status: 404 });
+
+  // Mark the file in use before any further filesystem awaits so folder
+  // cleanup cannot delete a private copy in the gap before streaming starts.
+  downloadService.beginPlaybackUse(id);
+  let ended = false;
+  const endUse = () => {
+    if (!ended) { ended = true; downloadService.endPlaybackUse(id); }
+  };
+
+  if (subtitleIndex != null) {
+    try {
+      const text = await downloadService.subtitleContent(id, Number(subtitleIndex)).catch(() => null);
+      if (text == null) return new Response('Not found', { status: 404 });
+      return new Response(text, {
+        headers: { 'content-type': 'text/vtt; charset=utf-8', 'cache-control': 'private, no-store' },
+      });
+    } finally {
+      endUse();
+    }
+  }
+
+  let info;
+  try {
+    info = await stat(source.file);
+  } catch (error) {
+    endUse();
+    throw error;
+  }
+  const range = parseRange(request.headers.get('range'), info.size);
+  if (!range) {
+    endUse();
+    return new Response(null, {
+      status: 416,
+      headers: { 'content-range': `bytes */${info.size}`, 'accept-ranges': 'bytes' },
+    });
+  }
+  const nodeStream = createReadStream(source.file, { start: range.start, end: range.end });
+  nodeStream.once('close', endUse);
+  nodeStream.once('error', endUse);
+  const headers = {
+    'content-type': 'video/mp4',
+    'content-length': String(range.end - range.start + 1),
+    'accept-ranges': 'bytes',
+    'cache-control': 'private, no-store',
+  };
+  if (range.status === 206) headers['content-range'] = `bytes ${range.start}-${range.end}/${info.size}`;
+  return new Response(Readable.toWeb(nodeStream), { status: range.status, headers });
+}
+
 async function handleAppRequest(request) {
   try {
     const url = new URL(request.url);
+    const download = /^\/api\/download\/([a-f0-9]{32})\/(?:(video)|subtitle\/(\d{1,3}))$/.exec(url.pathname);
+    if (download) return handleDownloadRequest(request, url, download[1], download[2] ? null : download[3]);
     if (url.pathname === '/api/image') {
       const target = url.searchParams.get('url') || '';
       const cached = imageCache.get(target);
@@ -164,9 +251,16 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     store = createStore();
     installPlayerNetwork();
+    downloadService = new DownloadService({
+      baseDir: join(app.getPath('userData'), 'downloads'),
+      store,
+      mediaProcessor: createFfmpegProcessor(bundledFfmpegPath()),
+    });
+    downloadService.init().catch(() => {});
     protocol.handle('mikozora', handleAppRequest);
-    registerBridge(ipcMain, () => win, store, (referer) => { currentPlayerReferer = referer; });
+    registerBridge(ipcMain, () => win, store, (referer) => { currentPlayerReferer = referer; }, downloadService);
     createWindow();
   });
   app.on('window-all-closed', () => app.quit());
+  app.on('before-quit', () => { void downloadService?.shutdown(); store.flush(); });
 }
