@@ -1,13 +1,23 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; the app shows only that newest entry.
-export const APP_VERSION = '0.27.1';
+export const APP_VERSION = '0.28.0';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.27.1',
+    version: '0.28.0',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Picks shaped by your watching', description: 'Discover now adds a “Made for your taste” rail built only from this device’s library, history, watch progress and your own ratings or shelf choices. Cards explain matching genres, and your most-watched genres are shown above the rail. Browse can also show saved or not-yet-saved titles and sort the results already loaded—including a “For you” order. Nothing about your taste is uploaded.' },
+      { title: 'Your own shelf for every story', description: 'Open any series to add a five-star rating, a Plan to watch/Watching/Paused/Completed/Dropped shelf status and a private note. Adding one to an unsaved title saves it to your library automatically. Library now shows progress and shelf statistics and can search, sort, filter and bulk-add or bulk-remove selected titles. Your shelf is included in backups and shared-folder device sync.' },
+      { title: 'Find the right episode faster', description: 'Series pages can jump straight to an episode number, open the next unwatched episode, mark everything through an episode watched, and select a numeric range for batch actions. The Windows and Android online players add the same next-unwatched and episode-number tools, watched counts, a current-episode watched/unwatched toggle, and previous/next server buttons beside the server list.' },
+      { title: 'Better offline playback controls', description: 'Downloaded episodes now offer playback speed, 10-second back/forward seeks and restart in both the Android and Windows offline players, while your saved place continues to be remembered on that device. Online episodes still play inside each server’s embedded player, so speed and seeking there remain under that server player’s control; Mikozora’s new controls handle episodes, servers and watched marks around it.' },
+    ],
+  },
+  {
+    version: '0.27.1',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Google Drive sync removed', description: 'Direct Google Drive sync has been removed from Mikozora. Settings → Device Sync now uses the shared-folder method only: choose the same folder kept by Syncthing, OneDrive, Dropbox, a NAS, or another file-sync service on Android and Windows.' },
       { title: 'Your data stays put', description: 'Removing the Drive transport does not delete your library, collections, history, watch progress, downloads, or the old Mikozora folder/files in Google Drive. Local Google connection state is cleared where Mikozora stored it. If you used Drive sync in 0.27.0, choose a shared folder on both devices and Mikozora will publish and merge each device’s current data there; delete the old Drive folder yourself if you no longer want it.' },

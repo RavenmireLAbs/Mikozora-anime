@@ -11,6 +11,7 @@ import { APPEARANCE_KEY } from './appearance.js';
 import { CONTENT_KEY } from './content.js';
 import { UPDATE_KEY } from './update.js';
 import { SMART_DOWNLOADS_KEY } from './smart-downloads.js';
+import { LIBRARY_META_KEY } from './library-meta.js';
 
 export const BACKUP_FORMAT = 'mikozora-backup';
 export const BACKUP_VERSION = 1;
@@ -18,6 +19,7 @@ export const BACKUP_VERSION = 1;
 export const BACKUP_KEYS = [
   'moku.library.v1',
   COLLECTIONS_KEY,
+  LIBRARY_META_KEY,
   'moku.history.v1',
   PROGRESS_KEY,
   APPEARANCE_KEY,
