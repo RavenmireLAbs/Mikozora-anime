@@ -132,6 +132,24 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
         });
     }
 
+    @Override public void onWatchedChanged(String url, boolean watched) {
+        if (url == null || url.length() > 4096 || !Network.allowedSource(url)) {
+            PlayerNavigation.reportWatchedRejected(url, watched);
+            return;
+        }
+        String script = "(function(){try{if(window.__mokuPlayerWatched){return window.__mokuPlayerWatched("
+            + JSONObject.quote(url) + "," + watched + ")===true;}}catch(e){}return false;})()";
+        runOnUiThread(() -> {
+            if (closed || web == null) {
+                PlayerNavigation.reportWatchedRejected(url, watched);
+                return;
+            }
+            web.evaluateJavascript(script, result -> {
+                if (!"true".equals(result)) PlayerNavigation.reportWatchedRejected(url, watched);
+            });
+        });
+    }
+
     @Override public void onPlayerClosed() {
         runOnUiThread(() -> {
             if (!closed && web != null) {

@@ -17,6 +17,7 @@ import { PROGRESS_KEY, normalizeProgress } from './progress.js';
 import { APPEARANCE_KEY, normalizeAppearance } from './appearance.js';
 import { CONTENT_KEY, normalizeContentPrefs } from './content.js';
 import { SMART_DOWNLOADS_KEY, normalizeSmartDownloads } from './smart-downloads.js';
+import { LIBRARY_META_KEY, PERSONAL_STATUSES, normalizeLibraryMeta } from './library-meta.js';
 
 export const LIBRARY_KEY = 'moku.library.v1';
 export const HISTORY_KEY = 'moku.history.v1';
@@ -33,6 +34,7 @@ const MAX_META_LIBRARY = 5000;
 const MAX_META_COLLECTIONS = 500;
 const MAX_META_HISTORY = 1000;
 const MAX_META_PROGRESS = 500;
+const MAX_META_LIBRARY_META = 1000;
 const MAX_META_SET = 10000;
 const SMART_SCALARS = ['enabled', 'wifiOnly', 'maxUnwatchedPerSeries', 'notifyWhenReady'];
 const ITEM_FIELDS = ['source', 'url', 'title', 'image', 'type', 'badge', 'status', 'genres', 'aired', 'year', 'rating', 'nsfw'];
@@ -186,6 +188,34 @@ function historyId(entry) {
   return key && entry?.episode?.url ? `${key}\n${entry.episode.url}` : '';
 }
 
+const PERSONAL_STATUS_IDS = new Set(PERSONAL_STATUSES.map((status) => status.id));
+
+function cleanLibraryMetaRecord(raw) {
+  if (!isObject(raw)) return null;
+  const ratingNumber = Number(raw.rating);
+  const rating = Number.isFinite(ratingNumber) ? Math.max(0, Math.min(5, Math.trunc(ratingNumber))) : 0;
+  const note = String(raw.note ?? '')
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, ' ')
+    .slice(0, 600);
+  const status = PERSONAL_STATUS_IDS.has(raw.status) ? raw.status : '';
+  if (!rating && !note.trim() && !status) return null;
+  return { rating, note, status, updatedAt: timestamp(raw.updatedAt) };
+}
+
+function cleanLibraryMeta(raw, validLibraryKeys = null) {
+  const out = {};
+  if (!isObject(raw)) return out;
+  for (const [rawKey, rawRecord] of Object.entries(raw)) {
+    const key = cleanTitleKey(rawKey);
+    if (!key || (validLibraryKeys && !validLibraryKeys.has(key))) continue;
+    const record = cleanLibraryMetaRecord(rawRecord);
+    if (!record) continue;
+    setOwn(out, key, record);
+    if (Object.keys(out).length >= MAX_META_LIBRARY_META) break;
+  }
+  return normalizeLibraryMeta(out);
+}
+
 export function sanitizeSyncSnapshot(raw) {
   const value = isObject(raw) ? raw : {};
 
@@ -235,6 +265,7 @@ export function sanitizeSyncSnapshot(raw) {
     collections,
     history,
     progress,
+    libraryMeta: cleanLibraryMeta(value.libraryMeta, new Set(libraryByKey.keys())),
     appearance: normalizeAppearance(value.appearance),
     content: normalizeContentPrefs(value.content),
     smartDownloads: normalizeSmartDownloads(value.smartDownloads),
@@ -247,6 +278,7 @@ export function snapshotFromStorage(storage) {
     collections: readStoredJson(storage, COLLECTIONS_KEY, []),
     history: readStoredJson(storage, HISTORY_KEY, []),
     progress: readStoredJson(storage, PROGRESS_KEY, []),
+    libraryMeta: readStoredJson(storage, LIBRARY_META_KEY, {}),
     appearance: readStoredJson(storage, APPEARANCE_KEY, null),
     content: readStoredJson(storage, CONTENT_KEY, null),
     smartDownloads: readStoredJson(storage, SMART_DOWNLOADS_KEY, null),
@@ -260,6 +292,7 @@ export function applySyncSnapshotToStorage(storage, snapshot) {
     [COLLECTIONS_KEY, clean.collections],
     [HISTORY_KEY, clean.history],
     [PROGRESS_KEY, clean.progress],
+    [LIBRARY_META_KEY, clean.libraryMeta],
     [APPEARANCE_KEY, clean.appearance],
     [CONTENT_KEY, clean.content],
     [SMART_DOWNLOADS_KEY, clean.smartDownloads],
@@ -325,6 +358,7 @@ export function emptySyncRecordMeta() {
     collections: {},
     history: {},
     progress: {},
+    libraryMeta: {},
     settings: {
       appearance: null,
       content: null,
@@ -365,6 +399,7 @@ export function sanitizeSyncRecordMeta(raw) {
     collections,
     history,
     progress,
+    libraryMeta: sanitizeTitleRecordMap(value.libraryMeta, MAX_META_LIBRARY_META),
     settings: {
       appearance: sanitizeBaseRecord(settings.appearance),
       content: sanitizeBaseRecord(settings.content),
@@ -487,6 +522,10 @@ export function stampSyncSnapshot(snapshot, previousMeta, now = Date.now()) {
     if (!progressIds.has(key) && !record.deletedAt) record.deletedAt = eventNow;
   }
 
+  const libraryMetaTimes = {};
+  for (const [key, record] of Object.entries(data.libraryMeta)) setOwn(libraryMetaTimes, key, record.updatedAt);
+  stampBaseMap(meta.libraryMeta, data.libraryMeta, eventNow, libraryMetaTimes);
+
   meta.settings.appearance = stampScalar(meta.settings.appearance, data.appearance, eventNow);
   meta.settings.content = stampScalar(meta.settings.content, data.content, eventNow);
   const smartMeta = meta.settings.smartDownloads;
@@ -521,6 +560,7 @@ function pruneSyncRecordMeta(meta) {
   clean.history = pruneMap(clean.history, MAX_META_HISTORY);
   clean.progress = pruneMap(clean.progress, MAX_META_PROGRESS);
   for (const record of Object.values(clean.progress)) record.watched = pruneMap(record.watched, MAX_META_SET, (entry) => timestamp(entry?.updatedAt));
+  clean.libraryMeta = pruneMap(clean.libraryMeta, MAX_META_LIBRARY_META);
   const smart = clean.settings.smartDownloads;
   smart.titleKeys = pruneMap(smart.titleKeys, MAX_META_SET, (entry) => timestamp(entry?.updatedAt));
   smart.collectionIds = pruneMap(smart.collectionIds, MAX_META_SET, (entry) => timestamp(entry?.updatedAt));
@@ -867,6 +907,12 @@ export function mergeDeviceSyncSnapshots(localCandidate, peerCandidates = []) {
     progress.push({ key, item: chosen.item, episodes: chosen.episodes || [], watched, updatedAt });
   }
 
+  const libraryMetaMerged = mergeBaseRecords(
+    candidates,
+    (candidate) => candidate.data.libraryMeta,
+    (candidate) => candidate.meta.libraryMeta,
+  );
+
   const appearanceChoice = scalarCandidate(candidates, (candidate) => candidate.data.appearance, (candidate) => candidate.meta.settings.appearance);
   const contentChoice = scalarCandidate(candidates, (candidate) => candidate.data.content, (candidate) => candidate.meta.settings.content);
   const smart = { ...candidates[0].data.smartDownloads };
@@ -901,6 +947,7 @@ export function mergeDeviceSyncSnapshots(localCandidate, peerCandidates = []) {
     collections,
     history,
     progress,
+    libraryMeta: libraryMetaMerged.values,
     appearance: appearanceChoice?.value,
     content: contentChoice?.value,
     smartDownloads: smart,
@@ -911,6 +958,7 @@ export function mergeDeviceSyncSnapshots(localCandidate, peerCandidates = []) {
     collections: collectionMeta,
     history: historyMerged.meta,
     progress: progressMeta,
+    libraryMeta: libraryMetaMerged.meta,
     settings: {
       appearance: appearanceChoice ? { hash: hashValue(appearanceChoice.value), updatedAt: appearanceChoice.updatedAt, deletedAt: 0 } : null,
       content: contentChoice ? { hash: hashValue(contentChoice.value), updatedAt: contentChoice.updatedAt, deletedAt: 0 } : null,
@@ -924,6 +972,10 @@ export function mergeDeviceSyncSnapshots(localCandidate, peerCandidates = []) {
   const retainedProgress = new Set(data.progress.map((entry) => entry.key));
   for (const [key, record] of Object.entries(meta.progress)) {
     if (!retainedProgress.has(key) && !record.deletedAt) record.deletedAt = Math.max(1, record.updatedAt || 1);
+  }
+  const retainedLibraryMeta = new Set(Object.keys(data.libraryMeta));
+  for (const [key, record] of Object.entries(meta.libraryMeta)) {
+    if (!retainedLibraryMeta.has(key) && !record.deletedAt) record.deletedAt = Math.max(1, record.updatedAt || 1);
   }
 
   return { data, meta, clock: Math.max(...candidates.map((candidate) => maxMetaClock(candidate.meta)), maxMetaClock(meta)) };

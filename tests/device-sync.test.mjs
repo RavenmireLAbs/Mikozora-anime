@@ -49,6 +49,7 @@ test('prepares a bounded own-device file and does not republish an unchanged sna
     collections: [{ id: 'favourites', name: 'Favourites', items: [keyOf(item(1))] }],
     history: [{ item: item(1), episode: ep(1, 1), time: 900 }],
     progress: [],
+    libraryMeta: { [keyOf(item(1))]: { rating: 5, note: 'A favourite\nweekend watch', status: 'watching', updatedAt: 900 } },
     appearance: { mode: 'light', accent: 'pink' },
     content: { hideNsfw: true },
     smartDownloads: { enabled: true },
@@ -60,11 +61,14 @@ test('prepares a bounded own-device file and does not republish an unchanged sna
   assert.equal(first.fileName, 'mikozora-sync-android-aaaaaaaaaaaaaaaa.json');
   assert.equal(first.shouldWrite, true);
   assert.deepEqual(Object.keys(first.payload.data).sort(), [
-    'appearance', 'collections', 'content', 'history', 'library', 'progress', 'smartDownloads',
+    'appearance', 'collections', 'content', 'history', 'library', 'libraryMeta', 'progress', 'smartDownloads',
   ]);
   assert.equal(JSON.stringify(first.payload).includes('9.9.9'), false);
   assert.equal(parseDeviceSyncFile(first.payloadText)?.deviceId, 'aaaaaaaaaaaaaaaa');
+  assert.equal(first.payload.data.libraryMeta[keyOf(item(1))]?.rating, 5);
+  assert.equal(first.payload.data.libraryMeta[keyOf(item(1))]?.note, 'A favourite\nweekend watch');
   assert.ok(JSON.parse(store.getItem(DEVICE_SYNC_KEY)).recordMeta.library[keyOf(item(1))]);
+  assert.ok(JSON.parse(store.getItem(DEVICE_SYNC_KEY)).recordMeta.libraryMeta[keyOf(item(1))]);
 
   const second = prepareDeviceSync(store, [], { platform: 'android', now: 2000 });
   assert.equal(second.shouldWrite, false);
@@ -187,6 +191,38 @@ test('unwatching an episode and removing a collection member propagate', () => {
   assert.deepEqual(merged.collections.find((collection) => collection.id === 'favourites')?.items, []);
   assert.deepEqual(merged.history.map((entry) => entry.episode.url), [ep(1, 1).url]);
   assert.deepEqual(merged.progress[0]?.watched, [ep(1, 1).url]);
+});
+
+test('personal shelf records converge, update and clear across devices', () => {
+  const series = item(1);
+  const key = keyOf(series);
+  const android = seed(new Store(), {
+    library: [series],
+    libraryMeta: { [key]: { rating: 5, note: 'Start here', status: 'watching', updatedAt: 900 } },
+  }, 'android', 'aaaaaaaaaaaaaaaa');
+  const windows = seed(new Store(), { library: [] }, 'windows', 'bbbbbbbbbbbbbbbb');
+
+  const androidFile = publish(android, [], 'android', 1000);
+  publish(windows, [androidFile.payloadText], 'windows', 2000);
+  assert.deepEqual(snapshotFromStorage(windows).libraryMeta[key], {
+    rating: 5, note: 'Start here', status: 'watching', updatedAt: 900,
+  });
+
+  applySyncSnapshotToStorage(windows, {
+    ...snapshotFromStorage(windows),
+    libraryMeta: { [key]: { rating: 4, note: 'Paused at episode 8', status: 'paused', updatedAt: 2500 } },
+  });
+  const windowsFile = publish(windows, [], 'windows', 3000);
+  publish(android, [windowsFile.payloadText], 'android', 4000);
+  assert.deepEqual(snapshotFromStorage(android).libraryMeta[key], {
+    rating: 4, note: 'Paused at episode 8', status: 'paused', updatedAt: 2500,
+  });
+
+  applySyncSnapshotToStorage(windows, { ...snapshotFromStorage(windows), libraryMeta: {} });
+  const clearedWindowsFile = publish(windows, [], 'windows', 5000);
+  publish(android, [clearedWindowsFile.payloadText], 'android', 6000);
+  assert.equal(snapshotFromStorage(android).libraryMeta[key], undefined);
+  assert.ok(JSON.parse(android.getItem(DEVICE_SYNC_KEY)).recordMeta.libraryMeta[key].deletedAt > 0);
 });
 
 test('malformed, future and own peer files are ignored safely', () => {

@@ -9,8 +9,10 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
+import android.text.InputType;
 import android.text.TextUtils;
 import android.view.Gravity;
+import android.view.inputmethod.EditorInfo;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -23,6 +25,7 @@ import android.webkit.WebViewClient;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
@@ -42,7 +45,7 @@ public final class PlayerActivity extends Activity implements PlayerNavigation.E
         final String number;
         final String url;
         final String title;
-        final boolean watched;
+        boolean watched;
 
         EpisodeEntry(String number, String url, String title, boolean watched) {
             this.number = number;
@@ -69,17 +72,20 @@ public final class PlayerActivity extends Activity implements PlayerNavigation.E
     private ProgressBar progress;
     private View fullScreenView;
     private WebChromeClient.CustomViewCallback fullScreenCallback;
-    private TextView titleView, subtitleView, episodeCountView, navigationStatus;
+    private TextView titleView, subtitleView, episodeCountView, navigationStatus, serverPositionView;
     private Spinner serverSpinner;
     private ArrayAdapter<String> serverAdapter;
     private LinearLayout episodePanel, episodeRail;
     private HorizontalScrollView episodeScroll;
-    private Button previousButton, nextButton;
+    private Button previousButton, nextButton, nextUnwatchedButton, watchedToggleButton;
+    private Button previousServerButton, nextServerButton;
+    private EditText episodeJumpInput;
     private String episodeUrl = "";
     private String loadedServerUrl = "";
     private String loadedEpisodeUrl = "";
     private int episodeIndex = -1;
     private int pendingEpisodeIndex = -1;
+    private int currentServerIndex = 0;
     private boolean switchingEpisode = false;
     private boolean applyingPayload = false;
     private final List<String> serverNames = new ArrayList<>();
@@ -335,7 +341,56 @@ public final class PlayerActivity extends Activity implements PlayerNavigation.E
         LinearLayout.LayoutParams railParams = new LinearLayout.LayoutParams(-1, -2);
         railParams.topMargin = dp(9);
         episodePanel.addView(episodeScroll, railParams);
+
+        nextUnwatchedButton = playerButton("Next unwatched");
+        nextUnwatchedButton.setOnClickListener(v -> {
+            int target = firstUnwatchedIndex();
+            if (target >= 0 && target != episodeIndex) requestEpisode(target);
+        });
+        LinearLayout.LayoutParams unwatchedParams = new LinearLayout.LayoutParams(-1, dp(44));
+        unwatchedParams.topMargin = dp(9);
+        episodePanel.addView(nextUnwatchedButton, unwatchedParams);
+
+        LinearLayout jumpRow = new LinearLayout(this);
+        jumpRow.setOrientation(LinearLayout.HORIZONTAL);
+        jumpRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView jumpLabel = label("EPISODE #", 10, MUTED, true);
+        jumpLabel.setLetterSpacing(.12f);
+        jumpRow.addView(jumpLabel, new LinearLayout.LayoutParams(dp(82), -2));
+        episodeJumpInput = new EditText(this);
+        episodeJumpInput.setSingleLine(true);
+        episodeJumpInput.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        episodeJumpInput.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        episodeJumpInput.setHint("Jump");
+        episodeJumpInput.setHintTextColor(MUTED);
+        episodeJumpInput.setTextColor(LIGHT);
+        episodeJumpInput.setTextSize(12);
+        episodeJumpInput.setBackground(shape(PANEL, 8, BORDER));
+        episodeJumpInput.setPadding(dp(11), 0, dp(11), 0);
+        episodeJumpInput.setContentDescription("Jump to episode number");
+        episodeJumpInput.setOnEditorActionListener((view, actionId, event) -> {
+            if (actionId == EditorInfo.IME_ACTION_DONE) {
+                jumpToEpisode();
+                return true;
+            }
+            return false;
+        });
+        jumpRow.addView(episodeJumpInput, new LinearLayout.LayoutParams(0, dp(44), 1));
+        Button jumpButton = playerButton("Go");
+        jumpButton.setOnClickListener(v -> jumpToEpisode());
+        LinearLayout.LayoutParams jumpButtonParams = new LinearLayout.LayoutParams(dp(64), dp(44));
+        jumpButtonParams.leftMargin = dp(8);
+        jumpRow.addView(jumpButton, jumpButtonParams);
+        LinearLayout.LayoutParams jumpParams = new LinearLayout.LayoutParams(-1, -2);
+        jumpParams.topMargin = dp(9);
+        episodePanel.addView(jumpRow, jumpParams);
         controls.addView(episodePanel);
+
+        watchedToggleButton = playerButton("Mark episode watched");
+        watchedToggleButton.setOnClickListener(v -> toggleCurrentWatched());
+        LinearLayout.LayoutParams watchedParams = new LinearLayout.LayoutParams(-1, dp(44));
+        watchedParams.topMargin = dp(12);
+        controls.addView(watchedToggleButton, watchedParams);
 
         navigationStatus = label("", 12, MUTED, false);
         navigationStatus.setLineSpacing(dp(3), 1f);
@@ -373,15 +428,40 @@ public final class PlayerActivity extends Activity implements PlayerNavigation.E
         LinearLayout.LayoutParams spinnerParams = new LinearLayout.LayoutParams(-1, dp(50));
         spinnerParams.topMargin = dp(9);
         controls.addView(serverSpinner, spinnerParams);
+
+        LinearLayout serverCycleRow = new LinearLayout(this);
+        serverCycleRow.setOrientation(LinearLayout.HORIZONTAL);
+        serverCycleRow.setGravity(Gravity.CENTER_VERTICAL);
+        previousServerButton = playerButton("‹  Previous server");
+        previousServerButton.setContentDescription("Previous video server");
+        previousServerButton.setOnClickListener(v -> cycleServer(-1));
+        serverCycleRow.addView(previousServerButton, new LinearLayout.LayoutParams(0, dp(42), 1));
+        serverPositionView = label("", 11, MUTED, true);
+        serverPositionView.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams serverPositionParams = new LinearLayout.LayoutParams(dp(52), -2);
+        serverPositionParams.leftMargin = dp(8);
+        serverPositionParams.rightMargin = dp(8);
+        serverCycleRow.addView(serverPositionView, serverPositionParams);
+        nextServerButton = playerButton("Next server  ›");
+        nextServerButton.setContentDescription("Next video server");
+        nextServerButton.setOnClickListener(v -> cycleServer(1));
+        serverCycleRow.addView(nextServerButton, new LinearLayout.LayoutParams(0, dp(42), 1));
+        LinearLayout.LayoutParams serverCycleParams = new LinearLayout.LayoutParams(-1, -2);
+        serverCycleParams.topMargin = dp(8);
+        controls.addView(serverCycleRow, serverCycleParams);
+
         serverSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                if (!applyingPayload && position >= 0 && position < serverUrls.size()) loadServer(serverUrls.get(position));
+                if (position < 0 || position >= serverUrls.size()) return;
+                currentServerIndex = position;
+                updateServerControls();
+                if (!applyingPayload) loadServer(serverUrls.get(position));
             }
 
             @Override public void onNothingSelected(AdapterView<?> parent) { }
         });
 
-        TextView help = label("If a server doesn't load, try another one or open the episode on its original site.", 12, MUTED, false);
+        TextView help = label("If a server doesn't load, try another one or open the episode on its original site. Mikozora can switch episodes, servers and watched marks here; playback speed and seeking inside an embedded episode stay with that server's own player.", 12, MUTED, false);
         help.setLineSpacing(dp(3), 1f);
         LinearLayout.LayoutParams helpParams = new LinearLayout.LayoutParams(-1, -2);
         helpParams.topMargin = dp(16);
@@ -439,9 +519,12 @@ public final class PlayerActivity extends Activity implements PlayerNavigation.E
             navigationStatus.setVisibility(View.GONE);
         }
         if (serverAdapter != null) serverAdapter.notifyDataSetChanged();
+        currentServerIndex = 0;
         if (serverSpinner != null && !serverUrls.isEmpty()) serverSpinner.setSelection(0, false);
+        if (episodeJumpInput != null) episodeJumpInput.setText("");
         if (playlistChanged) rebuildEpisodeRail();
         applyingPayload = false;
+        updateServerControls();
         updateEpisodeControls();
         if (!serverUrls.isEmpty()) loadServer(serverUrls.get(0));
         scrollCurrentEpisodeIntoView(false);
@@ -476,7 +559,7 @@ public final class PlayerActivity extends Activity implements PlayerNavigation.E
         EpisodeEntry episode = episodes.get(index);
         boolean current = index == episodeIndex;
         boolean pending = index == pendingEpisodeIndex;
-        boolean seen = episode.watched && !current;
+        boolean seen = episode.watched;
         chip.setText(seen ? "✓ " + episode.number : episode.number);
         chip.setEnabled(!switchingEpisode);
         chip.setAlpha(switchingEpisode && !current && !pending ? .55f : 1f);
@@ -505,12 +588,86 @@ public final class PlayerActivity extends Activity implements PlayerNavigation.E
         button.setTextColor(enabled ? LIGHT : MUTED);
     }
 
+    private int watchedCount() {
+        int count = 0;
+        for (EpisodeEntry episode : episodes) if (episode.watched) count++;
+        return count;
+    }
+
+    private int firstUnwatchedIndex() {
+        for (int i = 0; i < episodes.size(); i++) if (!episodes.get(i).watched) return i;
+        return -1;
+    }
+
+    private boolean sameEpisodeNumber(String requested, String candidate) {
+        String left = requested == null ? "" : requested.trim();
+        String right = candidate == null ? "" : candidate.trim();
+        if (left.equalsIgnoreCase(right)) return true;
+        try {
+            return Double.compare(Double.parseDouble(left), Double.parseDouble(right)) == 0;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private void jumpToEpisode() {
+        if (switchingEpisode || episodeJumpInput == null) return;
+        String requested = episodeJumpInput.getText().toString().trim();
+        if (requested.isEmpty()) {
+            showNavigationError("Enter an episode number to jump to.");
+            return;
+        }
+        for (int i = 0; i < episodes.size(); i++) {
+            if (!sameEpisodeNumber(requested, episodes.get(i).number)) continue;
+            if (i == episodeIndex) {
+                showNavigationError("Episode " + episodes.get(i).number + " is already playing.");
+            } else {
+                requestEpisode(i);
+            }
+            return;
+        }
+        showNavigationError("Episode " + requested + " is not in this list.");
+    }
+
+    private void toggleCurrentWatched() {
+        if (switchingEpisode || episodeIndex < 0 || episodeIndex >= episodes.size()) return;
+        EpisodeEntry current = episodes.get(episodeIndex);
+        boolean intended = !current.watched;
+        if (!PlayerNavigation.requestWatchedChange(current.url, intended)) {
+            showNavigationError("Mikozora is no longer open behind the player, so the watched mark could not be saved.");
+            return;
+        }
+        current.watched = intended;
+        updateEpisodeControls();
+    }
+
+    private void cycleServer(int delta) {
+        if (serverUrls.size() <= 1 || serverSpinner == null) return;
+        int next = (currentServerIndex + delta) % serverUrls.size();
+        if (next < 0) next += serverUrls.size();
+        currentServerIndex = next;
+        serverSpinner.setSelection(next, true);
+        updateServerControls();
+        loadServer(serverUrls.get(next));
+    }
+
+    private void updateServerControls() {
+        boolean multiple = serverUrls.size() > 1;
+        if (serverPositionView != null) {
+            serverPositionView.setText(serverUrls.isEmpty() ? "" : (currentServerIndex + 1) + "/" + serverUrls.size());
+        }
+        styleNavigationButton(previousServerButton, multiple);
+        styleNavigationButton(nextServerButton, multiple);
+    }
+
     private void updateEpisodeControls() {
         if (episodePanel == null) return;
         boolean multiple = episodes.size() > 1;
         episodePanel.setVisibility(multiple ? View.VISIBLE : View.GONE);
         if (episodeCountView != null && episodeIndex >= 0) {
-            episodeCountView.setText((episodeIndex + 1) + " of " + episodes.size());
+            int seenCount = watchedCount();
+            episodeCountView.setText((episodeIndex + 1) + " of " + episodes.size()
+                    + (seenCount > 0 ? " · " + seenCount + " watched" : ""));
         }
 
         boolean hasPrevious = episodeIndex > 0;
@@ -526,6 +683,37 @@ public final class PlayerActivity extends Activity implements PlayerNavigation.E
             nextButton.setContentDescription(hasNext
                     ? "Next episode " + episodes.get(episodeIndex + 1).number
                     : "No next episode");
+        }
+        if (nextUnwatchedButton != null) {
+            int unwatched = firstUnwatchedIndex();
+            boolean canOpen = !switchingEpisode && unwatched >= 0 && unwatched != episodeIndex;
+            if (unwatched < 0) {
+                nextUnwatchedButton.setText("All watched in this list");
+                nextUnwatchedButton.setContentDescription("All episodes in this list are watched");
+            } else if (unwatched == episodeIndex) {
+                nextUnwatchedButton.setText("This episode is unwatched");
+                nextUnwatchedButton.setContentDescription("This episode is the first unwatched episode in this list");
+            } else {
+                nextUnwatchedButton.setText("Next unwatched · " + episodes.get(unwatched).number);
+                nextUnwatchedButton.setContentDescription("Play next unwatched episode " + episodes.get(unwatched).number);
+            }
+            styleNavigationButton(nextUnwatchedButton, canOpen);
+        }
+        if (watchedToggleButton != null) {
+            boolean currentWatched = episodeIndex >= 0 && episodeIndex < episodes.size()
+                    && episodes.get(episodeIndex).watched;
+            watchedToggleButton.setVisibility(episodes.isEmpty() ? View.GONE : View.VISIBLE);
+            watchedToggleButton.setText(currentWatched ? "✓ Watched · tap to unmark" : "Mark episode watched");
+            watchedToggleButton.setContentDescription(currentWatched
+                    ? "Mark this episode as not watched"
+                    : "Mark this episode as watched");
+            styleNavigationButton(watchedToggleButton, !switchingEpisode && episodeIndex >= 0);
+            if (currentWatched && !switchingEpisode) {
+                watchedToggleButton.setBackground(shape(ACCENT, 8, ACCENT));
+                watchedToggleButton.setTextColor(ACCENT_TEXT);
+            } else {
+                watchedToggleButton.setBackground(shape(PANEL, 8, BORDER));
+            }
         }
         for (int i = 0; i < episodeChips.size(); i++) styleEpisodeChip(episodeChips.get(i), i);
     }
@@ -573,6 +761,16 @@ public final class PlayerActivity extends Activity implements PlayerNavigation.E
 
     @Override public void onNavigationError(String message) {
         runOnUiThread(() -> { if (!isFinishing()) showNavigationError(message); });
+    }
+
+    @Override public void onWatchedChangeRejected(String url, boolean watched) {
+        runOnUiThread(() -> {
+            if (isFinishing()) return;
+            for (EpisodeEntry episode : episodes) {
+                if (episode.url.equals(url) && episode.watched == watched) episode.watched = !watched;
+            }
+            showNavigationError("That watched change could not be saved. Return to the series and try again.");
+        });
     }
 
     private int playerHeight() {

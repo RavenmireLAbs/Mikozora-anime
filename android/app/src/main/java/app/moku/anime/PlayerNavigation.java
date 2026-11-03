@@ -13,11 +13,13 @@ import java.lang.ref.WeakReference;
 final class PlayerNavigation {
     interface RequestListener {
         void onEpisodeRequested(int index, String url);
+        void onWatchedChanged(String url, boolean watched);
         void onPlayerClosed();
     }
 
     interface ErrorListener {
         void onNavigationError(String message);
+        void onWatchedChangeRejected(String url, boolean watched);
     }
 
     private static WeakReference<RequestListener> requestListener = new WeakReference<>(null);
@@ -51,6 +53,16 @@ final class PlayerNavigation {
         return true;
     }
 
+    static boolean requestWatchedChange(String url, boolean watched) {
+        RequestListener listener;
+        synchronized (PlayerNavigation.class) {
+            listener = requestListener.get();
+        }
+        if (listener == null) return false;
+        listener.onWatchedChanged(url == null ? "" : url, watched);
+        return true;
+    }
+
     static void playerClosed() {
         RequestListener listener;
         synchronized (PlayerNavigation.class) {
@@ -66,6 +78,16 @@ final class PlayerNavigation {
         }
         if (listener == null) return false;
         listener.onNavigationError(message == null ? "" : message);
+        return true;
+    }
+
+    static boolean reportWatchedRejected(String url, boolean watched) {
+        ErrorListener listener;
+        synchronized (PlayerNavigation.class) {
+            listener = errorListener.get();
+        }
+        if (listener == null) return false;
+        listener.onWatchedChangeRejected(url == null ? "" : url, watched);
         return true;
     }
 }

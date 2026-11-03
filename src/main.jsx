@@ -4,7 +4,7 @@ import {
   Home, Compass, Bookmark, History, Layers3, Settings2, Search, ArrowRight,
   ArrowUpRight, ChevronLeft, ChevronRight, Play, Check, RefreshCw, X, Clock3,
   ExternalLink, Sparkles, SlidersHorizontal, Film, LoaderCircle, AlertCircle,
-  Trash2, RotateCcw, FolderHeart, CircleHelp, ShieldCheck, Plus, ListVideo, Download, HardDrive, ListChecks, CheckCircle2, Heart, FolderPlus, Pencil, Folder, Flame, Bell, Sun, Moon, EyeOff
+  Trash2, RotateCcw, FolderHeart, CircleHelp, ShieldCheck, Plus, ListVideo, Download, HardDrive, ListChecks, CheckCircle2, Heart, FolderPlus, Pencil, Folder, Flame, Bell, Sun, Moon, EyeOff, Star, Maximize
 } from 'lucide-react';
 import { SOURCES, getCatalog, getDetail, getFeatured, getTrending, getDiscoverAnime, getServers, imageUrl, isAndroid, clearNetworkCache, getDownloads, getDownloadOptions, enqueueDownloads, removeDownload, openDownload, getExportSettings, chooseDownloadFolder, clearDownloadFolder, exportDownload, openExport, hasEpisodeUpdates, syncEpisodeTitles, getEpisodeUpdates, checkEpisodes, setEpisodeAutomatic, setEpisodeAlerts, markEpisodeRead, fetchLatestRelease, exportBackupToFile, readBackupFromFile, isDesktopApp, hasNativeDownloads, setPlayerReferer, hasDeviceSync, getDeviceSyncSettings, chooseDeviceSyncFolder, clearDeviceSyncFolder, readDeviceSyncFolder, writeDeviceSyncFile } from './data';
 import { buildPlaybackPlaylist, compactPlaybackPlaylist } from './playback';
@@ -18,6 +18,9 @@ import { DEFAULT_UPDATE_STATE, readUpdateState, saveUpdateState, shouldCheckOnFo
 import { APPEARANCE_KEY, ACCENTS, MODES, DEFAULT_APPEARANCE, readAppearance, saveAppearance, applyAppearance, syncNativeAppearance } from './appearance';
 import { CONTENT_KEY, GENRES, DEFAULT_CONTENT_PREFS, readContentPrefs, saveContentPrefs, isNsfw, ratingOf, yearOf, filterTitles } from './content';
 import { markDeviceSyncPublished, prepareDeviceSync, publicDeviceSyncMeta, readDeviceSyncMeta, resetDeviceSyncPublication, setDeviceSyncAuto, stableStringify } from './device-sync';
+import { PERSONAL_STATUSES, readLibraryMeta, saveLibraryMeta, libraryMetaFor, setLibraryMeta as setLibraryMetaRecord, removeLibraryMeta, pruneLibraryMeta, personalStatusLabel, libraryProgressState, sortLibraryTitles, libraryStats } from './library-meta';
+import { buildTasteProfile, topTasteGenres, recommendTitles, sortBrowseTitles } from './discovery';
+import { chronologicalEpisodes, findEpisodeByNumber, firstUnwatchedEpisode, episodesThrough, episodesInRange, wrappedIndex } from './episode-tools';
 import './style.css';
 import './theme-generated.css';
 import './appearance.css';
@@ -116,18 +119,24 @@ function RatingBadge({ item }) {
 function Cover({ item, eager = false }) {
   return <div className="cover-img"><img src={imageUrl(item.image)} alt="" loading={eager ? 'eager' : 'lazy'} onError={e=>{ e.currentTarget.style.display='none'; }}/><div className="cover-fallback"><Film size={28}/></div></div>;
 }
-function AnimeCard({ item, onOpen, inLibrary, toggle, index = 0, favourite, onFavourite, newCount = 0, progress = null }) {
+function AnimeCard({ item, onOpen, inLibrary, toggle, index = 0, favourite, onFavourite, newCount = 0, progress = null, personalMeta = null }) {
   const year = yearOf(item);
+  const personalRating = Number(personalMeta?.rating) || 0;
+  const personalStatus = personalStatusLabel(personalMeta?.status);
+  const hasPersonalNote = !!personalMeta?.note?.trim();
+  const recommendationReason = typeof item.recommendationReason === 'string' ? item.recommendationReason : '';
   return <article className="anime-card">
     <div className="card-cover">
       <button className="cover-hit" onClick={() => onOpen(item)} aria-label={`Open ${item.title}`}><Cover item={item} eager={index<4}/><span className="card-shade"/><span className="card-play"><Play size={16} fill="currentColor"/></span></button>
       <div className="cover-top"><div className="cover-badges"><span className="cover-badge">{item.badge || 'SUB'}</span><RatingBadge item={item}/></div><div className="cover-buttons">{onFavourite&&<button className={'save-mini favourite-mini '+(favourite?'saved':'')} onClick={()=>onFavourite(item)} aria-label={favourite?`Remove ${item.title} from Favourites`:`Add ${item.title} to Favourites`} title={favourite?'Remove from Favourites':'Add to Favourites'}><Heart size={15} fill={favourite?'currentColor':'none'}/></button>}<button className={'save-mini '+(inLibrary?'saved':'')} onClick={() => toggle(item)} aria-label={inLibrary ? `Remove ${item.title} from library` : `Save ${item.title} to library`} title={inLibrary?'Remove from library':'Save to library'}><Bookmark size={15} fill={inLibrary?'currentColor':'none'}/></button></div></div>
-      {progress?.total>0 ? <span className="cover-status">{progress.watchedCount}/{progress.total} watched</span> : item.status && <span className="cover-status">{item.status}</span>}
+      {progress?.watchedCount>0 ? <span className="cover-status">{progress.total>0?`${progress.watchedCount}/${progress.total} watched`:`${progress.watchedCount} watched`}</span> : item.status && <span className="cover-status">{item.status}</span>}
       {newCount>0&&<span className="cover-new" aria-label={`${newCount} new episode${newCount===1?'':'s'}`}>{newCount} NEW</span>}
       {progress?.total>0&&progress.watchedCount>0&&<span className="cover-progress"><i style={{width:`${Math.min(100,Math.round(progress.watchedCount/progress.total*100))}%`}}/></span>}
     </div>
     <button className="card-title" onClick={() => onOpen(item)} title={item.title}>{item.title}</button>
     <div className="card-meta">{year>0&&<><span>{year}</span><b>·</b></>}<span>{item.type || 'ANIME'}</span><b>·</b><span>{sourceName(item.source)}</span></div>
+    {(personalRating>0||personalStatus||hasPersonalNote)&&<div className="card-personal" aria-label={`Your shelf: ${[personalRating?`${personalRating} of 5 stars`:'',personalStatus,hasPersonalNote?'note saved':''].filter(Boolean).join(', ')}`}>{personalRating>0&&<span><Star size={11} fill="currentColor"/> {personalRating}/5</span>}{personalStatus&&<span>{personalStatus}</span>}{hasPersonalNote&&<span>Note saved</span>}</div>}
+    {recommendationReason&&<p className="card-reason">{recommendationReason}</p>}
   </article>;
 }
 function Empty({ icon: Icon = Sparkles, title, body, action, actionLabel }) {
@@ -137,8 +146,8 @@ function SkeletonRail() { return <div className="card-rail skeleton-rail">{Array
 function SectionHeading({ eyebrow, title, link, action, count }) {
   return <div className="section-heading"><div><span className="eyebrow">{eyebrow}</span><h2>{title}{count != null && <small className="count">{count}</small>}</h2></div>{action && <button className="text-link" onClick={action}>{link || 'See all'} <ArrowRight size={15}/></button>}</div>;
 }
-function Rail({ items, open, has, toggle }) {
-  return <div className="card-rail">{items.map((item,i)=><AnimeCard key={identity(item)} item={item} index={i} onOpen={open} inLibrary={has(item)} toggle={toggle}/>)}</div>;
+function Rail({ items, open, has, toggle, libraryMeta = null }) {
+  return <div className="card-rail">{items.map((item,i)=><AnimeCard key={identity(item)} item={item} index={i} onOpen={open} inLibrary={has(item)} toggle={toggle} personalMeta={libraryMeta?libraryMetaFor(libraryMeta,item):null}/>)}</div>;
 }
 function ErrorNote({ source, onRetry }) {
   return <div className="source-error"><AlertCircle size={17}/><span>Couldn’t load {sourceName(source)} right now.</span><button onClick={onRetry}>Try again</button></div>;
@@ -171,7 +180,7 @@ function TrendingSection({ rankings, loading, open, hideNsfw = false }) {
       </button>)}</div> : <div className="source-error"><AlertCircle size={17}/><span>The weekly ranking from {sourceName(source)} is unavailable. Try refreshing.</span></div>}
   </section>;
 }
-function HomePage({open, has, toggle, browse, recent, refreshKey, hideNsfw = false, continueItems = [], resumeNext, removeContinue}) {
+function HomePage({open, has, toggle, browse, recent, refreshKey, hideNsfw = false, continueItems = [], resumeNext, removeContinue, library = [], progress = [], libraryMeta = {}}) {
   const [state,setState] = useState({featured:[],sogo:[],xin:[],discover:[],trendSogo:[],trendXin:[],loadingSogo:true,loadingXin:true,loadingDiscover:true,loadingTrendSogo:true,loadingTrendXin:true});
   useEffect(()=>{ let alive=true; setState(x=>({...x,loadingSogo:true,loadingXin:true,loadingDiscover:true,loadingTrendSogo:true,loadingTrendXin:true}));
     getFeatured().then(value=>{if(alive)setState(x=>({...x,featured:value}))}).catch(()=>{if(alive)setState(x=>({...x,featured:[]}))});
@@ -185,11 +194,25 @@ function HomePage({open, has, toggle, browse, recent, refreshKey, hideNsfw = fal
   const shown = list => filterTitles(list || [], { hideNsfw });
   const shownRecent = (recent || []).filter(entry => !hideNsfw || !isNsfw(entry.item));
   const shownContinue = (continueItems || []).filter(entry => !hideNsfw || !isNsfw(entry.item));
+  const recommendationProfile = useMemo(
+    () => buildTasteProfile({ library, history: recent || [], progress, libraryMeta }),
+    [library, recent, progress, libraryMeta],
+  );
+  const recommendations = useMemo(() => recommendTitles([
+    ...filterTitles(state.discover || [], { hideNsfw }),
+    ...filterTitles(state.sogo || [], { hideNsfw }),
+    ...filterTitles(state.xin || [], { hideNsfw }),
+    ...filterTitles(state.trendSogo || [], { hideNsfw }),
+    ...filterTitles(state.trendXin || [], { hideNsfw }),
+  ], recommendationProfile, { limit: 14 }), [state, hideNsfw, recommendationProfile]);
+  const tasteGenres = topTasteGenres(recommendationProfile, 3);
+  const recommendationLoading = state.loadingSogo && state.loadingXin && state.loadingDiscover && state.loadingTrendSogo && state.loadingTrendXin;
   const date = new Intl.DateTimeFormat(undefined, { weekday:'long', month:'short', day:'numeric' }).format(new Date()).toUpperCase();
   return <div className="content home-page">
     <div className="welcome-row"><div><div className="date-line"><span className="date-star">✦</span> {date} <span className="date-separator"/> A GOOD DAY FOR ANIME</div><h1>Your next story starts here<span>.</span></h1><p>Good to have you here. What are we watching today?</p></div><div className="source-count"><div className="source-count-icon"><Layers3 size={17}/></div><div><strong>{Object.keys(SOURCES).length} sources</strong><small>One cozy place</small></div><i/></div></div>
     <Hero featured={shown(state.featured)} fallback={shown(state.sogo)} open={x=>x?open(x):browse('all')} has={has} toggle={toggle}/>
     {shownContinue.length>0 ? <section className="content-section continue-section"><SectionHeading eyebrow="PICK UP WHERE YOU LEFT OFF" title="Continue watching" link="View history" action={()=>browse('history')}/><div className="continue-rail">{shownContinue.slice(0,8).map((entry)=><div className="continue-card" key={identity(entry.item)}><button className="continue-main" onClick={()=>resumeNext(entry)} aria-label={`Play episode ${entry.episode.number} of ${entry.item.title}`}><div className="continue-cover"><Cover item={entry.item}/></div><div className="continue-info"><span>NEXT · EPISODE {entry.episode.number}</span><strong>{entry.item.title}</strong><small>{sourceName(entry.item.source)} · {entry.watchedCount} of {entry.total} watched</small><span className="continue-progress"><i style={{width:`${Math.min(100,Math.round(entry.watchedCount/entry.total*100))}%`}}/></span></div><span className="continue-play"><Play size={14} fill="currentColor"/></span></button><button className="continue-remove" onClick={()=>removeContinue(entry.item)} aria-label={`Remove ${entry.item.title} from Continue watching`} title="Remove from Continue watching"><X size={13}/></button></div>)}</div></section> : shownRecent.length>0 && <section className="content-section continue-section"><SectionHeading eyebrow="PICK UP WHERE YOU LEFT OFF" title="Recently opened" link="View history" action={()=>browse('history')}/><div className="continue-rail">{shownRecent.slice(0,4).map((entry)=><button className="continue-card" key={`${identity(entry.item)}|${entry.episode.number}`} onClick={()=>open(entry.item)}><div className="continue-cover"><Cover item={entry.item}/></div><div className="continue-info"><span>EPISODE {entry.episode.number}</span><strong>{entry.item.title}</strong><small>{sourceName(entry.item.source)} · {prettyTime(entry.time)}</small></div><span className="continue-play"><Play size={14} fill="currentColor"/></span></button>)}</div></section>}
+    {(recommendationLoading||recommendations.length>0)&&<section className="content-section recommendation-section"><SectionHeading eyebrow={recommendationProfile.strength?'MADE FROM YOUR WATCHING':'FRESH FROM YOUR SOURCES'} title={recommendationProfile.strength?'Made for your taste':'Fresh picks for you'} action={()=>browse('all')} link="Browse all"/>{tasteGenres.length>0&&<div className="taste-genre-row" aria-label="Your top watched genres"><span>Often in your space</span>{tasteGenres.map(genre=><b key={genre}>{genre}</b>)}</div>}{recommendationLoading?<SkeletonRail/>:<Rail items={recommendations} open={open} has={has} toggle={toggle} libraryMeta={libraryMeta}/>}</section>}
     <TrendingSection rankings={{sogo:state.trendSogo,xin:state.trendXin}} loading={{sogo:state.loadingTrendSogo,xin:state.loadingTrendXin}} open={open} hideNsfw={hideNsfw}/>
     <section className="content-section"><SectionHeading eyebrow="FRESH FROM THE SOURCE" title="Recently updated" action={()=>browse('sogo')} link="Explore AnimeSogo"/>{state.loadingSogo?<SkeletonRail/>:shown(state.sogo).length?<Rail items={shown(state.sogo).slice(0,14)} open={open} has={has} toggle={toggle}/>:(state.sogo.length?<div className="source-error"><EyeOff size={17}/><span>These titles are hidden while NSFW content is turned off in Settings.</span></div>:(state.discover.length?<div className="source-error"><EyeOff size={17}/><span>These titles are hidden while NSFW content is turned off in Settings.</span></div>:<ErrorNote source="sogo" onRetry={()=>browse('sogo')}/>))}</section>
     <section className="content-section"><SectionHeading eyebrow="MOST VIEWED ON ANIMESOGO" title="Discover anime" action={()=>browse('sogo')} link="Explore AnimeSogo"/>{state.loadingDiscover?<SkeletonRail/>:shown(state.discover).length?<Rail items={shown(state.discover).slice(0,14)} open={open} has={has} toggle={toggle}/>:<ErrorNote source="sogo" onRetry={()=>browse('sogo')}/>}</section>
@@ -203,12 +226,14 @@ function selectedSources(source) {
   return SOURCES[source] ? [source] : [];
 }
 const BROWSE_YEARS = Array.from({length:new Date().getFullYear()+2-1990}, (_,i)=>String(new Date().getFullYear()+1-i));
-function BrowsePage({open,has,toggle, query, setQuery, source, setSource, refreshKey, hideNsfw = false, openSettings}) {
+function BrowsePage({open,has,toggle, query, setQuery, source, setSource, refreshKey, hideNsfw = false, openSettings, library = [], history = [], progress = [], libraryMeta = {}}) {
   const [draft,setDraft] = useState(query);
   const [status,setStatus] = useState('all');
   const [genre,setGenre] = useState('');
   const [year,setYear] = useState('');
   const [nsfw,setNsfw] = useState('all');
+  const [sort,setSort] = useState('source');
+  const [savedFilter,setSavedFilter] = useState('all');
   const searching = !!query.trim();
   const activeStatus = searching ? 'all' : status;
   const activeGenre = searching ? '' : genre;
@@ -255,10 +280,14 @@ function BrowsePage({open,has,toggle, query, setQuery, source, setSource, refres
   // The content (NSFW) rule and the global hide-NSFW preference apply on top of
   // what the sources returned; genre/year/status mismatches are only used to
   // drop titles whose own metadata contradicts the filter.
-  const visibleItems = filterTitles(data.items, { genre:activeGenre, year:activeYear, status:activeStatus, nsfw, hideNsfw });
+  const filteredItems = filterTitles(data.items, { genre:activeGenre, year:activeYear, status:activeStatus, nsfw, hideNsfw });
+  const savedFilteredItems = savedFilter==='all' ? filteredItems : filteredItems.filter(item=>savedFilter==='saved' ? has(item) : !has(item));
+  const visibleItems = sort==='for-you'
+    ? recommendTitles(savedFilteredItems, { library, history, progress, libraryMeta }, { limit:savedFilteredItems.length, excludeLibrary:false, excludeWatched:false })
+    : sortBrowseTitles(savedFilteredItems, sort);
   const hiddenCount = data.items.length - visibleItems.length;
-  const activeFilterCount = [!!activeGenre, !!activeYear, activeStatus!=='all', nsfw!=='all'].filter(Boolean).length;
-  const clearFilters = ()=>{setStatus('all');setGenre('');setYear('');setNsfw('all');};
+  const activeFilterCount = [!!activeGenre, !!activeYear, activeStatus!=='all', nsfw!=='all', savedFilter!=='all'].filter(Boolean).length;
+  const clearFilters = ()=>{setStatus('all');setGenre('');setYear('');setNsfw('all');setSavedFilter('all');};
   const moreButton = data.more && <div className="more-wrap"><button className="btn secondary" onClick={more} disabled={data.loading||data.loadingMore}>{data.loadingMore?<LoaderCircle className="spin" size={16}/>:null} Load more <ChevronRight size={16}/></button></div>;
   const extraValue=['all','sogo','xin'].includes(source)?'':source;
   return <div className="content page-content"><div className="page-heading"><div><div className="eyebrow">SOMETHING FOR EVERY MOOD</div><h1>Find your next favorite<span>.</span></h1><p>Search across your sources or just see where the story takes you.</p></div><div className="heading-art"><Compass size={35}/><span>✦</span></div></div>
@@ -272,31 +301,85 @@ function BrowsePage({open,has,toggle, query, setQuery, source, setSource, refres
         <div className="filter-field content-field"><span className="status-filter-label" id="content-filter-label">CONTENT</span>{hideNsfw ? <div className="nsfw-hidden-note"><EyeOff size={14}/><span>NSFW is turned off in Settings.</span>{openSettings&&<button className="text-link" onClick={openSettings}>Change</button>}</div> : <div className="tabs status-tabs" role="group" aria-labelledby="content-filter-label">{[['all','All content'],['safe','Safe only'],['only','NSFW only']].map(([id,label])=><button key={id} className={nsfw===id?'selected':''} aria-pressed={nsfw===id} onClick={()=>setNsfw(id)}>{label}</button>)}</div>}</div>
         {activeFilterCount>0&&<button className="text-link muted clear-filters" onClick={clearFilters}><X size={14}/> Clear filters</button>}
       </div>
-      <p className="filter-hint">Genre and year use each source’s own listings where available; sources without them are noted below. Cards show the age rating a source provides, or NR when it provides none.</p>
+      <div className="filter-field-row browse-result-tools">
+        <div className="filter-field saved-field"><span className="status-filter-label" id="saved-filter-label">SHOW</span><div className="tabs status-tabs" role="group" aria-labelledby="saved-filter-label">{[['all','All titles'],['saved','Saved'],['not-saved','Not saved']].map(([id,label])=><button key={id} className={savedFilter===id?'selected':''} aria-pressed={savedFilter===id} onClick={()=>setSavedFilter(id)}>{label}</button>)}</div></div>
+        <label className="filter-field browse-sort-field"><span className="status-filter-label">SORT LOADED RESULTS</span><select aria-label="Sort loaded results" value={sort} onChange={e=>setSort(e.target.value)}><option value="source">Source order</option><option value="for-you">For you</option><option value="title-az">Title A–Z</option><option value="title-za">Title Z–A</option><option value="year-desc">Newest year</option><option value="year-asc">Oldest year</option><option value="status">Status</option><option value="source-title">Source, then title</option></select></label>
+      </div>
+      <p className="filter-hint">Genre and year use each source’s own listings where available; sources without them are noted below. Sorting and the saved-title view organize the stories already loaded below, so use Load more to bring in additional source results. Cards show the age rating a source provides, or NR when it provides none.</p>
     </div>
     <div className="browse-title"><div><span className="eyebrow">{query?'SEARCH RESULTS':activeFilterCount>0||hideNsfw?'FILTERED CATALOG':'THE LATEST'}</span><h2>{query?`Results for “${query}”`:activeGenre?`${activeGenre} titles`:'Explore the catalog'}</h2></div><SlidersHorizontal size={17}/></div>
     {data.errors.length>0&&<div className="inline-error"><AlertCircle size={16}/> Some sources could not be reached or do not support this filter: {data.errors.map(sourceName).join(', ')}.</div>}
-    {data.loading && !data.items.length ? <div className="anime-grid">{Array.from({length:12}).map((_,i)=><div className="skeleton-card" key={i}><div className="skeleton shimmer"/><span className="skeleton shimmer"/><span className="skeleton shimmer"/></div>)}</div> : visibleItems.length ? <><div className="anime-grid">{visibleItems.map((item,i)=><AnimeCard key={identity(item)} item={item} index={i} onOpen={open} inLibrary={has(item)} toggle={toggle}/>)}</div>{moreButton}</> : data.items.length ? <><Empty icon={hideNsfw?EyeOff:SlidersHorizontal} title="No titles match these filters" body={hideNsfw?'Everything loaded so far is hidden by your filters, or marked NSFW while NSFW is turned off in Settings. Load more titles or clear a filter.':'Everything loaded so far is filtered out. Load more titles from the sources, or clear a filter to see more.'} action={activeFilterCount>0?clearFilters:undefined} actionLabel="Clear filters"/>{moreButton}</> : <Empty icon={Search} title={query?'No titles found':'Nothing to show yet'} body={query?'Try a different title or select another source.':'The source may be unavailable. Try refreshing.'} action={()=>{setQuery('');setDraft('');setSource('all');clearFilters();}} actionLabel="Browse everything"/>}
+    {data.loading && !data.items.length ? <div className="anime-grid">{Array.from({length:12}).map((_,i)=><div className="skeleton-card" key={i}><div className="skeleton shimmer"/><span className="skeleton shimmer"/><span className="skeleton shimmer"/></div>)}</div> : visibleItems.length ? <><div className="anime-grid">{visibleItems.map((item,i)=><AnimeCard key={identity(item)} item={item} index={i} onOpen={open} inLibrary={has(item)} toggle={toggle} personalMeta={libraryMetaFor(libraryMeta,item)}/>)}</div>{moreButton}</> : data.items.length ? <><Empty icon={hideNsfw?EyeOff:SlidersHorizontal} title="No titles match these filters" body={hideNsfw?'Everything loaded so far is hidden by your filters, or marked NSFW while NSFW is turned off in Settings. Load more titles or clear a filter.':'Everything loaded so far is filtered out. Load more titles from the sources, or clear a filter to see more.'} action={activeFilterCount>0?clearFilters:undefined} actionLabel="Clear filters"/>{moreButton}</> : <Empty icon={Search} title={query?'No titles found':'Nothing to show yet'} body={query?'Try a different title or select another source.':'The source may be unavailable. Try refreshing.'} action={()=>{setQuery('');setDraft('');setSource('all');clearFilters();}} actionLabel="Browse everything"/>}
   </div>;
 }
-function DetailPage({item, openEpisode, has, toggle, organize, back, history, refreshKey, queueEpisodes, downloads, showDownloads, notify, hideNsfw = false, openSettings, watched, onEpisodesReady, markWatched, smartSelection, smartEnabled, toggleSmartDownload}) {
+function PersonalShelf({ item, meta, inLibrary, onChange, watchedCount = 0, total = 0 }) {
+  const record = meta || { rating:0, note:'', status:'', updatedAt:0 };
+  const [note,setNote] = useState(record.note || '');
+  useEffect(()=>setNote(record.note || ''),[item.source,item.url]);
+  const hasRecord = !!(record.rating || record.status || record.note?.trim());
+  const noteChanged = note.trim() !== (record.note || '').trim();
+  const saveNote = event => {
+    event.preventDefault();
+    onChange?.(item,{ note:note.trim() });
+  };
+  const clearShelf = () => {
+    setNote('');
+    onChange?.(item,{ rating:0, status:'', note:'' });
+  };
+  return <section className="personal-shelf" aria-labelledby="personal-shelf-title">
+    <div className="personal-shelf-heading"><div><span className="eyebrow">YOUR SHELF</span><h2 id="personal-shelf-title">Make it yours</h2><p>{inLibrary?'Your rating, shelf status and note stay with this saved title.':'Add a rating, shelf status or note and Mikozora will save this title to your library automatically.'}</p></div>{total>0&&<span className="personal-progress">{watchedCount}/{total} watched</span>}</div>
+    <div className="personal-shelf-controls">
+      <div className="personal-field"><span className="status-filter-label" id="personal-rating-label">YOUR RATING</span><div className="star-rating" role="group" aria-labelledby="personal-rating-label">{[1,2,3,4,5].map(value=><button key={value} type="button" className={record.rating>=value?'selected':''} aria-pressed={record.rating===value} aria-label={record.rating===value?`Clear ${value}-star rating`:`Rate ${value} of 5 stars`} title={record.rating===value?'Clear rating':`${value} of 5 stars`} onClick={()=>onChange?.(item,{rating:record.rating===value?0:value})}><Star size={19} fill={record.rating>=value?'currentColor':'none'}/></button>)}</div></div>
+      <label className="personal-field"><span className="status-filter-label">SHELF STATUS</span><select aria-label="Your shelf status" value={record.status || ''} onChange={event=>onChange?.(item,{status:event.target.value})}><option value="">No shelf status</option>{PERSONAL_STATUSES.map(status=><option key={status.id} value={status.id}>{status.label}</option>)}</select></label>
+    </div>
+    <form className="personal-note" onSubmit={saveNote}>
+      <label className="status-filter-label" htmlFor="personal-note">PRIVATE NOTE</label>
+      <textarea id="personal-note" value={note} onChange={event=>setNote(event.target.value.slice(0,600))} maxLength={600} rows={3} placeholder="Why this one? Where did you stop? Who recommended it?"/>
+      <div className="personal-note-actions"><span>{note.length}/600</span><button className="btn secondary" type="submit" disabled={!noteChanged}>Save note</button>{hasRecord&&<button className="text-link muted" type="button" onClick={clearShelf}>Clear shelf</button>}</div>
+    </form>
+  </section>;
+}
+function DetailPage({item, openEpisode, has, toggle, organize, back, history, refreshKey, queueEpisodes, downloads, showDownloads, notify, hideNsfw = false, openSettings, watched, onEpisodesReady, markWatched, smartSelection, smartEnabled, toggleSmartDownload, libraryMeta = {}, updateLibraryMeta}) {
   const [state,setState]=useState({detail:null,loading:true,error:''});
   const [order,setOrder]=useState('newest'); const [filter,setFilter]=useState(''); const [visible,setVisible]=useState(40);
   const [selecting,setSelecting]=useState(false); const [selected,setSelected]=useState([]);
-  useEffect(()=>{let alive=true;setState({detail:null,loading:true,error:''});setVisible(40);setFilter('');setSelected([]);setSelecting(false);getDetail(item).then(detail=>alive&&setState({detail,loading:false,error:''})).catch(e=>alive&&setState({detail:null,loading:false,error:e.message||'Could not load this title.'}));return()=>{alive=false}},[item.source,item.url,refreshKey]);
+  const [episodeJump,setEpisodeJump]=useState(''); const [rangeFrom,setRangeFrom]=useState(''); const [rangeTo,setRangeTo]=useState('');
+  useEffect(()=>{let alive=true;setState({detail:null,loading:true,error:''});setVisible(40);setFilter('');setSelected([]);setSelecting(false);setEpisodeJump('');setRangeFrom('');setRangeTo('');getDetail(item).then(detail=>alive&&setState({detail,loading:false,error:''})).catch(e=>alive&&setState({detail:null,loading:false,error:e.message||'Could not load this title.'}));return()=>{alive=false}},[item.source,item.url,refreshKey]);
   useEffect(()=>{if(state.detail?.episodes?.length)onEpisodesReady?.(state.detail);},[state.detail]);
   const detail=state.detail || item;
-  const episodes=useMemo(()=>{ const list=[...(state.detail?.episodes||[])];list.sort((a,b)=>{const n=(parseFloat(a.number)||0)-(parseFloat(b.number)||0);return order==='newest'?-n:n});return filter?list.filter(e=>`${e.number} ${e.title}`.toLowerCase().includes(filter.toLowerCase())):list; },[state.detail,order,filter]);
+  const orderedEpisodes=useMemo(()=>chronologicalEpisodes(state.detail?.episodes||[]),[state.detail]);
+  const episodes=useMemo(()=>{ const sorted=order==='newest'?[...orderedEpisodes].reverse():orderedEpisodes;return filter?sorted.filter(e=>`${e.number} ${e.title}`.toLowerCase().includes(filter.toLowerCase())):sorted; },[orderedEpisodes,order,filter]);
   const recent=history.find(x=>identity(x.item)===identity(item));
-  const first=[...(state.detail?.episodes||[])].sort((a,b)=>(parseFloat(a.number)||0)-(parseFloat(b.number)||0))[0];
+  const first=orderedEpisodes[0] || null;
   const resume=recent && state.detail?.episodes.find(e=>String(e.number)===String(recent.episode.number));
-  const watchedCount=(state.detail?.episodes||[]).filter(e=>watched?.has(e.url)).length;
+  const watchedCount=orderedEpisodes.filter(e=>watched?.has(e.url)).length;
+  const nextUnwatched=firstUnwatchedEpisode(orderedEpisodes,watched || new Set());
+  const personalMeta=libraryMetaFor(libraryMeta,detail);
   const smartOn=!!smartEnabled&&!!smartSelection?.selected;
   const chooseEpisode=ep=>{
     if(!selected.includes(ep.url)&&selected.length>=50){notify('Choose up to 50 episodes in one batch');return;}
     setSelected(previous=>previous.includes(ep.url)?previous.filter(x=>x!==ep.url):[...previous,ep.url]);
   };
-  const selectedEpisodes=(state.detail?.episodes||[]).filter(ep=>selected.includes(ep.url));
+  const selectedEpisodes=orderedEpisodes.filter(ep=>selected.includes(ep.url));
+  const jumpToEpisode=event=>{
+    event.preventDefault();
+    const target=findEpisodeByNumber(orderedEpisodes,episodeJump);
+    if(!target){notify(episodeJump?`Episode ${episodeJump} is not in this list`:'Enter an episode number');return;}
+    openEpisode(detail,target);
+  };
+  const markThroughEpisode=()=>{
+    const target=findEpisodeByNumber(orderedEpisodes,episodeJump);
+    if(!target){notify(episodeJump?`Episode ${episodeJump} is not in this list`:'Enter an episode number');return;}
+    markWatched(detail,episodesThrough(orderedEpisodes,target.url),true);
+  };
+  const selectEpisodeRange=event=>{
+    event.preventDefault();
+    const range=episodesInRange(orderedEpisodes,rangeFrom,rangeTo);
+    if(!range.length){notify('No numeric episodes fall in that range');return;}
+    setSelecting(true);
+    setSelected(range.slice(0,50).map(ep=>ep.url));
+    if(range.length>50)notify('Selected the first 50 episodes in that range');
+  };
   const rating=ratingOf(detail);
   const releasedYear=yearOf(detail);
   // With NSFW turned off in Settings, an adult-marked title cannot be opened at
@@ -307,14 +390,20 @@ function DetailPage({item, openEpisode, has, toggle, organize, back, history, re
     <div className="detail-body"><div className="detail-intro"><div className="detail-cover"><Cover item={detail}/></div><div className="detail-copy"><div className="detail-badges"><SourcePill source={detail.source}/><span className={'plain-badge rating-badge'+(rating?.adult?' rating-badge-adult':'')} title={rating?`Age rating reported by ${sourceName(detail.source)}`:'Not rated — the source does not provide an age rating'}>{rating?rating.label:'NR'}</span>{detail.type&&<span className="plain-badge">{detail.type}</span>}{detail.status&&<span className="plain-badge">{detail.status}</span>}{releasedYear>0&&<span className="plain-badge">{releasedYear}</span>}</div><h1>{detail.title}</h1><div className="genre-line">{detail.genres?.length?detail.genres.join('  ·  '):'Anime  ·  Adventure awaits'}</div><p>{detail.synopsis || (state.loading?'Loading the story...':'A title from your selected source. Open the source page for more information.')}</p><div className="detail-actions"><button className="btn primary" disabled={!first} onClick={()=>openEpisode(detail,resume||first)}><Play size={16} fill="currentColor"/>{resume?`Continue episode ${resume.number}`:'Watch first episode'}</button><button className={'btn secondary '+(has(detail)?'is-saved':'')} onClick={()=>toggle(detail)}><Bookmark size={17} fill={has(detail)?'currentColor':'none'}/>{has(detail)?'In your library':'Add to library'}</button><button className="btn secondary organize-detail" onClick={()=>organize(detail)} aria-label={`Organize ${detail.title} in collections`}><FolderPlus size={17}/> Collections</button><button className={'btn secondary '+(smartOn?'is-saved':'')} onClick={()=>toggleSmartDownload?.(detail)} aria-pressed={smartOn} title={smartOn?'Automatically download new episodes of this series':'Automatically download new episodes of this series'}>{smartOn?<Check size={17}/> :<Download size={17}/>}{smartOn?'Smart downloads on':'Smart downloads'}</button><button className="icon-btn detail-external" onClick={()=>external(detail.url)} aria-label="Open original website" title="Open original website"><ExternalLink size={18}/></button></div>{smartOn&&<p className="smart-detail-note"><Sparkles size={14}/> New episodes will be downloaded automatically after Mikozora finds them.</p>}</div></div>
       {state.error && <div className="detail-error"><AlertCircle size={18}/><span>{state.error}</span><button onClick={()=>external(item.url)}>Open source <ExternalLink size={14}/></button></div>}
       {state.detail && <section className="detail-facts" aria-label="Source details"><div><span>STATUS</span><strong>{displayStatus(detail.status)}</strong>{detail.status && displayStatus(detail.status)!==detail.status && <small>Source: {detail.status}</small>}</div><div><span>{SOURCES[detail.source]?.category==='Donghua'?'RELEASED':'DATE AIRED'}</span><strong>{detail.aired || 'Not provided'}</strong></div><div><span>EPISODES REPORTED</span><strong>{detail.episodeCount || 'Not provided'}</strong></div><div><span>AGE RATING</span><strong>{rating ? rating.label : 'Not provided'}</strong>{rating?.adult&&<small>Marked as adult (NSFW) content</small>}{!rating&&<small>Shown as NR on cards</small>}</div><p>Reported by {sourceName(detail.source)} · Details may change.</p></section>}
+      <PersonalShelf item={detail} meta={personalMeta} inLibrary={has(detail)} onChange={updateLibraryMeta} watchedCount={watchedCount} total={orderedEpisodes.length}/>
       <div className="episode-section"><div className="episode-head"><div><span className="eyebrow">THE STORY SO FAR</span><h2>Episodes <small>{state.detail?.episodes.length ?? '—'}</small>{watchedCount>0&&<small>{watchedCount} watched</small>}</h2></div><div className="episode-tools"><label className="episode-search"><Search size={15}/><input value={filter} onChange={e=>{setFilter(e.target.value);setVisible(40)}} placeholder="Find episode" aria-label="Find episode"/></label><button className="sort-button" onClick={()=>setOrder(x=>x==='newest'?'oldest':'newest')}>{order==='newest'?'Newest first':'Oldest first'} <SlidersHorizontal size={15}/></button></div></div>
       {state.detail?.source==='bash' && Number(detail.episodeCount)>detail.episodes.length && detail.episodes.length>0 && <p className="batch-hint">AnimeBash reports {detail.episodeCount} episodes but currently lists {detail.episodes.length}. Availability may vary.</p>}
+      {!state.loading && orderedEpisodes.length>0 && <div className="episode-shortcuts" aria-label="Episode shortcuts">
+        <button className="btn secondary episode-next-unwatched" disabled={!nextUnwatched} onClick={()=>nextUnwatched&&openEpisode(detail,nextUnwatched)}><Play size={15} fill="currentColor"/>{nextUnwatched?`Next unwatched · Episode ${nextUnwatched.number}`:'All episodes watched'}</button>
+        <form className="episode-jump" onSubmit={jumpToEpisode}><label htmlFor="episode-jump-number">EPISODE #</label><input id="episode-jump-number" inputMode="decimal" value={episodeJump} onChange={event=>setEpisodeJump(event.target.value)} placeholder="e.g. 24" aria-label="Episode number to jump to"/><button className="btn secondary" type="submit">Play</button><button className="btn secondary" type="button" onClick={markThroughEpisode}>Mark through</button></form>
+        <form className="episode-range" onSubmit={selectEpisodeRange}><span>SELECT RANGE</span><input inputMode="decimal" value={rangeFrom} onChange={event=>setRangeFrom(event.target.value)} placeholder="From" aria-label="Select episodes from"/><span aria-hidden="true">–</span><input inputMode="decimal" value={rangeTo} onChange={event=>setRangeTo(event.target.value)} placeholder="To" aria-label="Select episodes through"/><button className="btn secondary" type="submit">Select range</button></form>
+      </div>}
       {!state.loading && episodes.length>0 && <div className="batch-tools">
         <button className="text-link" onClick={()=>{setSelecting(x=>!x);setSelected([])}}><ListChecks size={16}/>{selecting?'Cancel selection':'Select episodes'}</button>
         {selecting&&<><button className="text-link muted" onClick={()=>setSelected(episodes.slice(0,50).map(ep=>ep.url))}>{episodes.length>50?'Select first 50':'Select all matching'}</button><button className="btn primary batch-download" disabled={!selected.length} onClick={()=>queueEpisodes(detail,selectedEpisodes)}><Download size={15}/> Download {selected.length||''}</button><button className="text-link" disabled={!selected.length} onClick={()=>markWatched(detail,selectedEpisodes,true)}>Mark watched</button><button className="text-link muted" disabled={!selected.length} onClick={()=>markWatched(detail,selectedEpisodes,false)}>Mark unwatched</button></>}
         {!selecting&&<button className="text-link muted" onClick={showDownloads}>Your downloads <ArrowRight size={15}/></button>}
       </div>}
-      {selecting&&<p className="batch-hint">Choose up to 50 per batch. Search or change the order to find a range.</p>}
+      {selecting&&<p className="batch-hint">Choose up to 50 per batch. Use Select range for a numeric run, or search and choose episodes one by one.</p>}
       {state.loading?<div className="episode-loading"><LoaderCircle className="spin" size={19}/> Fetching episodes from {sourceName(item.source)}...</div>:episodes.length ? <><div className="episode-list">{episodes.slice(0,visible).map((ep,i)=>{
         const offline=downloads.find(d=>d.episode?.url===ep.url && d.item?.source===detail.source && d.status==='completed');
         const seen=watched?.has(ep.url);
@@ -328,19 +417,58 @@ function DetailPage({item, openEpisode, has, toggle, organize, back, history, re
     </div>
   </div>;
 }
-function LibraryPage({items,open,has,toggle,browse,collections,activeCollection,setActiveCollection,onCreate,onRename,onDelete,onMembers,onFavourite,unreadTitles,progressByTitle,hideNsfw = false,smartCollections = [],onSmartCollection}) {
+function LibraryPage({items,open,has,toggle,browse,collections,activeCollection,setActiveCollection,onCreate,onRename,onDelete,onMembers,onFavourite,unreadTitles,progressByTitle,hideNsfw = false,smartCollections = [],onSmartCollection,libraryMeta = {},onRemoveTitles,onAddTitlesToCollection}) {
   const [filter,setFilter]=useState('all');
-  useEffect(()=>setFilter('all'),[activeCollection]);
+  const [search,setSearch]=useState('');
+  const [sort,setSort]=useState('saved');
+  const [personalStatus,setPersonalStatus]=useState('all');
+  const [progressFilter,setProgressFilter]=useState('all');
+  const [ratingFilter,setRatingFilter]=useState('all');
+  const [selectingTitles,setSelectingTitles]=useState(false);
+  const [selectedTitleKeys,setSelectedTitleKeys]=useState([]);
+  const [bulkCollection,setBulkCollection]=useState(FAVOURITES_ID);
+  useEffect(()=>{setFilter('all');setSearch('');setPersonalStatus('all');setProgressFilter('all');setRatingFilter('all');setSelectingTitles(false);setSelectedTitleKeys([]);},[activeCollection]);
+  useEffect(()=>{if(!collections.some(c=>c.id===bulkCollection))setBulkCollection(collections[0]?.id||FAVOURITES_ID);},[bulkCollection,collections]);
   const catalog = hideNsfw ? items.filter(item=>!isNsfw(item)) : items;
   const keys = new Set(catalog.map(identity));
   const selected = collections.find(c=>c.id===activeCollection);
   const selectedKeys = new Set(selected?.items || []);
   const inCollection = activeCollection==='all' ? catalog : catalog.filter(x=>selectedKeys.has(identity(x)));
-  const list = filter==='all' ? inCollection : inCollection.filter(x=>x.source===filter);
+  const stats = libraryStats(catalog,progressByTitle,libraryMeta);
+  const searchTerm = search.trim().toLocaleLowerCase();
+  const filtered = inCollection.filter(item=>{
+    if(filter!=='all'&&item.source!==filter)return false;
+    if(searchTerm&&!`${item.title} ${sourceName(item.source)}`.toLocaleLowerCase().includes(searchTerm))return false;
+    const meta=libraryMetaFor(libraryMeta,item);
+    if(personalStatus==='unset'&&meta.status)return false;
+    if(personalStatus!=='all'&&personalStatus!=='unset'&&meta.status!==personalStatus)return false;
+    if(progressFilter!=='all'&&libraryProgressState(progressByTitle?.[identity(item)])!==progressFilter)return false;
+    if(ratingFilter==='rated'&&!meta.rating)return false;
+    if(ratingFilter==='unrated'&&meta.rating)return false;
+    if(ratingFilter==='high'&&meta.rating<4)return false;
+    if(ratingFilter==='five'&&meta.rating!==5)return false;
+    return true;
+  });
+  const list = sortLibraryTitles(filtered,sort,progressByTitle,libraryMeta);
+  const libraryFiltersActive = filter!=='all'||!!searchTerm||personalStatus!=='all'||progressFilter!=='all'||ratingFilter!=='all';
+  const clearLibraryFilters = ()=>{setFilter('all');setSearch('');setPersonalStatus('all');setProgressFilter('all');setRatingFilter('all');};
+  const selectedTitles = catalog.filter(item=>selectedTitleKeys.includes(identity(item)));
+  const toggleTitleSelection = item=>{
+    const key=identity(item);
+    setSelectedTitleKeys(previous=>previous.includes(key)?previous.filter(x=>x!==key):[...previous,key]);
+  };
   const favourites = new Set(collections.find(c=>c.id===FAVOURITES_ID)?.items || []);
   const count = c=>c.items.filter(key=>keys.has(key)).length;
   return <div className="content page-content library-page">
     <div className="page-heading"><div><div className="eyebrow">YOUR LITTLE CORNER</div><h1>Saved for later<span>.</span></h1><p>Keep your stories together, just the way you like. Saved on this device.</p></div><div className="heading-art"><Bookmark size={31}/><span>✦</span></div></div>
+    {catalog.length>0&&<section className="library-stats" aria-label="Library overview">
+      <div><strong>{stats.titles}</strong><span>saved titles</span></div>
+      <div><strong>{stats.inProgress}</strong><span>in progress</span></div>
+      <div><strong>{stats.caughtUp}</strong><span>caught up</span></div>
+      <div><strong>{stats.watchedEpisodes}</strong><span>watched episodes</span></div>
+      <div><strong>{stats.rated}</strong><span>rated by you</span></div>
+      <div><strong>{stats.withNotes}</strong><span>with notes</span></div>
+    </section>}
     <div className="collections-heading"><div><span className="eyebrow">MADE BY YOU</span><h2>Your collections</h2></div><button className="btn secondary new-collection" onClick={onCreate}><Plus size={16}/> New collection</button></div>
     <div className="collection-tabs" role="tablist" aria-label="Library collections">
       <button role="tab" aria-selected={activeCollection==='all'} className={'collection-tab '+(activeCollection==='all'?'selected':'')} onClick={()=>setActiveCollection('all')}><Bookmark size={15}/> <span>All titles</span><b>{catalog.length}</b></button>
@@ -349,10 +477,34 @@ function LibraryPage({items,open,has,toggle,browse,collections,activeCollection,
     <div className="collection-toolbar"><div><span className="eyebrow">YOUR LIBRARY</span><h2>{selected?.name || 'All titles'}</h2><p>{inCollection.length} {inCollection.length===1?'title':'titles'} · {activeCollection==='all'?'All saved stories':'A collection of saved stories'}</p></div>
       {selected&&<div className="collection-tools"><button className={'btn secondary '+(smartCollections.includes(selected.id)?'is-saved':'')} onClick={()=>onSmartCollection?.(selected)} aria-pressed={smartCollections.includes(selected.id)} title={`Automatically download new episodes for ${selected.name}`}>{smartCollections.includes(selected.id)?<Check size={15}/> :<Download size={15}/>} Smart downloads</button><button className="btn secondary" onClick={()=>onMembers(selected.id)} disabled={!catalog.length}><Plus size={15}/> Add titles</button>{selected.id!==FAVOURITES_ID&&<><button className="icon-btn" onClick={()=>onRename(selected.id)} aria-label={`Rename ${selected.name}`} title="Rename collection"><Pencil size={16}/></button><button className="icon-btn" onClick={()=>onDelete(selected.id)} aria-label={`Delete ${selected.name}`} title="Delete collection"><Trash2 size={16}/></button></>}</div>}
     </div>
+    <div className="library-tools" aria-label="Library tools">
+      <label className="library-search"><Search size={16}/><input value={search} onChange={event=>setSearch(event.target.value)} placeholder="Search your library" aria-label="Search your library"/></label>
+      <label className="library-tool-field"><span>SORT</span><select aria-label="Sort library" value={sort} onChange={event=>setSort(event.target.value)}><option value="saved">Saved order</option><option value="title-az">Title A–Z</option><option value="title-za">Title Z–A</option><option value="progress-desc">Most progress</option><option value="unwatched-desc">Most unwatched</option><option value="rating-desc">Highest personal rating</option><option value="year-desc">Newest year</option><option value="year-asc">Oldest year</option></select></label>
+      <label className="library-tool-field"><span>SHELF STATUS</span><select aria-label="Filter library by shelf status" value={personalStatus} onChange={event=>setPersonalStatus(event.target.value)}><option value="all">All shelf statuses</option><option value="unset">No shelf status</option>{PERSONAL_STATUSES.map(status=><option key={status.id} value={status.id}>{status.label}</option>)}</select></label>
+      <label className="library-tool-field"><span>PROGRESS</span><select aria-label="Filter library by progress" value={progressFilter} onChange={event=>setProgressFilter(event.target.value)}><option value="all">All progress</option><option value="not-started">Not started</option><option value="in-progress">In progress</option><option value="caught-up">Caught up</option></select></label>
+      <label className="library-tool-field"><span>YOUR RATING</span><select aria-label="Filter library by your rating" value={ratingFilter} onChange={event=>setRatingFilter(event.target.value)}><option value="all">All ratings</option><option value="high">4–5 stars</option><option value="five">5 stars</option><option value="rated">Rated</option><option value="unrated">Unrated</option></select></label>
+      <button className={'btn secondary library-select-toggle '+(selectingTitles?'is-saved':'')} onClick={()=>{setSelectingTitles(value=>!value);setSelectedTitleKeys([]);}} aria-pressed={selectingTitles}><ListChecks size={15}/>{selectingTitles?'Done selecting':'Select titles'}</button>
+      {libraryFiltersActive&&<button className="text-link muted library-clear-filters" onClick={clearLibraryFilters}><X size={14}/> Clear library filters</button>}
+    </div>
+    {selectingTitles&&<div className="library-bulk-bar" aria-label="Bulk library actions">
+      <strong>{selectedTitles.length} selected</strong>
+      <label><span>Add to</span><select aria-label="Collection for selected titles" value={bulkCollection} onChange={event=>setBulkCollection(event.target.value)}>{collections.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+      <button className="btn secondary" disabled={!selectedTitles.length||!bulkCollection} onClick={()=>{onAddTitlesToCollection?.(bulkCollection,selectedTitles);setSelectedTitleKeys([]);}}><FolderPlus size={15}/> Add to collection</button>
+      <button className="text-link danger-link" disabled={!selectedTitles.length} onClick={()=>{if(onRemoveTitles?.(selectedTitles))setSelectedTitleKeys([]);}}><Trash2 size={14}/> Remove from library</button>
+      <button className="text-link muted" disabled={!selectedTitles.length} onClick={()=>setSelectedTitleKeys([])}>Clear selection</button>
+    </div>}
     <div className="filter-row library-filters"><div className="tabs" role="group" aria-label="Filter library by source">{[['all','All sources'],...Object.values(SOURCES).filter(src=>inCollection.some(item=>item.source===src.id)).map(src=>[src.id,src.name])].map(([id,label])=><button key={id} className={filter===id?'selected':''} aria-pressed={filter===id} onClick={()=>setFilter(id)}>{label}</button>)}</div><span className="results-label">{list.length} {list.length===1?'TITLE':'TITLES'} SHOWN</span></div>
-    {list.length ? <div className="anime-grid">{list.map((item,i)=><AnimeCard key={identity(item)} item={item} index={i} onOpen={open} inLibrary={has(item)} toggle={toggle} favourite={favourites.has(identity(item))} onFavourite={onFavourite} newCount={unreadTitles[identity(item)]||0} progress={progressByTitle?.[identity(item)]||null}/>)}</div> :
+    {list.length ? <div className="anime-grid">{list.map((item,i)=>{
+        const key=identity(item);
+        const chosen=selectedTitleKeys.includes(key);
+        return <div className={'library-card-wrap'+(chosen?' selected':'')} key={key}>
+          {selectingTitles&&<label className="library-card-select"><input type="checkbox" checked={chosen} onChange={()=>toggleTitleSelection(item)} aria-label={`Select ${item.title}`}/><span>{chosen?'Selected':'Select'}</span></label>}
+          <AnimeCard item={item} index={i} onOpen={open} inLibrary={has(item)} toggle={toggle} favourite={favourites.has(key)} onFavourite={onFavourite} newCount={unreadTitles[key]||0} progress={progressByTitle?.[key]||null} personalMeta={libraryMetaFor(libraryMeta,item)}/>
+        </div>;
+      })}</div> :
       hideNsfw && items.length>0 && catalog.length===0 ? <Empty icon={EyeOff} title="Adult titles are hidden" body="Every saved title is currently hidden because NSFW content is turned off in Settings. Nothing has been removed from your library."/> :
       items.length && activeCollection!=='all' && inCollection.length===0 ? <Empty icon={FolderHeart} title={`Nothing in ${selected?.name || 'this collection'} yet`} body="Add stories you have already saved, or organize a title from its details page." action={()=>onMembers(activeCollection)} actionLabel="Add saved titles"/> :
+      items.length && inCollection.length>0 && libraryFiltersActive ? <Empty icon={SlidersHorizontal} title="No titles match these library filters" body="Try a different search, shelf status, progress view, rating or source. Nothing has been removed from your library." action={clearLibraryFilters} actionLabel="Clear library filters"/> :
       <Empty icon={FolderHeart} title={items.length?'No titles from this source yet':'Your library is waiting'} body={items.length?'Pick another source to see the rest of your saved stories.':'Save an anime or donghua to keep it close. Your library and collections stay on this device.'} action={()=>browse('all')} actionLabel="Find something to watch"/>}
   </div>;
 }
@@ -547,7 +699,7 @@ function DeviceSyncSettings({available=false,folder={},meta={},status={},choose=
     <div className="folder-explainer device-sync-explainer">
       <p>Choose a folder that Syncthing, OneDrive, Dropbox, a NAS, or another file-sync service already keeps on both devices. Mikozora writes only its own small JSON sync file there; your chosen service carries it between devices, so they do not need to be online at the same time. Choose that same folder on your {otherDevice} too.</p>
       <p><strong>Privacy:</strong> anyone or any service that can read this folder can see the title and watch metadata in Mikozora’s sync files; they are not end-to-end encrypted. Use only a folder and sync service you trust. Disconnecting stops future reads and writes, but leaves files already in the folder untouched.</p>
-      <p>Library titles, collections, history, watch progress, appearance, content preferences and Smart Downloads settings merge both ways—including later deletions, collection changes and episodes marked unwatched. Downloaded episodes and queues, download/export folder choices, app-update choices, offline playback positions, and episode-alert state stay on each device.</p>
+      <p>Library titles, collections, history, watch progress, personal ratings, shelf statuses and private notes, appearance, content preferences and Smart Downloads settings merge both ways—including later deletions, collection changes and episodes marked unwatched. Downloaded episodes and queues, download/export folder choices, app-update choices, offline playback positions, and episode-alert state stay on each device.</p>
       {folder.configured&&<button className="text-link" onClick={disconnect} disabled={busy}>{status.phase==='disconnecting'?'Disconnecting…':'Disconnect this device'}</button>}
     </div>
   </div>;
@@ -577,11 +729,13 @@ function SettingsPage({library,history,clearLibrary,clearHistory,openLicenses,op
       <div className="folder-explainer"><p>New playable MP4 copies are organized into a folder for each anime or donghua. Existing downloads can be saved from Downloads; earlier exported files stay where they are.</p><p>After Mikozora verifies the saved video and subtitle files, it removes its private copy to free space. Mikozora then plays the file from your folder. If verification fails or subtitles cannot be safely copied, the private copy stays. Downloading and conversion still need extra storage temporarily.</p>{folder?.configured&&<button className="text-link" onClick={usePrivate}>Stop saving folder copies</button>}</div>
     </div>
     <DeviceSyncSettings {...deviceSync}/>
-    <div className="settings-group"><div className="settings-title">YOUR DATA <span>ON THIS DEVICE</span></div><div className="setting-row"><div className="setting-icon"><Bookmark size={19}/></div><div><strong>Saved library</strong><p>{library.length} {library.length===1?'title':'titles'} saved locally</p></div><button onClick={clearLibrary} disabled={!library.length}>Clear</button></div><div className="setting-row"><div className="setting-icon"><History size={19}/></div><div><strong>Watch history</strong><p>{history.length} recently opened {history.length===1?'episode':'episodes'}</p></div><button onClick={clearHistory} disabled={!history.length}>Clear</button></div><div className="setting-row"><div className="setting-icon"><HardDrive size={19}/></div><div><strong>Back up your data</strong><p>Save your library, collections, history, watch progress and settings to a file you keep. Downloaded videos are not included.</p></div><button onClick={exportBackup}>Export</button></div><div className="setting-row"><div className="setting-icon"><RotateCcw size={19}/></div><div><strong>Restore a backup</strong><p>Replace this device's library, collections, history, progress and settings with a backup file.</p></div><button onClick={importBackup}>Import</button></div></div><div className="settings-group"><div className="settings-title">ABOUT <span>MIKOZORA {APP_VERSION}</span></div><div className="setting-row"><div className="setting-icon"><Download size={19}/></div><div><strong>App updates</strong><p>{updateText}</p></div>{pendingUpdate?<button onClick={downloadUpdate}>Download</button>:<button onClick={()=>checkUpdate(true)} disabled={updateStatus.phase==='checking'}>{updateStatus.phase==='checking'?'Checking…':updateStatus.phase==='error'?'Try again':'Check'}</button>}</div><div className="setting-row"><div className="setting-icon"><RefreshCw size={19}/></div><div><strong>Check automatically</strong><p>Check GitHub when Mikozora starts, when you return to it, and periodically while it stays open.</p></div><button aria-label="Automatic update checks" aria-pressed={!!appUpdate.autoCheck} onClick={()=>changeAutoCheck(!appUpdate.autoCheck)}>{appUpdate.autoCheck?'On':'Off'}</button></div><div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div><strong>Private by default</strong><p>Your library, collections and history stay on this device. No account is required.</p></div></div><div className="setting-row"><div className="setting-icon"><Film size={19}/></div><div><strong>Player availability</strong><p>Video hosts may restrict embedding or be unavailable. Try another server or open the source page.</p></div></div><div className="setting-row"><div className="setting-icon"><Sparkles size={19}/></div><div><strong>What’s new</strong><p>See the latest changes to Mikozora.</p></div><button onClick={openReleaseNotes}>View</button></div><div className="setting-row"><div className="setting-icon"><CircleHelp size={19}/></div><div><strong>Open source licenses</strong><p>Credits and licenses for Mikozora and its dependencies.</p></div><button onClick={openLicenses}>View</button></div></div></div>;
+    <div className="settings-group"><div className="settings-title">YOUR DATA <span>ON THIS DEVICE</span></div><div className="setting-row"><div className="setting-icon"><Bookmark size={19}/></div><div><strong>Saved library</strong><p>{library.length} {library.length===1?'title':'titles'} saved locally</p></div><button onClick={clearLibrary} disabled={!library.length}>Clear</button></div><div className="setting-row"><div className="setting-icon"><History size={19}/></div><div><strong>Watch history</strong><p>{history.length} recently opened {history.length===1?'episode':'episodes'}</p></div><button onClick={clearHistory} disabled={!history.length}>Clear</button></div><div className="setting-row"><div className="setting-icon"><HardDrive size={19}/></div><div><strong>Back up your data</strong><p>Save your library, collections, personal ratings, notes and shelf statuses, history, watch progress and settings to a file you keep. Downloaded videos are not included.</p></div><button onClick={exportBackup}>Export</button></div><div className="setting-row"><div className="setting-icon"><RotateCcw size={19}/></div><div><strong>Restore a backup</strong><p>Replace this device's library, collections, personal shelf, history, progress and settings with a backup file.</p></div><button onClick={importBackup}>Import</button></div></div><div className="settings-group"><div className="settings-title">ABOUT <span>MIKOZORA {APP_VERSION}</span></div><div className="setting-row"><div className="setting-icon"><Download size={19}/></div><div><strong>App updates</strong><p>{updateText}</p></div>{pendingUpdate?<button onClick={downloadUpdate}>Download</button>:<button onClick={()=>checkUpdate(true)} disabled={updateStatus.phase==='checking'}>{updateStatus.phase==='checking'?'Checking…':updateStatus.phase==='error'?'Try again':'Check'}</button>}</div><div className="setting-row"><div className="setting-icon"><RefreshCw size={19}/></div><div><strong>Check automatically</strong><p>Check GitHub when Mikozora starts, when you return to it, and periodically while it stays open.</p></div><button aria-label="Automatic update checks" aria-pressed={!!appUpdate.autoCheck} onClick={()=>changeAutoCheck(!appUpdate.autoCheck)}>{appUpdate.autoCheck?'On':'Off'}</button></div><div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div><strong>Private by default</strong><p>Your library, collections and history stay on this device. No account is required.</p></div></div><div className="setting-row"><div className="setting-icon"><Film size={19}/></div><div><strong>Player availability</strong><p>Video hosts may restrict embedding or be unavailable. Try another server or open the source page.</p></div></div><div className="setting-row"><div className="setting-icon"><Sparkles size={19}/></div><div><strong>What’s new</strong><p>See the latest changes to Mikozora.</p></div><button onClick={openReleaseNotes}>View</button></div><div className="setting-row"><div className="setting-icon"><CircleHelp size={19}/></div><div><strong>Open source licenses</strong><p>Credits and licenses for Mikozora and its dependencies.</p></div><button onClick={openLicenses}>View</button></div></div></div>;
 }
-function PlayerModal({player,close,onEpisode,watched}) {
+function PlayerModal({player,close,onEpisode,watched,markWatched}) {
   const [current,setCurrent]=useState(0);
   const [switching,setSwitching]=useState(false);
+  const [episodeJump,setEpisodeJump]=useState('');
+  const [jumpError,setJumpError]=useState('');
   const episodeRail=useRef(null);
   const episodes=Array.isArray(player.episodes)&&player.episodes.length?player.episodes:[player.episode];
   const episodeIndex=Number.isInteger(player.episodeIndex)&&episodes[player.episodeIndex]?.url===player.episode.url
@@ -589,8 +743,13 @@ function PlayerModal({player,close,onEpisode,watched}) {
     : Math.max(0,episodes.findIndex(episode=>episode.url===player.episode.url));
   const previous=episodeIndex>0?episodes[episodeIndex-1]:null;
   const next=episodeIndex>=0&&episodeIndex<episodes.length-1?episodes[episodeIndex+1]:null;
+  const watchedSet=watched || new Set();
+  const watchedCount=episodes.filter(episode=>watchedSet.has(episode.url)).length;
+  const currentWatched=watchedSet.has(player.episode.url);
+  const unwatchedCandidate=firstUnwatchedEpisode(episodes,watchedSet);
+  const nextUnwatched=unwatchedCandidate?.url===player.episode.url?null:unwatchedCandidate;
 
-  useEffect(()=>{setCurrent(0);setSwitching(false);},[player.episode.url]);
+  useEffect(()=>{setCurrent(0);setSwitching(false);setEpisodeJump('');setJumpError('');},[player.episode.url]);
   useEffect(()=>{
     const frame=requestAnimationFrame(()=>{
       episodeRail.current?.querySelector(`[data-episode-index="${episodeIndex}"]`)
@@ -604,25 +763,54 @@ function PlayerModal({player,close,onEpisode,watched}) {
     setSwitching(true);
     try{await onEpisode(episode);}finally{setSwitching(false);}
   };
+  const cycleServer=delta=>setCurrent(previousIndex=>wrappedIndex(previousIndex,delta,player.servers.length));
+  const jumpToEpisode=event=>{
+    event.preventDefault();
+    const target=findEpisodeByNumber(episodes,episodeJump);
+    if(!target){setJumpError(episodeJump?`Episode ${episodeJump} is not in this list.`:'Enter an episode number.');return;}
+    setJumpError('');
+    void choose(target);
+  };
+  const toggleCurrentWatched=()=>markWatched?.(player.item,[player.episode],!currentWatched);
+  useEffect(()=>{
+    const onKey=event=>{
+      const active=document.activeElement;
+      if(active&&(active.tagName==='INPUT'||active.tagName==='TEXTAREA'||active.tagName==='SELECT'||active.isContentEditable))return;
+      if(event.key==='Escape'){event.preventDefault();close();}
+      else if(event.key==='ArrowLeft'&&previous){event.preventDefault();void choose(previous);}
+      else if(event.key==='ArrowRight'&&next){event.preventDefault();void choose(next);}
+      else if(event.key==='['&&player.servers.length>1){event.preventDefault();cycleServer(-1);}
+      else if(event.key===']'&&player.servers.length>1){event.preventDefault();cycleServer(1);}
+    };
+    window.addEventListener('keydown',onKey);
+    return()=>window.removeEventListener('keydown',onKey);
+  },[close,previous,next,player.episode.url,player.servers.length,switching]);
 
   return <div className="modal-backdrop" role="presentation" onMouseDown={close}><div className="player-modal" role="dialog" aria-modal="true" aria-label="Episode player" onMouseDown={e=>e.stopPropagation()}>
     <div className="player-header"><div><span className="eyebrow">NOW PLAYING</span><h2>{player.item.title}</h2><p>Episode {player.episode.number} · {sourceName(player.item.source)}</p></div><button className="icon-btn" onClick={close} aria-label="Close player"><X size={20}/></button></div>
     <div className="iframe-wrap"><iframe key={`${player.episode.url}|${player.servers[current]?.url||''}`} src={player.servers[current]?.url} title={`${player.item.title} episode ${player.episode.number}`} allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowFullScreen referrerPolicy="no-referrer-when-downgrade"/></div>
     {episodes.length>1&&<section className="player-episode-browser" aria-label="Episode navigation">
-      <div className="player-episode-heading"><span>EPISODES</span><strong aria-live="polite">{episodeIndex+1} of {episodes.length}</strong></div>
+      <div className="player-episode-heading"><span>EPISODES</span><strong aria-live="polite">{episodeIndex+1} of {episodes.length}{watchedCount>0?` · ${watchedCount} watched`:''}</strong></div>
       <div className="player-episode-nav">
         <button className="btn secondary player-nav-button" disabled={!previous||switching} onClick={()=>choose(previous)} aria-label={previous?`Previous episode ${previous.number}`:'Previous episode'}><ChevronLeft size={16}/> Previous</button>
-        <div className="player-episode-rail" ref={episodeRail} aria-label="Scrollable episode list">{episodes.map((episode,index)=><button key={`${episode.url}-${index}`} type="button" data-episode-index={index} className={'player-episode-chip'+(index===episodeIndex?' current':'')+(index!==episodeIndex&&watched?.has(episode.url)?' watched':'')} disabled={switching} onClick={()=>choose(episode)} aria-label={`Play episode ${episode.number}`} aria-current={index===episodeIndex?'true':undefined} title={episode.title||`Episode ${episode.number}`}>{index!==episodeIndex&&watched?.has(episode.url)&&<Check size={11}/>}{episode.number}</button>)}</div>
+        <div className="player-episode-rail" ref={episodeRail} aria-label="Scrollable episode list">{episodes.map((episode,index)=><button key={`${episode.url}-${index}`} type="button" data-episode-index={index} className={'player-episode-chip'+(index===episodeIndex?' current':'')+(index!==episodeIndex&&watchedSet.has(episode.url)?' watched':'')} disabled={switching} onClick={()=>choose(episode)} aria-label={`Play episode ${episode.number}`} aria-current={index===episodeIndex?'true':undefined} title={episode.title||`Episode ${episode.number}`}>{index!==episodeIndex&&watchedSet.has(episode.url)&&<Check size={11}/>}{episode.number}</button>)}</div>
         <button className="btn secondary player-nav-button" disabled={!next||switching} onClick={()=>choose(next)} aria-label={next?`Next episode ${next.number}`:'Next episode'}>Next <ChevronRight size={16}/></button>
       </div>
+      <div className="player-episode-actions">
+        <button className="btn secondary" disabled={!nextUnwatched||switching} onClick={()=>nextUnwatched&&choose(nextUnwatched)}><Play size={14} fill="currentColor"/>{nextUnwatched?`Next unwatched · ${nextUnwatched.number}`:'All watched'}</button>
+        <form className="player-jump" onSubmit={jumpToEpisode}><label htmlFor="player-episode-jump">EPISODE #</label><input id="player-episode-jump" inputMode="decimal" value={episodeJump} onChange={event=>{setEpisodeJump(event.target.value);setJumpError('');}} placeholder="Jump" aria-label="Jump to episode number"/><button className="btn secondary" type="submit" disabled={switching}>Go</button></form>
+        <button className={'btn secondary '+(currentWatched?'is-saved':'')} onClick={toggleCurrentWatched} disabled={!markWatched} aria-pressed={currentWatched}><Check size={14}/>{currentWatched?'Mark unwatched':'Mark watched'}</button>
+      </div>
+      {jumpError&&<p className="player-jump-error" role="alert">{jumpError}</p>}
       {switching&&<p className="player-switching" role="status"><LoaderCircle size={14} className="spin"/> Finding servers for the selected episode…</p>}
     </section>}
-    <div className="player-controls"><label>VIDEO SERVER<select value={current} onChange={e=>setCurrent(Number(e.target.value))}>{player.servers.map((s,i)=><option value={i} key={i}>{s.name}</option>)}</select></label><button className="btn secondary" onClick={()=>external(player.episode.url)}>Open source <ExternalLink size={15}/></button></div>
-    <p className="player-disclaimer">Video is provided by the selected third-party server. If it doesn’t load here, try another server or open the original site.</p>
+    <div className="player-controls"><label>VIDEO SERVER<select value={current} onChange={e=>setCurrent(Number(e.target.value))}>{player.servers.map((s,i)=><option value={i} key={i}>{s.name}</option>)}</select></label>{player.servers.length>1&&<div className="server-cycle" aria-label="Switch video server"><button type="button" onClick={()=>cycleServer(-1)} aria-label="Previous video server"><ChevronLeft size={15}/></button><span>{current+1}/{player.servers.length}</span><button type="button" onClick={()=>cycleServer(1)} aria-label="Next video server"><ChevronRight size={15}/></button></div>}{episodes.length===1&&<button className={'btn secondary '+(currentWatched?'is-saved':'')} onClick={toggleCurrentWatched} disabled={!markWatched} aria-pressed={currentWatched}><Check size={14}/>{currentWatched?'Mark unwatched':'Mark watched'}</button>}<button className="btn secondary" onClick={()=>external(player.episode.url)}>Open source <ExternalLink size={15}/></button></div>
+    <p className="player-shortcuts">Shortcuts: ←/→ episodes · [ / ] servers · Esc close</p>
+    <p className="player-disclaimer">Video is provided by the selected third-party server. If it doesn’t load here, try another server or open the original site. Playback speed and seeking inside an embedded episode stay with that server’s player; Mikozora’s controls handle episodes, servers and watched marks.</p>
   </div></div>;
 }
 function OfflinePlayerModal({entry,close}) {
-  const videoRef=useRef(null); const saveTick=useRef(0); const [failed,setFailed]=useState(false);
+  const videoRef=useRef(null); const wrapRef=useRef(null); const saveTick=useRef(0); const [failed,setFailed]=useState(false); const [playbackRate,setPlaybackRate]=useState(1);
   const download=entry.download||{};
   const tracks=download.storageMode==='folder'?(Array.isArray(download.exportTracks)?download.exportTracks:[]):(Array.isArray(download.tracks)?download.tracks:[]);
   const token=encodeURIComponent(entry.token||'');
@@ -636,13 +824,52 @@ function OfflinePlayerModal({entry,close}) {
     }catch{/* position memory is best-effort */}
   };
   const closePlayer=()=>{savePosition();close();};
+  const applyPlaybackRate=value=>{
+    const next=Number(value)||1;
+    setPlaybackRate(next);
+    if(videoRef.current)videoRef.current.playbackRate=next;
+  };
+  const seekBy=seconds=>{
+    const video=videoRef.current;if(!video)return;
+    const duration=Number.isFinite(video.duration)&&video.duration>0?video.duration:Number.POSITIVE_INFINITY;
+    video.currentTime=Math.max(0,Math.min(duration,video.currentTime+seconds));
+    savePosition();
+  };
+  const restart=()=>{
+    const video=videoRef.current;if(!video)return;
+    video.currentTime=0;
+    void video.play?.().catch(()=>{});
+    savePosition();
+  };
+  const toggleFullscreen=async()=>{
+    try{
+      if(document.fullscreenElement)await document.exitFullscreen();
+      else await wrapRef.current?.requestFullscreen?.();
+    }catch{/* the video element's own fullscreen control remains available */}
+  };
+  const cyclePlaybackRate=delta=>{
+    const rates=[0.5,0.75,1,1.25,1.5,2];
+    const index=Math.max(0,rates.indexOf(playbackRate));
+    applyPlaybackRate(rates[wrappedIndex(index,delta,rates.length)]);
+  };
   useEffect(()=>{
-    const key=e=>{if(e.key==='Escape')closePlayer();};
+    const key=e=>{
+      const active=document.activeElement;
+      if(active&&(active.tagName==='INPUT'||active.tagName==='TEXTAREA'||active.tagName==='SELECT'||active.isContentEditable))return;
+      if(e.key==='Escape'&&!document.fullscreenElement)closePlayer();
+      else if(e.key==='ArrowLeft'){e.preventDefault();seekBy(-10);}
+      else if(e.key==='ArrowRight'){e.preventDefault();seekBy(10);}
+      else if(e.key==='Home'){e.preventDefault();restart();}
+      else if(e.key.toLowerCase()==='f'){e.preventDefault();void toggleFullscreen();}
+      else if(e.key==='['){e.preventDefault();cyclePlaybackRate(-1);}
+      else if(e.key===']'){e.preventDefault();cyclePlaybackRate(1);}
+    };
     window.addEventListener('keydown',key);
     return()=>window.removeEventListener('keydown',key);
-  },[entry.id]);
+  },[entry.id,playbackRate]);
   const restorePosition=()=>{
     const video=videoRef.current;if(!video||!Number.isFinite(video.duration))return;
+    video.playbackRate=playbackRate;
     try{
       const all=JSON.parse(localStorage.getItem(positionKey)||'{}');
       const saved=Number(all[entry.id])||0;
@@ -654,11 +881,18 @@ function OfflinePlayerModal({entry,close}) {
   };
   return <div className="modal-backdrop" role="presentation" onMouseDown={closePlayer}><div className="player-modal offline-player-modal" role="dialog" aria-modal="true" aria-label="Offline episode player" onMouseDown={e=>e.stopPropagation()}>
     <div className="player-header"><div><span className="eyebrow">OFFLINE · SAVED ON THIS PC</span><h2>{download.item?.title||'Downloaded episode'}</h2><p>Episode {download.episode?.number||''}{download.item?.source?` · ${sourceName(download.item.source)}`:''}</p></div><button className="icon-btn" onClick={closePlayer} aria-label="Close offline player"><X size={20}/></button></div>
-    <div className="offline-video-wrap"><video ref={videoRef} controls autoPlay playsInline preload="metadata" onLoadedMetadata={restorePosition} onTimeUpdate={rememberPosition} onPause={savePosition} onEnded={savePosition} onError={()=>setFailed(true)}>
+    <div className="offline-video-wrap" ref={wrapRef}><video ref={videoRef} controls autoPlay playsInline preload="metadata" onLoadedMetadata={restorePosition} onTimeUpdate={rememberPosition} onPause={savePosition} onEnded={savePosition} onError={()=>setFailed(true)}>
       <source src={`mikozora://app/api/download/${entry.id}/video?token=${token}`} type="video/mp4"/>
       {tracks.map((track,index)=><track key={`${track.file||track.path||index}-${index}`} kind="subtitles" src={`mikozora://app/api/download/${entry.id}/subtitle/${index}?token=${token}`} srcLang={track.language||'und'} label={track.label||`Subtitles ${index+1}`} default={!!track.preferred||index===0}/>)}
     </video></div>
-    {failed?<p className="offline-player-note offline-player-error"><AlertCircle size={14}/> Could not play this saved file. Check that it still exists, or remove and download the episode again.</p>:<p className="offline-player-note"><Check size={14}/> Playing only from this computer. Your place is remembered on this device.</p>}
+    <div className="offline-controls" aria-label="Offline playback tools">
+      <button type="button" onClick={()=>seekBy(-10)} aria-label="Back 10 seconds">−10s</button>
+      <button type="button" onClick={restart}><RotateCcw size={14}/> Restart</button>
+      <label>SPEED<select aria-label="Offline playback speed" value={playbackRate} onChange={event=>applyPlaybackRate(event.target.value)}>{[0.5,0.75,1,1.25,1.5,2].map(rate=><option key={rate} value={rate}>{rate}×</option>)}</select></label>
+      <button type="button" onClick={()=>seekBy(10)} aria-label="Forward 10 seconds">+10s</button>
+      <button type="button" onClick={toggleFullscreen}><Maximize size={14}/> Fullscreen</button>
+    </div>
+    {failed?<p className="offline-player-note offline-player-error"><AlertCircle size={14}/> Could not play this saved file. Check that it still exists, or remove and download the episode again.</p>:<p className="offline-player-note"><Check size={14}/> Playing only from this computer. Your place is remembered on this device. Shortcuts: ←/→ seek 10 seconds · [ / ] speed · F fullscreen.</p>}
   </div></div>;
 }
 function LicenseModal({close}) {
@@ -789,6 +1023,14 @@ function App() {
   const [collections,setCollections]=useState(()=>normalizeCollections(readStored(COLLECTIONS_KEY)));
   const [activeCollection,setActiveCollection]=useState('all'); const [collectionDialog,setCollectionDialog]=useState(null);
   useEffect(()=>{try{localStorage.setItem(COLLECTIONS_KEY,JSON.stringify(collections))}catch{/* storage can be disabled */}},[collections]);
+  const [libraryMeta,setLibraryMetaState]=useState(()=>{try{return readLibraryMeta(window.localStorage);}catch{return {};}});
+  useEffect(()=>{try{saveLibraryMeta(window.localStorage,libraryMeta);}catch{/* storage can be disabled */}},[libraryMeta]);
+  useEffect(()=>{
+    setLibraryMetaState(previous=>{
+      const next=pruneLibraryMeta(previous,new Set(library.map(identity)));
+      return stableStringify(previous)===stableStringify(next)?previous:next;
+    });
+  },[library]);
   const [browseSource,setBrowseSource]=useState('all'); const [query,setQuery]=useState('');
   const [refreshKey,setRefreshKey]=useState(0); const [player,setPlayer]=useState(null); const [offlinePlayer,setOfflinePlayer]=useState(null); const [licenses,setLicenses]=useState(false); const [downloadModal,setDownloadModal]=useState(null); const [downloads,setDownloads]=useState([]); const [downloadsLoading,setDownloadsLoading]=useState(true); const [busy,setBusy]=useState(''); const [toast,setToast]=useState('');
   const [contentPrefs,setContentPrefs]=useState(initialContent);
@@ -818,8 +1060,8 @@ function App() {
   const deviceSyncError=useRef('');
   const deviceSyncRun=useRef(null);
   const deviceSyncChangeReady=useRef(false);
-  const syncInputsRef=useRef({library,history,storedProgress,progress,collections,appearance,contentPrefs,smartDownloads});
-  useEffect(()=>{syncInputsRef.current={library,history,storedProgress,progress,collections,appearance,contentPrefs,smartDownloads};},[library,history,storedProgress,progress,collections,appearance,contentPrefs,smartDownloads]);
+  const syncInputsRef=useRef({library,history,storedProgress,progress,collections,libraryMeta,appearance,contentPrefs,smartDownloads});
+  useEffect(()=>{syncInputsRef.current={library,history,storedProgress,progress,collections,libraryMeta,appearance,contentPrefs,smartDownloads};},[library,history,storedProgress,progress,collections,libraryMeta,appearance,contentPrefs,smartDownloads]);
   useEffect(()=>{if(activeCollection!=='all'&&!collections.some(c=>c.id===activeCollection))setActiveCollection('all');},[activeCollection,collections]);
   const updatesAvailable=hasEpisodeUpdates();
   const [updates,setUpdates]=useState({automatic:true,alerts:true,watchedCount:0,initializedCount:0,unreadCount:0,updates:[],errors:[],checking:false,queued:false,notificationStatus:'unknown'});
@@ -831,6 +1073,7 @@ function App() {
   const playbackRequest=useRef(0);
   const nativeEpisodePending=useRef(false);
   const playRef=useRef(null);
+  const markWatchedRef=useRef(null);
   const downloadsRef=useRef([]);
   useEffect(()=>{downloadsRef.current=downloads;},[downloads]);
   const monitored=useMemo(()=>monitoredTitles(library,collections,smartDownloads,progress,history),[library,collections,smartDownloads,progress,history]);
@@ -897,6 +1140,14 @@ function App() {
         nativeEpisodePending.current=false;
       }
     };
+    const watchedHandler=(url,watched)=>{
+      const session=playbackSession.current;
+      if(!session||typeof markWatchedRef.current!=='function')return false;
+      const target=session.episodes.find(episode=>episode.url===url);
+      if(!target)return false;
+      markWatchedRef.current(session.item,[target],!!watched);
+      return true;
+    };
     const closed=()=>{
       // Backing out while a native switch is resolving should not reopen it.
       if(nativeEpisodePending.current){
@@ -908,9 +1159,11 @@ function App() {
       return true;
     };
     window.__mokuPlayerEpisode=handler;
+    window.__mokuPlayerWatched=watchedHandler;
     window.__mokuPlayerClosed=closed;
     return()=>{
       if(window.__mokuPlayerEpisode===handler)delete window.__mokuPlayerEpisode;
+      if(window.__mokuPlayerWatched===watchedHandler)delete window.__mokuPlayerWatched;
       if(window.__mokuPlayerClosed===closed)delete window.__mokuPlayerClosed;
     };
   },[]);
@@ -958,7 +1211,49 @@ function App() {
   const changeAlerts=enabled=>updateAction(()=>setEpisodeAlerts(enabled),enabled?'Episode alerts on':'Episode alerts off');
   const notificationPermission=()=>{if(updatesAvailable)try{window.MokuBridge.episodeNotificationPermission(false)}catch{setToast(isDesktopApp()?'Could not open Windows notification settings':'Could not open Android notification settings');}};
   const has=item=>library.some(x=>identity(x)===identity(item));
-  const toggle=item=>{const exists=has(item);const key=identity(item);if(exists&&collections.some(c=>c.items.includes(key))&&!window.confirm(`Remove “${item.title}” from your library and all its collections? Downloads and folder files will remain.`))return;setLibrary(x=>exists?x.filter(i=>identity(i)!==key):[savedSummary(item),...x]);if(exists)setCollections(x=>removeTitleFromCollections(x,key));setToast(exists?'Removed from your library and collections':'Saved to your library');};
+  const toggle=item=>{
+    const exists=has(item);const key=identity(item);
+    if(exists&&collections.some(c=>c.items.includes(key))&&!window.confirm(`Remove “${item.title}” from your library and all its collections? Downloads and folder files will remain.`))return;
+    setLibrary(x=>exists?x.filter(i=>identity(i)!==key):[savedSummary(item),...x]);
+    if(exists){
+      setCollections(x=>removeTitleFromCollections(x,key));
+      setLibraryMetaState(previous=>removeLibraryMeta(previous,[key]));
+    }
+    setToast(exists?'Removed from your library and collections':'Saved to your library');
+  };
+  const updateLibraryMeta=(item,patch)=>{
+    if(!item?.source||!item?.url)return;
+    const key=identity(item);
+    const exists=has(item);
+    const hadRecord=!!libraryMeta[key];
+    const next=setLibraryMetaRecord(libraryMeta,item,patch);
+    const hasRecord=!!next[key];
+    if(hasRecord&&!exists)setLibrary(previous=>previous.some(x=>identity(x)===key)?previous:[savedSummary(item),...previous]);
+    setLibraryMetaState(next);
+    if(hasRecord)setToast(exists?(hadRecord?'Your shelf was updated':'Saved to your shelf'):'Saved to your library and shelf');
+    else if(hadRecord)setToast('Your shelf was cleared');
+  };
+  const removeLibraryTitles=itemsToRemove=>{
+    const unique=[...new Map((Array.isArray(itemsToRemove)?itemsToRemove:[]).filter(item=>item?.source&&item?.url).map(item=>[identity(item),item])).values()];
+    if(!unique.length)return false;
+    if(!window.confirm(`Remove ${unique.length} saved ${unique.length===1?'title':'titles'} from your library and all collections?\n\nPersonal ratings, notes and shelf statuses for those titles will also be removed. Downloads and folder files will remain.`))return false;
+    const keys=new Set(unique.map(identity));
+    setLibrary(previous=>previous.filter(item=>!keys.has(identity(item))));
+    setCollections(previous=>previous.map(c=>({...c,items:c.items.filter(key=>!keys.has(key))})));
+    setLibraryMetaState(previous=>removeLibraryMeta(previous,[...keys]));
+    setToast(`Removed ${unique.length} ${unique.length===1?'title':'titles'} from your library`);
+    return true;
+  };
+  const addTitlesToCollection=(collectionId,itemsToAdd)=>{
+    const collection=collections.find(c=>c.id===collectionId);
+    const keys=[...new Set((Array.isArray(itemsToAdd)?itemsToAdd:[]).filter(item=>item?.source&&item?.url&&has(item)).map(identity))];
+    if(!collection||!keys.length)return;
+    setCollections(previous=>{
+      const current=previous.find(c=>c.id===collectionId);
+      return current?setCollectionItems(previous,collectionId,[...keys,...current.items]):previous;
+    });
+    setToast(`Added ${keys.length} ${keys.length===1?'title':'titles'} to ${collection.name}`);
+  };
   const favourite=item=>{
     const exists=collections.find(c=>c.id===FAVOURITES_ID)?.items.includes(identity(item));
     if(!has(item))setLibrary(previous=>[savedSummary(item),...previous]);
@@ -984,6 +1279,7 @@ function App() {
       window.localStorage.setItem(HISTORY_KEY,JSON.stringify(current.history||[]));
       window.localStorage.setItem(PROGRESS_KEY,JSON.stringify(current.storedProgress||[]));
       window.localStorage.setItem(COLLECTIONS_KEY,JSON.stringify(current.collections||[]));
+      saveLibraryMeta(window.localStorage,current.libraryMeta||{});
       // Do not materialize these stores here: prepareDeviceSync treats a
       // never-written scalar store as an implicit default rather than a
       // competing user choice during a first cross-device merge.
@@ -999,6 +1295,7 @@ function App() {
     if(stableStringify(current.collections)!==stableStringify(data.collections))setCollections(normalizeCollections(data.collections));
     if(stableStringify(current.history)!==stableStringify(data.history))setHistory(data.history);
     if(stableStringify(current.progress)!==stableStringify(data.progress))setStoredProgress(data.progress);
+    if(stableStringify(current.libraryMeta||{})!==stableStringify(data.libraryMeta||{}))setLibraryMetaState(data.libraryMeta||{});
     if(stableStringify(current.appearance)!==stableStringify(data.appearance)){
       const nextAppearance=applyAppearance(document,data.appearance);
       setAppearance(nextAppearance);
@@ -1117,7 +1414,7 @@ function App() {
     if(experience||!deviceSyncAvailable||!deviceSyncMeta.autoSync)return;
     const timer=setTimeout(()=>{void deviceSyncRun.current?.({reason:'change'});},2500);
     return ()=>clearTimeout(timer);
-  },[library,history,storedProgress,collections,appearance,contentPrefs,smartDownloads,experience,deviceSyncAvailable,deviceSyncMeta.autoSync]);
+  },[library,history,storedProgress,collections,libraryMeta,appearance,contentPrefs,smartDownloads,experience,deviceSyncAvailable,deviceSyncMeta.autoSync]);
   const waitForDeviceSyncIdle=async()=>{
     while(deviceSyncPromise.current){
       try{await deviceSyncPromise.current;}catch{break;}
@@ -1307,6 +1604,7 @@ function App() {
     if(!flag){const urls=new Set(targets.map(episode=>episode.url));setHistory(prev=>prev.filter(entry=>!(identity(entry.item)===identity(item)&&urls.has(entry.episode.url))));}
     setToast(`${flag?'Marked':'Unmarked'} ${targets.length} episode${targets.length===1?'':'s'}${flag?' as watched':''}`);
   };
+  markWatchedRef.current=markWatched;
   const exportBackup=async()=>{
     try{
       const text=JSON.stringify(buildBackup(window.localStorage),null,2);
@@ -1323,7 +1621,7 @@ function App() {
       const when=backup.createdAt?new Date(backup.createdAt).toLocaleString():'an unknown date';
       const s=backup.summary;
       const facts=`${s.library} library titles · ${s.collections} collections · ${s.history} history entries · progress for ${s.progress} series`;
-      if(!window.confirm(`Restore the backup from ${when}?\n\n${facts}\n\nThis replaces your current library, collections, history, watch progress and settings on this device.`))return;
+      if(!window.confirm(`Restore the backup from ${when}?\n\n${facts}\n\nThis replaces your current library, collections, personal ratings, notes and shelf statuses, history, watch progress and settings on this device.`))return;
       applyBackup(window.localStorage,backup.data);
       setToast('Backup restored — restarting…');
       setTimeout(()=>window.location.reload(),400);
@@ -1331,7 +1629,7 @@ function App() {
   };
   const resume=async entry=>{setBusy('Finding your episode...');try{const d=await getDetail(entry.item);const ep=d.episodes.find(e=>String(e.number)===String(entry.episode.number));if(!ep)throw new Error('Episode not found. Open the series or original source.');setBusy('');await play(d,ep);}catch(e){setBusy('');setToast(e.message||'Could not open this episode.')}};
   const clearHistory=()=>{if(window.confirm('Clear recently opened episodes from this device?')){setHistory([]);setStoredProgress([]);setToast('History cleared');}};
-  const clearLibrary=()=>{if(window.confirm('Remove all saved titles from this device and their collection memberships? Your collections, downloads and folder files will remain.')){setLibrary([]);setCollections(previous=>previous.map(c=>({...c,items:[]})));setToast('Library cleared');}};
+  const clearLibrary=()=>{if(window.confirm('Remove all saved titles from this device, their collection memberships, and their personal ratings, notes and shelf statuses? Your collections, downloads and folder files will remain.')){setLibrary([]);setCollections(previous=>previous.map(c=>({...c,items:[]})));setLibraryMetaState({});setToast('Library cleared');}};
   const queueEpisodes=(item,episodes)=>{if(!episodes.length)return;setDownloadModal({item,episodes,initialChoice:smartDownloads.presets[identity(item)]||null});};
   const submitDownload=async ({language,server,quality,subtitleMode='auto',subtitleTracks=[]})=>{
     if(!downloadModal)return;
@@ -1371,16 +1669,16 @@ function App() {
   if(experience) return <WelcomeScreen mode={experience.mode} manual={!!experience.manual} onContinue={finishExperience}/>;
   const common={open,has,toggle,browse};
   return <div className="app-shell"><SideNav page={route.page} go={go} unread={updates.unreadCount}/><div className="main-shell"><TopBar page={route.page} go={go} submitSearch={submitSearch} refresh={refresh} unread={updates.unreadCount}/>{pendingUpdate&&<UpdateBanner info={pendingUpdate} download={downloadAppUpdate} dismiss={dismissAppUpdate}/>}<main key={route.page==='detail'?identity(route.item):route.page}>
-    {route.page==='home'&&<HomePage {...common} recent={history} refreshKey={refreshKey} hideNsfw={hideNsfw} continueItems={continueItems} resumeNext={resumeNext} removeContinue={removeContinue}/>}
-    {route.page==='browse'&&<BrowsePage {...common} query={query} setQuery={setQuery} source={browseSource} setSource={setBrowseSource} refreshKey={refreshKey} hideNsfw={hideNsfw} openSettings={()=>go('settings')}/>}
-    {route.page==='detail'&&<DetailPage item={route.item} openEpisode={play} has={has} toggle={toggle} organize={item=>setCollectionDialog({kind:'title',item})} back={back} history={history} refreshKey={refreshKey} queueEpisodes={queueEpisodes} downloads={downloads} showDownloads={()=>go('downloads')} notify={setToast} hideNsfw={hideNsfw} openSettings={()=>go('settings')} watched={watchedUrlSet(progress,history,route.item)} onEpisodesReady={syncProgress} markWatched={markWatched} smartSelection={smartTitleSelection(smartDownloads,identity(route.item),collections)} smartEnabled={smartDownloads.enabled} toggleSmartDownload={toggleSmartTitle}/>}
-    {route.page==='library'&&<LibraryPage {...common} items={library} collections={collections} activeCollection={activeCollection} setActiveCollection={setActiveCollection} onCreate={()=>setCollectionDialog({kind:'new'})} onRename={id=>setCollectionDialog({kind:'rename',id})} onDelete={removeCollection} onMembers={id=>setCollectionDialog({kind:'members',id})} onFavourite={favourite} unreadTitles={unreadTitles} progressByTitle={libraryProgress} hideNsfw={hideNsfw} smartCollections={smartDownloads.collectionIds} onSmartCollection={toggleSmartCollection}/>}
+    {route.page==='home'&&<HomePage {...common} recent={history} refreshKey={refreshKey} hideNsfw={hideNsfw} continueItems={continueItems} resumeNext={resumeNext} removeContinue={removeContinue} library={library} progress={progress} libraryMeta={libraryMeta}/>}
+    {route.page==='browse'&&<BrowsePage {...common} query={query} setQuery={setQuery} source={browseSource} setSource={setBrowseSource} refreshKey={refreshKey} hideNsfw={hideNsfw} openSettings={()=>go('settings')} library={library} history={history} progress={progress} libraryMeta={libraryMeta}/>}
+    {route.page==='detail'&&<DetailPage item={route.item} openEpisode={play} has={has} toggle={toggle} organize={item=>setCollectionDialog({kind:'title',item})} back={back} history={history} refreshKey={refreshKey} queueEpisodes={queueEpisodes} downloads={downloads} showDownloads={()=>go('downloads')} notify={setToast} hideNsfw={hideNsfw} openSettings={()=>go('settings')} watched={watchedUrlSet(progress,history,route.item)} onEpisodesReady={syncProgress} markWatched={markWatched} smartSelection={smartTitleSelection(smartDownloads,identity(route.item),collections)} smartEnabled={smartDownloads.enabled} toggleSmartDownload={toggleSmartTitle} libraryMeta={libraryMeta} updateLibraryMeta={updateLibraryMeta}/>}
+    {route.page==='library'&&<LibraryPage {...common} items={library} collections={collections} activeCollection={activeCollection} setActiveCollection={setActiveCollection} onCreate={()=>setCollectionDialog({kind:'new'})} onRename={id=>setCollectionDialog({kind:'rename',id})} onDelete={removeCollection} onMembers={id=>setCollectionDialog({kind:'members',id})} onFavourite={favourite} unreadTitles={unreadTitles} progressByTitle={libraryProgress} hideNsfw={hideNsfw} smartCollections={smartDownloads.collectionIds} onSmartCollection={toggleSmartCollection} libraryMeta={libraryMeta} onRemoveTitles={removeLibraryTitles} onAddTitlesToCollection={addTitlesToCollection}/>}
     {route.page==='updates'&&<UpdatesPage state={updates} available={updatesAvailable} syncError={updatesSyncError} actionError={updatesActionError} check={checkNow} readAll={readAllUpdates} openUpdate={viewUpdate} openLibrary={()=>go('library')} openSettings={()=>go('settings')}/>}
     {route.page==='downloads'&&<DownloadsPage items={downloads} loading={downloadsLoading} remove={deleteDownload} retry={retryDownload} change={d=>setDownloadModal({item:d.item,episodes:[d.episode],language:d.language||'english',serverChoice:d.serverChoice||'auto',subtitleMode:d.subtitleMode||'auto',subtitleSelection:Array.isArray(d.subtitleSelection)?d.subtitleSelection:[]})} browse={browse} folder={folder} saveCopy={saveCopy} openSettings={()=>go('settings')} playOffline={playOffline}/>}
     {route.page==='history'&&<HistoryPage items={history.filter(entry=>!hideNsfw||!isNsfw(entry.item))} resume={resume} open={open} clear={clearHistory} browse={browse}/>}
     {route.page==='sources'&&<SourcesPage browse={browse}/>}
     {route.page==='settings'&&<SettingsPage library={library} history={history} clearLibrary={clearLibrary} clearHistory={clearHistory} openLicenses={()=>setLicenses(true)} openReleaseNotes={()=>setExperience({mode:'update',manual:true})} folder={folder} chooseFolder={chooseFolder} usePrivate={usePrivate} updates={updates} updatesAvailable={updatesAvailable} changeAutomatic={changeAutomatic} changeAlerts={changeAlerts} notificationPermission={notificationPermission} appearance={appearance} changeAppearance={changeAppearance} contentPrefs={contentPrefs} changeContentPrefs={changeContentPrefs} appUpdate={appUpdate} pendingUpdate={pendingUpdate} updateStatus={updateStatus} checkUpdate={checkAppUpdate} changeAutoCheck={changeAutoCheck} downloadUpdate={downloadAppUpdate} exportBackup={exportBackup} importBackup={importBackup} smartDownloads={smartDownloads} changeSmartDownloads={changeSmartDownloads} deviceSync={{available:deviceSyncAvailable,folder:deviceSyncFolder,meta:deviceSyncMeta,status:deviceSyncStatus,choose:chooseSyncFolder,disconnect:disconnectSyncFolder,syncNow:syncDevicesNow,changeAuto:changeDeviceSyncAuto}}/>}
-  </main></div><BottomNav page={route.page} go={go}/>{collectionDialog?.kind==='new'&&<CollectionNameDialog close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='rename'&&<CollectionNameDialog editing value={collections.find(c=>c.id===collectionDialog.id)?.name||''} close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='title'&&<TitleCollectionsDialog item={collectionDialog.item} collections={collections} close={()=>setCollectionDialog(null)} submit={selected=>saveTitleCollectionChoices(collectionDialog.item,selected)}/>}{collectionDialog?.kind==='members'&&collections.find(c=>c.id===collectionDialog.id)&&<CollectionMembersDialog collection={collections.find(c=>c.id===collectionDialog.id)} items={hideNsfw?library.filter(item=>!isNsfw(item)):library} close={()=>setCollectionDialog(null)} submit={keys=>saveCollectionMembers(collectionDialog.id,keys)}/>} {offlinePlayer&&<OfflinePlayerModal entry={offlinePlayer} close={()=>setOfflinePlayer(null)}/>}{player&&<PlayerModal key={player.episode.url} player={player} close={()=>setPlayer(null)} onEpisode={episode=>play(player.item,episode,{playlist:player.episodes})} watched={watchedUrlSet(progress,history,player.item)}/>}{licenses&&<LicenseModal close={()=>setLicenses(false)}/>}{downloadModal&&<DownloadModal request={downloadModal} close={()=>setDownloadModal(null)} submit={submitDownload}/>}{busy&&<div className="busy-overlay"><div><LoaderCircle size={20} className="spin"/><span>{busy}</span></div></div>}{toast&&<div className="toast"><Check size={16}/>{toast}</div>}</div>;
+  </main></div><BottomNav page={route.page} go={go}/>{collectionDialog?.kind==='new'&&<CollectionNameDialog close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='rename'&&<CollectionNameDialog editing value={collections.find(c=>c.id===collectionDialog.id)?.name||''} close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='title'&&<TitleCollectionsDialog item={collectionDialog.item} collections={collections} close={()=>setCollectionDialog(null)} submit={selected=>saveTitleCollectionChoices(collectionDialog.item,selected)}/>}{collectionDialog?.kind==='members'&&collections.find(c=>c.id===collectionDialog.id)&&<CollectionMembersDialog collection={collections.find(c=>c.id===collectionDialog.id)} items={hideNsfw?library.filter(item=>!isNsfw(item)):library} close={()=>setCollectionDialog(null)} submit={keys=>saveCollectionMembers(collectionDialog.id,keys)}/>} {offlinePlayer&&<OfflinePlayerModal entry={offlinePlayer} close={()=>setOfflinePlayer(null)}/>}{player&&<PlayerModal key={player.episode.url} player={player} close={()=>setPlayer(null)} onEpisode={episode=>play(player.item,episode,{playlist:player.episodes})} watched={watchedUrlSet(progress,history,player.item)} markWatched={markWatched}/>}{licenses&&<LicenseModal close={()=>setLicenses(false)}/>}{downloadModal&&<DownloadModal request={downloadModal} close={()=>setDownloadModal(null)} submit={submitDownload}/>}{busy&&<div className="busy-overlay"><div><LoaderCircle size={20} className="spin"/><span>{busy}</span></div></div>}{toast&&<div className="toast"><Check size={16}/>{toast}</div>}</div>;
 }
 
 createRoot(document.getElementById('root')).render(<App/>);
