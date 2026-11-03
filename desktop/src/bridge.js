@@ -4,8 +4,7 @@
 // window.__mokuNativeChunk(id, chunk, done, error) in the page, exactly
 // like the Android bridge. The implemented surface covers networking,
 // backup files, appearance, external links, downloads/offline playback,
-// folder export, episode-update checks/alerts, folder-based device sync,
-// and direct Google Drive device sync.
+// folder export, episode-update checks/alerts, and folder-based device sync.
 import { dialog, shell } from 'electron';
 import { readFile, writeFile, stat } from 'node:fs/promises';
 import { allowedSource, allowedProjectRelease } from './lib/allowlist.js';
@@ -121,7 +120,7 @@ function fromApp(event) {
   return typeof url === 'string' && url.startsWith('mikozora://');
 }
 
-export function registerBridge(ipcMain, getWindow, store, setPlayerReferer = () => {}, downloadService = null, episodeService = null, deviceSyncService = null, googleDriveSyncService = null) {
+export function registerBridge(ipcMain, getWindow, store, setPlayerReferer = () => {}, downloadService = null, episodeService = null, deviceSyncService = null) {
   const requireDownloads = () => {
     if (!downloadService) throw new Error('Downloads are unavailable in this Windows build.');
     return downloadService;
@@ -133,10 +132,6 @@ export function registerBridge(ipcMain, getWindow, store, setPlayerReferer = () 
   const requireDeviceSync = () => {
     if (!deviceSyncService) throw new Error('Device sync is unavailable in this Windows build.');
     return deviceSyncService;
-  };
-  const requireGoogleDriveSync = () => {
-    if (!googleDriveSyncService) throw new Error('Google Drive sync is unavailable in this Windows build.');
-    return googleDriveSyncService;
   };
   // Episode methods mirror MainActivity.episodeError: only the known
   // user-facing messages reach the UI; everything else is generic.
@@ -180,11 +175,6 @@ export function registerBridge(ipcMain, getWindow, store, setPlayerReferer = () 
       else if (method === 'clearDeviceSyncFolder') out = JSON.stringify(await requireDeviceSync().clearFolder());
       else if (method === 'readDeviceSyncFolder') out = JSON.stringify(await requireDeviceSync().readFolder());
       else if (method === 'writeDeviceSyncFile') out = JSON.stringify(await requireDeviceSync().writeFile(String(args?.[0] ?? ''), String(args?.[1] ?? '')));
-      else if (method === 'googleDriveSyncSettings') out = JSON.stringify(await requireGoogleDriveSync().settings());
-      else if (method === 'connectGoogleDriveSync') out = JSON.stringify(await requireGoogleDriveSync().connect());
-      else if (method === 'disconnectGoogleDriveSync') out = JSON.stringify(await requireGoogleDriveSync().disconnect());
-      else if (method === 'readGoogleDriveSyncFiles') out = JSON.stringify(await requireGoogleDriveSync().readFiles());
-      else if (method === 'writeGoogleDriveSyncFile') out = JSON.stringify(await requireGoogleDriveSync().writeFile(String(args?.[0] ?? ''), String(args?.[1] ?? '')));
       else throw new Error('Not available in the Windows app yet.');
       sendChunks(event.sender, id, out, null);
     } catch (err) {

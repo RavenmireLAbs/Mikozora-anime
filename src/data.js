@@ -40,14 +40,14 @@ export function hasNativeDownloads() { return isAndroid() && typeof window.MokuB
 function bridgeCall(method, ...args) {
   return new Promise((resolve, reject) => {
     if (!isAndroid() || typeof window.MokuBridge[method] !== 'function') {
-      reject(new Error(method.startsWith('deviceSync') || method.includes('GoogleDriveSync') || method.endsWith('DeviceSyncFolder') || method.endsWith('DeviceSyncFile')
+      reject(new Error(method.startsWith('deviceSync') || method.endsWith('DeviceSyncFolder') || method.endsWith('DeviceSyncFile')
         ? 'Device sync is available in the Android and Windows apps.'
         : 'Downloads are available in the Android app.'));
       return;
     }
     const id = String(++nextRequest);
-    const timeout = ['chooseDownloadFolder', 'chooseDeviceSyncFolder', 'connectGoogleDriveSync', 'saveBackupFile', 'openBackupFile'].includes(method) ? 300000
-      : ['readDeviceSyncFolder', 'writeDeviceSyncFile', 'readGoogleDriveSyncFiles', 'writeGoogleDriveSyncFile'].includes(method) ? 120000
+    const timeout = ['chooseDownloadFolder', 'chooseDeviceSyncFolder', 'saveBackupFile', 'openBackupFile'].includes(method) ? 300000
+      : ['readDeviceSyncFolder', 'writeDeviceSyncFile'].includes(method) ? 120000
         : method === 'downloadOptions' ? 90000 : method === 'request' ? 120000 : 30000;
     const timer = setTimeout(() => { pending.delete(id); reject(new Error('The app took too long to respond.')); }, timeout);
     pending.set(id, { resolve, reject, timer, parts: [] });
@@ -109,25 +109,6 @@ export async function readDeviceSyncFolder() {
   return { files: Array.isArray(result?.files) ? result.files : [] };
 }
 export async function writeDeviceSyncFile(name, text) { return JSON.parse(await bridgeCall('writeDeviceSyncFile', name, text)); }
-// Direct Google Drive transport: native code owns OAuth and the Drive API,
-// while the same device-sync engine validates and merges payloads. The
-// native side is restricted to Mikozora's own Drive folder and file names.
-export function hasGoogleDriveSync() {
-  return isAndroid()
-    && typeof window.MokuBridge.googleDriveSyncSettings === 'function'
-    && typeof window.MokuBridge.connectGoogleDriveSync === 'function'
-    && typeof window.MokuBridge.disconnectGoogleDriveSync === 'function'
-    && typeof window.MokuBridge.readGoogleDriveSyncFiles === 'function'
-    && typeof window.MokuBridge.writeGoogleDriveSyncFile === 'function';
-}
-export async function getGoogleDriveSyncSettings() { return JSON.parse(await bridgeCall('googleDriveSyncSettings')); }
-export async function connectGoogleDriveSync() { return JSON.parse(await bridgeCall('connectGoogleDriveSync')); }
-export async function disconnectGoogleDriveSync() { return JSON.parse(await bridgeCall('disconnectGoogleDriveSync')); }
-export async function readGoogleDriveSyncFiles() {
-  const result = JSON.parse(await bridgeCall('readGoogleDriveSyncFiles'));
-  return { files: Array.isArray(result?.files) ? result.files : [] };
-}
-export async function writeGoogleDriveSyncFile(name, text) { return JSON.parse(await bridgeCall('writeGoogleDriveSyncFile', name, text)); }
 export function openExport(id) {
   if (!isAndroid() || typeof window.MokuBridge.openExport !== 'function') throw new Error('Open the exported file in the Android app.');
   window.MokuBridge.openExport(id);

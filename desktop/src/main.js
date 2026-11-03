@@ -6,7 +6,7 @@
 // proxy, page fetches through the MokuBridge-compatible IPC bridge in
 // bridge.js, and everything the UI stores (library, progress, backups)
 // keeps the exact Android formats — an Android backup file imports as-is.
-import { app, BrowserWindow, Menu, Tray, Notification, nativeImage, protocol, safeStorage, shell, ipcMain, session } from 'electron';
+import { app, BrowserWindow, Menu, Tray, Notification, nativeImage, protocol, shell, ipcMain, session } from 'electron';
 import { join, extname, normalize } from 'node:path';
 import { createReadStream, readFileSync, writeFileSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
@@ -21,8 +21,6 @@ import { DownloadService } from './lib/download-service.js';
 import { EpisodeStore } from './lib/episode-store.js';
 import { EpisodeService } from './lib/episode-service.js';
 import { DeviceSyncService } from './lib/device-sync-service.js';
-import { GOOGLE_DRIVE_CLIENT_ID, GOOGLE_DRIVE_CLIENT_SECRET } from './lib/google-drive-config.js';
-import { GoogleDriveSyncService } from './lib/google-drive-sync-service.js';
 import { createFfmpegProcessor } from './lib/ffmpeg.js';
 import ffmpegStaticPath from 'ffmpeg-static';
 
@@ -43,7 +41,6 @@ let store = { get: (key, fallback) => fallback, set() {}, flush() {} };
 let downloadService = null;
 let episodeService = null;
 let deviceSyncService = null;
-let googleDriveSyncService = null;
 let tray = null;
 let quitting = false;
 let episodeNotification = null;
@@ -57,38 +54,19 @@ function createStore() {
   const file = join(app.getPath('userData'), 'settings.json');
   let values = {};
   try { values = JSON.parse(readFileSync(file, 'utf8')) || {}; } catch { /* first run */ }
+  // Retired in 0.27.1: direct Drive sync kept its refresh token under this
+  // settings key. Remove that local credential when an upgraded profile is
+  // first loaded; files already in Drive are not touched.
+  const hadRetiredDriveSync = Object.prototype.hasOwnProperty.call(values, 'googleDriveSync');
+  if (hadRetiredDriveSync) delete values.googleDriveSync;
   let timer = null;
   const save = () => { try { writeFileSync(file, JSON.stringify(values), 'utf8'); } catch { /* read-only profile */ } };
+  if (hadRetiredDriveSync) save();
   return {
     get: (key, fallback) => (key in values ? values[key] : fallback),
     set(key, value) { values[key] = value; clearTimeout(timer); timer = setTimeout(save, 150); },
     flush: save,
   };
-}
-
-function googleClientConfig() {
-  return {
-    clientId: String(process.env.MIKOZORA_GOOGLE_CLIENT_ID || GOOGLE_DRIVE_CLIENT_ID || '').trim(),
-    clientSecret: String(process.env.MIKOZORA_GOOGLE_CLIENT_SECRET || GOOGLE_DRIVE_CLIENT_SECRET || '').trim(),
-  };
-}
-
-function protectGoogleSecret(value) {
-  const text = String(value || '');
-  try {
-    if (text && safeStorage.isEncryptionAvailable()) {
-      return { protected: true, value: safeStorage.encryptString(text).toString('base64') };
-    }
-  } catch { /* Fall back to the per-user settings file below. */ }
-  return { protected: false, value: text };
-}
-
-function unprotectGoogleSecret(record) {
-  const value = String(record?.value || '');
-  if (!value) return '';
-  if (!record?.protected) return value;
-  try { return safeStorage.decryptString(Buffer.from(value, 'base64')); }
-  catch { return ''; }
 }
 
 // --- mikozora:// handler: bundled web UI + artwork proxy ---
@@ -394,15 +372,8 @@ if (!app.requestSingleInstanceLock()) {
     });
     episodeService.start().then(() => syncTray(episodeService.state())).catch(() => {});
     deviceSyncService = new DeviceSyncService({ store });
-    googleDriveSyncService = new GoogleDriveSyncService({
-      store,
-      ...googleClientConfig(),
-      openExternal: (url) => shell.openExternal(url),
-      protectSecret: protectGoogleSecret,
-      unprotectSecret: unprotectGoogleSecret,
-    });
     protocol.handle('mikozora', handleAppRequest);
-    registerBridge(ipcMain, () => win, store, (referer) => { currentPlayerReferer = referer; }, downloadService, episodeService, deviceSyncService, googleDriveSyncService);
+    registerBridge(ipcMain, () => win, store, (referer) => { currentPlayerReferer = referer; }, downloadService, episodeService, deviceSyncService);
     createWindow();
   });
   app.on('window-all-closed', () => { if (!tray) app.quit(); });

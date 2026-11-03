@@ -8,7 +8,6 @@ import {
   prepareDeviceSync,
   readDeviceSyncMeta,
   resetDeviceSyncPublication,
-  setDeviceSyncTransport,
   snapshotFromStorage,
 } from '../src/device-sync.js';
 import { APPEARANCE_KEY } from '../src/appearance.js';
@@ -72,7 +71,7 @@ test('prepares a bounded own-device file and does not republish an unchanged sna
   assert.equal(second.revision, first.revision);
 });
 
-test('transport choice stays local and reconnecting a transport forces one republish', () => {
+test('installation metadata stays out of payloads and choosing a folder forces one republish', () => {
   const store = seed(new Store(), {
     library: [item(1)],
     collections: [{ id: 'favourites', name: 'Favourites', items: [keyOf(item(1))] }],
@@ -87,16 +86,13 @@ test('transport choice stays local and reconnecting a transport forces one repub
   assert.equal(first.shouldWrite, true);
   assert.equal(prepareDeviceSync(store, [], { platform: 'android', now: 2000 }).shouldWrite, false);
 
-  const googleMeta = setDeviceSyncTransport(store, 'google', 'android');
-  assert.equal(googleMeta.transport, 'google');
-  assert.equal(JSON.parse(store.getItem(DEVICE_SYNC_KEY)).transport, 'google');
-  assert.equal(Object.hasOwn(first.payload, 'transport'), false, 'transport must not travel in sync payloads');
+  assert.equal(Object.hasOwn(JSON.parse(store.getItem(DEVICE_SYNC_KEY)), 'transport'), false, 'retired transport choices must not be retained');
+  assert.equal(Object.hasOwn(first.payload, 'transport'), false, 'installation metadata must not travel in sync payloads');
 
   resetDeviceSyncPublication(store, 'android');
   const republished = prepareDeviceSync(store, [], { platform: 'android', now: 3000 });
-  assert.equal(republished.shouldWrite, true, 'a newly connected Drive folder may not contain this device file yet');
+  assert.equal(republished.shouldWrite, true, 'a newly chosen folder may not contain this device file yet');
   assert.equal(republished.revision, first.revision + 1);
-  assert.equal(setDeviceSyncTransport(store, 'carrier-pigeon', 'android').transport, 'folder');
 });
 
 test('two devices converge on library, collections, progress and settings additions', () => {

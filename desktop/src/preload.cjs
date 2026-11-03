@@ -73,11 +73,6 @@ if (protocol === 'mikozora:') {
     clearDeviceSyncFolder: call('clearDeviceSyncFolder'),
     readDeviceSyncFolder: call('readDeviceSyncFolder'),
     writeDeviceSyncFile: call('writeDeviceSyncFile'),
-    googleDriveSyncSettings: call('googleDriveSyncSettings'),
-    connectGoogleDriveSync: call('connectGoogleDriveSync'),
-    disconnectGoogleDriveSync: call('disconnectGoogleDriveSync'),
-    readGoogleDriveSyncFiles: call('readGoogleDriveSyncFiles'),
-    writeGoogleDriveSyncFile: call('writeGoogleDriveSyncFile'),
     setAppearance: fire('setAppearance'),
     openExternal: fire('openExternal'),
   });

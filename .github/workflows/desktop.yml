@@ -64,12 +64,8 @@ jobs:
           npm run build
       - name: Package the Windows app
         working-directory: desktop
-        env:
-          MIKOZORA_GOOGLE_CLIENT_ID: ${{ secrets.MIKOZORA_GOOGLE_DESKTOP_CLIENT_ID }}
-          MIKOZORA_GOOGLE_CLIENT_SECRET: ${{ secrets.MIKOZORA_GOOGLE_DESKTOP_CLIENT_SECRET }}
         run: |
           npm ci
-          node scripts/write-google-config.mjs
           npm run sync-web
           npm run dist
       - uses: actions/upload-artifact@v7
