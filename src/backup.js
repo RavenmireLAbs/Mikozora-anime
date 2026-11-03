@@ -12,6 +12,7 @@ import { CONTENT_KEY } from './content.js';
 import { UPDATE_KEY } from './update.js';
 import { SMART_DOWNLOADS_KEY } from './smart-downloads.js';
 import { LIBRARY_META_KEY } from './library-meta.js';
+import { SOURCE_MATCHES_KEY } from './source-match.js';
 
 export const BACKUP_FORMAT = 'mikozora-backup';
 export const BACKUP_VERSION = 1;
@@ -22,6 +23,7 @@ export const BACKUP_KEYS = [
   LIBRARY_META_KEY,
   'moku.history.v1',
   PROGRESS_KEY,
+  SOURCE_MATCHES_KEY,
   APPEARANCE_KEY,
   CONTENT_KEY,
   UPDATE_KEY,
@@ -54,11 +56,14 @@ export function summarizeBackup(data) {
     const value = parseJson(data?.[key] || 'null');
     return Array.isArray(value) ? value.length : 0;
   };
+  const sourceMatches = parseJson(data?.[SOURCE_MATCHES_KEY] || 'null');
   return {
     library: count('moku.library.v1'),
     collections: count(COLLECTIONS_KEY),
     history: count('moku.history.v1'),
     progress: count(PROGRESS_KEY),
+    sourceMatches: sourceMatches?.edges && typeof sourceMatches.edges === 'object' && !Array.isArray(sourceMatches.edges)
+      ? Object.keys(sourceMatches.edges).length : 0,
   };
 }
 

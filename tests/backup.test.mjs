@@ -14,6 +14,19 @@ const full = () => new Store({
   'moku.collections.v1': JSON.stringify([{ id: 'favourites', name: 'Favourites', items: [] }]),
   'moku.history.v1': JSON.stringify([{ item: {}, episode: {}, time: 1 }, { item: {}, episode: {}, time: 2 }]),
   'moku.progress.v1': JSON.stringify([{ key: 'sogo|https://x/1' }]),
+  'moku.sourceMatches.v1': JSON.stringify({
+    version: 1,
+    edges: {
+      'animesalt|https://y/1\nsogo|https://x/1': {
+        keys: ['animesalt|https://y/1', 'sogo|https://x/1'],
+        items: {
+          'animesalt|https://y/1': { source: 'animesalt', url: 'https://y/1', title: 'Same Show' },
+          'sogo|https://x/1': { source: 'sogo', url: 'https://x/1', title: 'Same Show' },
+        },
+        updatedAt: 1,
+      },
+    },
+  }),
   'moku.libraryMeta.v1': JSON.stringify({ 'sogo|https://x/1': { rating: 5, note: 'Rewatch', status: 'watching', updatedAt: 1 } }),
   'moku.appearance.v1': JSON.stringify({ mode: 'dark', accent: 'blue' }),
   'unrelated.key': 'keep me',
@@ -25,24 +38,32 @@ test('buildBackup collects only the known stores', () => {
   assert.equal(backup.version, BACKUP_VERSION);
   assert.equal(backup.createdAt, '2026-11-02T03:04:00.000Z');
   assert.deepEqual(Object.keys(backup.data).sort(),
-    ['moku.appearance.v1', 'moku.collections.v1', 'moku.history.v1', 'moku.library.v1', 'moku.libraryMeta.v1', 'moku.progress.v1'].sort());
+    ['moku.appearance.v1', 'moku.collections.v1', 'moku.history.v1', 'moku.library.v1', 'moku.libraryMeta.v1', 'moku.progress.v1', 'moku.sourceMatches.v1'].sort());
   assert.ok(!('unrelated.key' in backup.data));
   assert.equal(backupFileName(new Date(2026, 10, 2, 3, 4)), 'mikozora-backup-2026-11-02-0304.json');
 });
 
 test('parseBackup round-trips and summarizes, applyBackup replaces device state', () => {
   const parsed = parseBackup(JSON.stringify(buildBackup(full())));
-  assert.deepEqual(parsed.summary, { library: 1, collections: 1, history: 2, progress: 1 });
+  assert.deepEqual(parsed.summary, { library: 1, collections: 1, history: 2, progress: 1, sourceMatches: 1 });
   const device = new Store({
     'moku.library.v1': '[]',
+    'moku.sourceMatches.v1': '{"version":1,"edges":{"stale":{}}}',
     'moku.update.v1': '{"autoCheck":false}',
     'unrelated.key': 'keep me',
   });
   applyBackup(device, parsed.data);
   assert.equal(JSON.parse(device.getItem('moku.library.v1')).length, 1);
   assert.equal(JSON.parse(device.getItem('moku.libraryMeta.v1'))['sogo|https://x/1'].rating, 5);
+  assert.equal(Object.keys(JSON.parse(device.getItem('moku.sourceMatches.v1')).edges).length, 1);
+  assert.equal(JSON.parse(device.getItem('moku.sourceMatches.v1')).edges.stale, undefined);
   assert.equal(device.getItem('moku.update.v1'), null); // absent from backup: cleared
   assert.equal(device.getItem('unrelated.key'), 'keep me'); // never touched
+
+  const withoutSourceMatches = { ...parsed.data };
+  delete withoutSourceMatches['moku.sourceMatches.v1'];
+  applyBackup(device, withoutSourceMatches);
+  assert.equal(device.getItem('moku.sourceMatches.v1'), null, 'a backup without confirmed links must clear stale links');
 });
 
 test('parseBackup rejects foreign, damaged and newer files', () => {

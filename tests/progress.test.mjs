@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeProgress, recordWatch, refreshSnapshot, removeProgressTitle, setEpisodesWatched, watchedUrlSet, titleProgress, nextUp, continueWatching, progressByTitle } from '../src/progress.js';
+import { normalizeProgress, recordWatch, refreshSnapshot, removeProgressTitle, removeProgressTitles, setEpisodesWatched, setLinkedEpisodesWatched, watchedEpisodeNumbers, watchedUrlSet, watchedUrlSetForEpisodes, titleProgress, nextUp, continueWatching, progressByTitle } from '../src/progress.js';
 
 const item = (id = 'a') => ({ source: 'sogo', url: `https://example.com/${id}`, title: `Title ${id}`, image: '', type: 'TV', badge: 'SUB', status: 'Ongoing', genres: [], aired: '', year: '2024', rating: null, nsfw: false });
 const ep = (t, n) => ({ number: String(n), url: `https://example.com/${t}/ep-${n}`, title: `Episode ${n}`, ids: `${t}-${n}` });
@@ -130,4 +130,98 @@ test('setEpisodesWatched marks and unmarks without playing', () => {
   assert.equal(continueWatching(entries, [])[0].episode.number, '2');
   // No targets: no-op beyond normalization.
   assert.deepEqual(setEpisodesWatched(entries, item('a'), all, [], true, 300), entries);
+});
+
+const sourceItem = (source, id) => ({ ...item(id), source, url: `https://example.com/${source}/${id}` });
+const sourceEp = (source, id, n, number = String(n)) => ({
+  number,
+  url: `https://example.com/${source}/${id}/ep-${n}`,
+  title: `Episode ${n}`,
+  ids: `${source}-${id}-${n}`,
+});
+const sourceEps = (source, id, count) => Array.from({ length: count }, (_, i) => sourceEp(
+  source, id, i + 1, source === 'animesalt' ? String(i + 1).padStart(2, '0') : String(i + 1),
+));
+const sourceHist = (source, id, n, time = 1) => ({
+  item: sourceItem(source, id),
+  episode: sourceEp(source, id, n),
+  time,
+});
+
+test('confirmed linked titles share watched numbers without merging source identities', () => {
+  const a = sourceItem('sogo', 'show');
+  const b = sourceItem('animesalt', 'show');
+  const keyA = 'sogo|https://example.com/sogo/show';
+  const keyB = 'animesalt|https://example.com/animesalt/show';
+  const related = [keyA, keyB];
+  const relatedByTitle = { [keyA]: related, [keyB]: [keyB, keyA] };
+
+  let entries = recordWatch([], a, sourceEp('sogo', 'show', 2), sourceEps('sogo', 'show', 4), 100);
+  entries = recordWatch(entries, a, sourceEp('sogo', 'show', 1), sourceEps('sogo', 'show', 4), 150);
+  entries = recordWatch(entries, b, sourceEp('animesalt', 'show', 2, '02'), sourceEps('animesalt', 'show', 4), 200);
+
+  assert.deepEqual([...watchedEpisodeNumbers(entries, [], related)].sort(), ['1', '2']);
+  const effectiveB = watchedUrlSetForEpisodes(entries, [], b, sourceEps('animesalt', 'show', 4), related);
+  assert.equal(effectiveB.has(sourceEp('animesalt', 'show', 1, '01').url), true);
+  assert.equal(effectiveB.has(sourceEp('animesalt', 'show', 2, '02').url), true);
+  assert.equal(effectiveB.has(sourceEp('animesalt', 'show', 3, '03').url), false);
+  assert.deepEqual(
+    (({ watchedCount, total }) => ({ watchedCount, total }))(titleProgress(entries, [], b, related)),
+    { watchedCount: 2, total: 4 },
+  );
+  assert.deepEqual(progressByTitle(entries, [], relatedByTitle)[keyA], { watchedCount: 2, total: 4 });
+  assert.deepEqual(progressByTitle(entries, [], relatedByTitle)[keyB], { watchedCount: 2, total: 4 });
+
+  const rail = continueWatching(entries, [], 12, relatedByTitle);
+  assert.equal(rail.length, 1);
+  assert.equal(rail[0].item.source, 'animesalt');
+  assert.equal(rail[0].episode.number, '03');
+  assert.equal(rail[0].watchedCount, 2);
+
+  entries = setLinkedEpisodesWatched(
+    entries,
+    a,
+    sourceEps('sogo', 'show', 4),
+    [sourceEp('sogo', 'show', 3)],
+    true,
+    related,
+    300,
+  );
+  assert.equal(entries.find(entry => entry.key === keyA).watched.includes(sourceEp('sogo', 'show', 3).url), true);
+  assert.equal(entries.find(entry => entry.key === keyB).watched.includes(sourceEp('animesalt', 'show', 3, '03').url), true);
+
+  entries = setLinkedEpisodesWatched(
+    entries,
+    a,
+    sourceEps('sogo', 'show', 4),
+    [sourceEp('sogo', 'show', 2).url],
+    false,
+    related,
+    400,
+  );
+  assert.equal(entries.find(entry => entry.key === keyA).watched.includes(sourceEp('sogo', 'show', 2).url), false);
+  assert.equal(entries.find(entry => entry.key === keyB).watched.includes(sourceEp('animesalt', 'show', 2, '02').url), false);
+  assert.deepEqual(removeProgressTitles(entries, related), []);
+});
+
+test('linked readers use history numbers but never promote unnumbered specials', () => {
+  const a = sourceItem('sogo', 'legacy');
+  const b = sourceItem('animesalt', 'legacy');
+  const related = ['sogo|https://example.com/sogo/legacy', 'animesalt|https://example.com/animesalt/legacy'];
+  const entries = recordWatch([], a, sourceEp('sogo', 'legacy', 1), sourceEps('sogo', 'legacy', 3), 100);
+  const history = [sourceHist('animesalt', 'legacy', 2)];
+  const effectiveA = watchedUrlSetForEpisodes(entries, history, a, sourceEps('sogo', 'legacy', 3), related);
+  assert.deepEqual([...watchedEpisodeNumbers(entries, history, related)].sort(), ['1', '2']);
+  assert.equal(effectiveA.has(sourceEp('sogo', 'legacy', 2).url), true);
+  assert.deepEqual(
+    (({ watchedCount, total }) => ({ watchedCount, total }))(titleProgress(entries, history, b, related)),
+    { watchedCount: 2, total: null },
+  );
+
+  const specialA = { number: 'Special', url: 'https://example.com/sogo/legacy/special', title: 'Special', ids: '' };
+  const specialB = { number: 'OVA', url: 'https://example.com/animesalt/legacy/special', title: 'OVA', ids: '' };
+  const specialEntries = recordWatch([], a, specialA, [specialA], 200);
+  const effectiveSpecial = watchedUrlSetForEpisodes(specialEntries, [], b, [specialB], related);
+  assert.deepEqual([...watchedEpisodeNumbers(specialEntries, [], related)], []);
+  assert.equal(effectiveSpecial.has(specialB.url), false);
 });

@@ -13,6 +13,13 @@ import {
 import { APPEARANCE_KEY } from '../src/appearance.js';
 import { CONTENT_KEY } from '../src/content.js';
 import { SMART_DOWNLOADS_KEY } from '../src/smart-downloads.js';
+import {
+  linkSourceTitles,
+  normalizeSourceMatches,
+  sourceMatchEdgeCount,
+  sourceMatchEdgeId,
+  unlinkSourceTitle,
+} from '../src/source-match.js';
 
 class Store {
   constructor(initial = {}) { this.values = new Map(Object.entries(initial)); }
@@ -30,6 +37,13 @@ const item = (n, title = `Series ${n}`) => ({
 });
 const keyOf = (value) => `${value.source}|${value.url}`;
 const ep = (series, n) => ({ number: String(n), url: `https://example.test/series-${series}/ep-${n}`, title: `Episode ${n}`, ids: '' });
+const sourceVersion = (n, source = 'animesalt') => ({
+  ...item(n),
+  source,
+  url: `https://${source}.test/series-${n}`,
+  image: `https://${source}.test/${n}.jpg`,
+});
+const linkedMatches = (n, updatedAt) => linkSourceTitles(null, item(n), sourceVersion(n), updatedAt);
 
 function seed(store, data, platform, id) {
   readDeviceSyncMeta(store, platform, { create: true, randomId: () => id });
@@ -50,6 +64,7 @@ test('prepares a bounded own-device file and does not republish an unchanged sna
     history: [{ item: item(1), episode: ep(1, 1), time: 900 }],
     progress: [],
     libraryMeta: { [keyOf(item(1))]: { rating: 5, note: 'A favourite\nweekend watch', status: 'watching', updatedAt: 900 } },
+    sourceMatches: linkedMatches(1, 900),
     appearance: { mode: 'light', accent: 'pink' },
     content: { hideNsfw: true },
     smartDownloads: { enabled: true },
@@ -61,14 +76,18 @@ test('prepares a bounded own-device file and does not republish an unchanged sna
   assert.equal(first.fileName, 'mikozora-sync-android-aaaaaaaaaaaaaaaa.json');
   assert.equal(first.shouldWrite, true);
   assert.deepEqual(Object.keys(first.payload.data).sort(), [
-    'appearance', 'collections', 'content', 'history', 'library', 'libraryMeta', 'progress', 'smartDownloads',
+    'appearance', 'collections', 'content', 'history', 'library', 'libraryMeta', 'progress', 'smartDownloads', 'sourceMatches',
   ]);
   assert.equal(JSON.stringify(first.payload).includes('9.9.9'), false);
   assert.equal(parseDeviceSyncFile(first.payloadText)?.deviceId, 'aaaaaaaaaaaaaaaa');
   assert.equal(first.payload.data.libraryMeta[keyOf(item(1))]?.rating, 5);
   assert.equal(first.payload.data.libraryMeta[keyOf(item(1))]?.note, 'A favourite\nweekend watch');
+  const sourceMatchEdge = sourceMatchEdgeId(item(1), sourceVersion(1));
+  assert.equal(sourceMatchEdgeCount(first.payload.data.sourceMatches), 1);
+  assert.ok(first.payload.meta.sourceMatches[sourceMatchEdge]);
   assert.ok(JSON.parse(store.getItem(DEVICE_SYNC_KEY)).recordMeta.library[keyOf(item(1))]);
   assert.ok(JSON.parse(store.getItem(DEVICE_SYNC_KEY)).recordMeta.libraryMeta[keyOf(item(1))]);
+  assert.ok(JSON.parse(store.getItem(DEVICE_SYNC_KEY)).recordMeta.sourceMatches[sourceMatchEdge]);
 
   const second = prepareDeviceSync(store, [], { platform: 'android', now: 2000 });
   assert.equal(second.shouldWrite, false);
@@ -223,6 +242,46 @@ test('personal shelf records converge, update and clear across devices', () => {
   publish(android, [clearedWindowsFile.payloadText], 'android', 6000);
   assert.equal(snapshotFromStorage(android).libraryMeta[key], undefined);
   assert.ok(JSON.parse(android.getItem(DEVICE_SYNC_KEY)).recordMeta.libraryMeta[key].deletedAt > 0);
+});
+
+test('confirmed source links converge, unlink through tombstones and can relink', () => {
+  const edgeId = sourceMatchEdgeId(item(1), sourceVersion(1));
+  const android = seed(new Store(), {
+    library: [item(1)],
+    sourceMatches: linkedMatches(1, 900),
+  }, 'android', 'aaaaaaaaaaaaaaaa');
+  const windows = seed(new Store(), {
+    library: [],
+    sourceMatches: normalizeSourceMatches(null),
+  }, 'windows', 'bbbbbbbbbbbbbbbb');
+
+  const androidFile = publish(android, [], 'android', 1000);
+  publish(windows, [androidFile.payloadText], 'windows', 2000);
+  assert.equal(sourceMatchEdgeCount(snapshotFromStorage(windows).sourceMatches), 1);
+  assert.ok(JSON.parse(windows.getItem(DEVICE_SYNC_KEY)).recordMeta.sourceMatches[edgeId]);
+  assert.equal(JSON.parse(windows.getItem(DEVICE_SYNC_KEY)).recordMeta.sourceMatches[edgeId].deletedAt, 0);
+
+  applySyncSnapshotToStorage(windows, {
+    ...snapshotFromStorage(windows),
+    sourceMatches: unlinkSourceTitle(snapshotFromStorage(windows).sourceMatches, item(1)),
+  });
+  const unlinkedWindowsFile = publish(windows, [], 'windows', 3000);
+  assert.equal(sourceMatchEdgeCount(snapshotFromStorage(windows).sourceMatches), 0);
+  assert.ok(JSON.parse(windows.getItem(DEVICE_SYNC_KEY)).recordMeta.sourceMatches[edgeId].deletedAt > 0);
+
+  publish(android, [unlinkedWindowsFile.payloadText], 'android', 4000);
+  assert.equal(sourceMatchEdgeCount(snapshotFromStorage(android).sourceMatches), 0);
+  assert.ok(JSON.parse(android.getItem(DEVICE_SYNC_KEY)).recordMeta.sourceMatches[edgeId].deletedAt > 0);
+
+  applySyncSnapshotToStorage(windows, {
+    ...snapshotFromStorage(windows),
+    sourceMatches: linkedMatches(1, 5000),
+  });
+  const relinkedWindowsFile = publish(windows, [], 'windows', 6000);
+  publish(android, [relinkedWindowsFile.payloadText], 'android', 7000);
+  assert.equal(sourceMatchEdgeCount(snapshotFromStorage(android).sourceMatches), 1);
+  assert.equal(snapshotFromStorage(android).sourceMatches.edges[edgeId].updatedAt, 5000);
+  assert.equal(JSON.parse(android.getItem(DEVICE_SYNC_KEY)).recordMeta.sourceMatches[edgeId].deletedAt, 0);
 });
 
 test('malformed, future and own peer files are ignored safely', () => {

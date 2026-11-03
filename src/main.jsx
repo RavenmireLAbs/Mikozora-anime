@@ -4,14 +4,15 @@ import {
   Home, Compass, Bookmark, History, Layers3, Settings2, Search, ArrowRight,
   ArrowUpRight, ChevronLeft, ChevronRight, Play, Check, RefreshCw, X, Clock3,
   ExternalLink, Sparkles, SlidersHorizontal, Film, LoaderCircle, AlertCircle,
-  Trash2, RotateCcw, FolderHeart, CircleHelp, ShieldCheck, Plus, ListVideo, Download, HardDrive, ListChecks, CheckCircle2, Heart, FolderPlus, Pencil, Folder, Flame, Bell, Sun, Moon, EyeOff, Star, Maximize
+  Trash2, RotateCcw, FolderHeart, CircleHelp, ShieldCheck, Plus, ListVideo, Download, HardDrive, ListChecks, CheckCircle2, Heart, FolderPlus, Pencil, Folder, Flame, Bell, Sun, Moon, EyeOff, Star, Maximize, Link2, Unlink
 } from 'lucide-react';
 import { SOURCES, getCatalog, getDetail, getFeatured, getTrending, getDiscoverAnime, getServers, imageUrl, isAndroid, clearNetworkCache, getDownloads, getDownloadOptions, enqueueDownloads, removeDownload, openDownload, getExportSettings, chooseDownloadFolder, clearDownloadFolder, exportDownload, openExport, hasEpisodeUpdates, syncEpisodeTitles, getEpisodeUpdates, checkEpisodes, setEpisodeAutomatic, setEpisodeAlerts, markEpisodeRead, fetchLatestRelease, exportBackupToFile, readBackupFromFile, isDesktopApp, hasNativeDownloads, setPlayerReferer, hasDeviceSync, getDeviceSyncSettings, chooseDeviceSyncFolder, clearDeviceSyncFolder, readDeviceSyncFolder, writeDeviceSyncFile } from './data';
 import { buildPlaybackPlaylist, compactPlaybackPlaylist } from './playback';
 import { monitoredTitles, unreadByTitle } from './episode-updates';
 import { SMART_DOWNLOADS_KEY, readSmartDownloads, saveSmartDownloads, smartTitleSelection, smartDownloadsForSync, withDownloadPreset } from './smart-downloads';
 import { COLLECTIONS_KEY, FAVOURITES_ID, titleKey, normalizeCollections, collectionNameError, createCollection, renameCollection, deleteCollection, setCollectionItems, setTitleCollections, toggleFavourite, removeTitleFromCollections } from './collections';
-import { PROGRESS_KEY, normalizeProgress, recordWatch, refreshSnapshot, setEpisodesWatched, removeProgressTitle, watchedUrlSet, continueWatching, progressByTitle } from './progress';
+import { PROGRESS_KEY, normalizeProgress, recordWatch, refreshSnapshot, setEpisodesWatched, setLinkedEpisodesWatched, removeProgressTitle, removeProgressTitles, watchedUrlSet, watchedEpisodeNumbers, watchedUrlSetForEpisodes, continueWatching, progressByTitle } from './progress';
+import { SOURCE_MATCH_CANDIDATE_THRESHOLD, groupUniversalResults, linkSourceTitles, linkedTitleItems, linkedTitleKeys, normalizeSourceMatches, rankUniversalResults, readSourceMatches, relatedKeysByTitle, saveSourceMatches, scoreTitleMatch, titleVariantQueries, unlinkSourceTitle } from './source-match';
 import { backupFileName, buildBackup, parseBackup, applyBackup, downloadBackupInBrowser, pickBackupInBrowser } from './backup';
 import { APP_VERSION, RELEASES, startupExperience, completeExperience } from './releases';
 import { DEFAULT_UPDATE_STATE, readUpdateState, saveUpdateState, shouldCheckOnForeground, shouldCheckOnLaunch, withCheckResult, visibleUpdate, dismissUpdate, updateDownloadUrl } from './update';
@@ -20,7 +21,7 @@ import { CONTENT_KEY, GENRES, DEFAULT_CONTENT_PREFS, readContentPrefs, saveConte
 import { markDeviceSyncPublished, prepareDeviceSync, publicDeviceSyncMeta, readDeviceSyncMeta, resetDeviceSyncPublication, setDeviceSyncAuto, stableStringify } from './device-sync';
 import { PERSONAL_STATUSES, readLibraryMeta, saveLibraryMeta, libraryMetaFor, setLibraryMeta as setLibraryMetaRecord, removeLibraryMeta, pruneLibraryMeta, personalStatusLabel, libraryProgressState, sortLibraryTitles, libraryStats } from './library-meta';
 import { buildTasteProfile, topTasteGenres, recommendTitles, sortBrowseTitles } from './discovery';
-import { chronologicalEpisodes, findEpisodeByNumber, firstUnwatchedEpisode, episodesThrough, episodesInRange, wrappedIndex } from './episode-tools';
+import { chronologicalEpisodes, episodeNumberKey, findEpisodeByNumber, firstUnwatchedEpisode, episodesThrough, episodesInRange, wrappedIndex } from './episode-tools';
 import './style.css';
 import './theme-generated.css';
 import './appearance.css';
@@ -38,6 +39,7 @@ try { initialContent=readContentPrefs(window.localStorage); } catch { /* retain 
 const LIBRARY_KEY = 'moku.library.v1';
 const HISTORY_KEY = 'moku.history.v1';
 const sourceName = id => SOURCES[id]?.name || 'Source';
+const sourceCategory = value => SOURCES[typeof value === 'string' ? value : value?.source]?.category || '';
 const identity = titleKey;
 const savedSummary = item => ({source:item.source,url:item.url,title:item.title,image:item.image,type:item.type,badge:item.badge,status:item.status,genres:item.genres,aired:item.aired,year:item.year,rating:item.rating,nsfw:item.nsfw});
 const displayStatus = value => ({'currently airing':'Ongoing','releasing':'Ongoing','finished airing':'Completed','finished':'Completed','not yet aired':'Upcoming','not_yet_released':'Upcoming'}[String(value||'').trim().toLowerCase()] || value || 'Not provided');
@@ -119,12 +121,13 @@ function RatingBadge({ item }) {
 function Cover({ item, eager = false }) {
   return <div className="cover-img"><img src={imageUrl(item.image)} alt="" loading={eager ? 'eager' : 'lazy'} onError={e=>{ e.currentTarget.style.display='none'; }}/><div className="cover-fallback"><Film size={28}/></div></div>;
 }
-function AnimeCard({ item, onOpen, inLibrary, toggle, index = 0, favourite, onFavourite, newCount = 0, progress = null, personalMeta = null }) {
+function AnimeCard({ item, onOpen, inLibrary, toggle, index = 0, favourite, onFavourite, newCount = 0, progress = null, personalMeta = null, sourceVariants = [] }) {
   const year = yearOf(item);
   const personalRating = Number(personalMeta?.rating) || 0;
   const personalStatus = personalStatusLabel(personalMeta?.status);
   const hasPersonalNote = !!personalMeta?.note?.trim();
   const recommendationReason = typeof item.recommendationReason === 'string' ? item.recommendationReason : '';
+  const otherSources = (Array.isArray(sourceVariants) ? sourceVariants : []).filter(variant => variant && identity(variant) !== identity(item));
   return <article className="anime-card">
     <div className="card-cover">
       <button className="cover-hit" onClick={() => onOpen(item)} aria-label={`Open ${item.title}`}><Cover item={item} eager={index<4}/><span className="card-shade"/><span className="card-play"><Play size={16} fill="currentColor"/></span></button>
@@ -137,6 +140,7 @@ function AnimeCard({ item, onOpen, inLibrary, toggle, index = 0, favourite, onFa
     <div className="card-meta">{year>0&&<><span>{year}</span><b>·</b></>}<span>{item.type || 'ANIME'}</span><b>·</b><span>{sourceName(item.source)}</span></div>
     {(personalRating>0||personalStatus||hasPersonalNote)&&<div className="card-personal" aria-label={`Your shelf: ${[personalRating?`${personalRating} of 5 stars`:'',personalStatus,hasPersonalNote?'note saved':''].filter(Boolean).join(', ')}`}>{personalRating>0&&<span><Star size={11} fill="currentColor"/> {personalRating}/5</span>}{personalStatus&&<span>{personalStatus}</span>}{hasPersonalNote&&<span>Note saved</span>}</div>}
     {recommendationReason&&<p className="card-reason">{recommendationReason}</p>}
+    {otherSources.length>0&&<div className="card-sources" aria-label={`Also available on ${otherSources.map(variant=>sourceName(variant.source)).join(', ')}`}><span>Also on</span>{otherSources.slice(0,3).map(variant=><button key={identity(variant)} type="button" onClick={()=>onOpen(variant)} aria-label={`Open ${variant.title} on ${sourceName(variant.source)}`} title={`Open on ${sourceName(variant.source)}`}>{sourceName(variant.source)}</button>)}{otherSources.length>3&&<span className="card-sources-more" aria-label={`${otherSources.length-3} more sources`}>+{otherSources.length-3}</span>}</div>}
   </article>;
 }
 function Empty({ icon: Icon = Sparkles, title, body, action, actionLabel }) {
@@ -226,7 +230,7 @@ function selectedSources(source) {
   return SOURCES[source] ? [source] : [];
 }
 const BROWSE_YEARS = Array.from({length:new Date().getFullYear()+2-1990}, (_,i)=>String(new Date().getFullYear()+1-i));
-function BrowsePage({open,has,toggle, query, setQuery, source, setSource, refreshKey, hideNsfw = false, openSettings, library = [], history = [], progress = [], libraryMeta = {}}) {
+function BrowsePage({open,has,toggle, query, setQuery, source, setSource, refreshKey, hideNsfw = false, openSettings, library = [], history = [], progress = [], libraryMeta = {}, sourceMatches = null}) {
   const [draft,setDraft] = useState(query);
   const [status,setStatus] = useState('all');
   const [genre,setGenre] = useState('');
@@ -281,10 +285,29 @@ function BrowsePage({open,has,toggle, query, setQuery, source, setSource, refres
   // what the sources returned; genre/year/status mismatches are only used to
   // drop titles whose own metadata contradicts the filter.
   const filteredItems = filterTitles(data.items, { genre:activeGenre, year:activeYear, status:activeStatus, nsfw, hideNsfw });
-  const savedFilteredItems = savedFilter==='all' ? filteredItems : filteredItems.filter(item=>savedFilter==='saved' ? has(item) : !has(item));
-  const visibleItems = sort==='for-you'
-    ? recommendTitles(savedFilteredItems, { library, history, progress, libraryMeta }, { limit:savedFilteredItems.length, excludeLibrary:false, excludeWatched:false })
-    : sortBrowseTitles(savedFilteredItems, sort);
+  const grouping = searching && selectedSources(source).length > 1;
+  const effectiveSort = searching && sort==='source' ? 'universal' : (!searching && sort==='universal' ? 'source' : sort);
+  const libraryKeySet = new Set((library || []).map(identity));
+  const watchedKeySet = new Set([
+    ...(progress || []).map(entry=>entry?.key || (entry?.item ? identity(entry.item) : '')),
+    ...(history || []).map(entry=>entry?.item ? identity(entry.item) : ''),
+  ].filter(Boolean));
+  const sortedItems = effectiveSort==='for-you'
+    ? recommendTitles(filteredItems, { library, history, progress, libraryMeta }, { limit:filteredItems.length, excludeLibrary:false, excludeWatched:false })
+    : effectiveSort==='universal'
+      ? rankUniversalResults(filteredItems, query, { libraryKeys:libraryKeySet, watchedKeys:watchedKeySet })
+      : sortBrowseTitles(filteredItems, effectiveSort);
+  const visibleGroups = grouping
+    ? groupUniversalResults(sortedItems, { query, links:sourceMatches, categoryOf:sourceCategory, libraryKeys:libraryKeySet, watchedKeys:watchedKeySet, preserveOrder:true })
+      .filter(group=>{
+        if(savedFilter==='all') return true;
+        const anySaved = group.variants.some(has);
+        return savedFilter==='saved' ? anySaved : !anySaved;
+      })
+    : [];
+  const visibleItems = grouping
+    ? visibleGroups.flatMap(group=>group.variants)
+    : (savedFilter==='all' ? sortedItems : sortedItems.filter(item=>savedFilter==='saved' ? has(item) : !has(item)));
   const hiddenCount = data.items.length - visibleItems.length;
   const activeFilterCount = [!!activeGenre, !!activeYear, activeStatus!=='all', nsfw!=='all', savedFilter!=='all'].filter(Boolean).length;
   const clearFilters = ()=>{setStatus('all');setGenre('');setYear('');setNsfw('all');setSavedFilter('all');};
@@ -292,7 +315,7 @@ function BrowsePage({open,has,toggle, query, setQuery, source, setSource, refres
   const extraValue=['all','sogo','xin'].includes(source)?'':source;
   return <div className="content page-content"><div className="page-heading"><div><div className="eyebrow">SOMETHING FOR EVERY MOOD</div><h1>Find your next favorite<span>.</span></h1><p>Search across your sources or just see where the story takes you.</p></div><div className="heading-art"><Compass size={35}/><span>✦</span></div></div>
     <form className="browse-search" onSubmit={e=>{e.preventDefault();setQuery(draft.trim())}}><Search size={20}/><input value={draft} onChange={e=>setDraft(e.target.value)} placeholder="Search titles, adventures, worlds..." aria-label="Search titles"/><button className="btn primary" type="submit">Search <ArrowRight size={15}/></button></form>
-    <div className="filter-row source-filter-row"><div className="browse-source-controls"><div className="tabs" role="group" aria-label="Filter by source">{[['all','All sources'],['sogo','AnimeSogo'],['xin','AnimeXin']].map(([id,label])=><button key={id} className={source===id?'selected':''} aria-pressed={source===id} onClick={()=>setSource(id)}>{id!=='all'&&<i className={'tab-dot '+id}/>} {label}</button>)}</div><label className="source-select"><span className="sr-only">More sources</span><select aria-label="More sources" value={extraValue} onChange={e=>setSource(e.target.value || 'all')}><option value="">More sources…</option><option value="anime">All Anime sources</option><option value="donghua">All Donghua sources</option>{['Anime','Donghua'].map(category=><optgroup key={category} label={category}>{Object.values(SOURCES).filter(x=>x.category===category && !['sogo','xin'].includes(x.id)).map(src=><option key={src.id} value={src.id}>{src.name}</option>)}</optgroup>)}</select></label></div><span className="results-label">{data.loading&&!data.items.length?'LOOKING FOR STORIES':`${visibleItems.length} TITLES SHOWN${hiddenCount>0?` · ${hiddenCount} HIDDEN BY FILTERS`:''}${data.loading?' · LOADING':''}`}</span></div>
+    <div className="filter-row source-filter-row"><div className="browse-source-controls"><div className="tabs" role="group" aria-label="Filter by source">{[['all','All sources'],['sogo','AnimeSogo'],['xin','AnimeXin']].map(([id,label])=><button key={id} className={source===id?'selected':''} aria-pressed={source===id} onClick={()=>setSource(id)}>{id!=='all'&&<i className={'tab-dot '+id}/>} {label}</button>)}</div><label className="source-select"><span className="sr-only">More sources</span><select aria-label="More sources" value={extraValue} onChange={e=>setSource(e.target.value || 'all')}><option value="">More sources…</option><option value="anime">All Anime sources</option><option value="donghua">All Donghua sources</option>{['Anime','Donghua'].map(category=><optgroup key={category} label={category}>{Object.values(SOURCES).filter(x=>x.category===category && !['sogo','xin'].includes(x.id)).map(src=><option key={src.id} value={src.id}>{src.name}</option>)}</optgroup>)}</select></label></div><span className="results-label">{data.loading&&!data.items.length?'LOOKING FOR STORIES':`${grouping?`${visibleGroups.length} SHOWS · ${visibleItems.length} SOURCE LISTINGS`:`${visibleItems.length} TITLES SHOWN`}${hiddenCount>0?` · ${hiddenCount} HIDDEN BY FILTERS`:''}${data.loading?' · LOADING':''}`}</span></div>
     <div className="status-filter"><span className="status-filter-label">STATUS</span>{query ? <button className="text-link muted" onClick={()=>{setQuery('');setDraft('')}}>Clear search to filter by status, genre or year <X size={14}/></button> : <div className="tabs status-tabs" role="group" aria-label="Filter by status">{[['all','All statuses'],['ongoing','Ongoing'],['completed','Completed'],['upcoming','Upcoming']].map(([id,label])=><button key={id} className={status===id?'selected':''} aria-pressed={status===id} onClick={()=>setStatus(id)}>{label}</button>)}</div>}</div>
     <div className="browse-filters">
       <div className="filter-field genre-field"><span className="status-filter-label" id="genre-filter-label">GENRE</span><div className="tabs genre-tabs" role="group" aria-labelledby="genre-filter-label"><button className={!genre?'selected':''} aria-pressed={!genre} disabled={searching} onClick={()=>setGenre('')}>All genres</button>{GENRES.map(name=><button key={name} className={genre===name?'selected':''} aria-pressed={genre===name} disabled={searching} onClick={()=>setGenre(genre===name?'':name)}>{name}</button>)}</div></div>
@@ -303,13 +326,13 @@ function BrowsePage({open,has,toggle, query, setQuery, source, setSource, refres
       </div>
       <div className="filter-field-row browse-result-tools">
         <div className="filter-field saved-field"><span className="status-filter-label" id="saved-filter-label">SHOW</span><div className="tabs status-tabs" role="group" aria-labelledby="saved-filter-label">{[['all','All titles'],['saved','Saved'],['not-saved','Not saved']].map(([id,label])=><button key={id} className={savedFilter===id?'selected':''} aria-pressed={savedFilter===id} onClick={()=>setSavedFilter(id)}>{label}</button>)}</div></div>
-        <label className="filter-field browse-sort-field"><span className="status-filter-label">SORT LOADED RESULTS</span><select aria-label="Sort loaded results" value={sort} onChange={e=>setSort(e.target.value)}><option value="source">Source order</option><option value="for-you">For you</option><option value="title-az">Title A–Z</option><option value="title-za">Title Z–A</option><option value="year-desc">Newest year</option><option value="year-asc">Oldest year</option><option value="status">Status</option><option value="source-title">Source, then title</option></select></label>
+        <label className="filter-field browse-sort-field"><span className="status-filter-label">SORT LOADED RESULTS</span><select aria-label="Sort loaded results" value={effectiveSort} onChange={e=>setSort(e.target.value)}><option value="universal">Best match</option><option value="source">Source order</option><option value="for-you">For you</option><option value="title-az">Title A–Z</option><option value="title-za">Title Z–A</option><option value="year-desc">Newest year</option><option value="year-asc">Oldest year</option><option value="status">Status</option><option value="source-title">Source, then title</option></select></label>
       </div>
-      <p className="filter-hint">Genre and year use each source’s own listings where available; sources without them are noted below. Sorting and the saved-title view organize the stories already loaded below, so use Load more to bring in additional source results. Cards show the age rating a source provides, or NR when it provides none.</p>
+      <p className="filter-hint">Genre and year use each source’s own listings where available; sources without them are noted below. Sorting and the saved-title view organize the stories already loaded below, so use Load more to bring in additional source results. Cards show the age rating a source provides, or NR when it provides none.{grouping&&' Universal Search groups likely versions of the same show for display; grouping never links watched progress by itself.'}</p>
     </div>
-    <div className="browse-title"><div><span className="eyebrow">{query?'SEARCH RESULTS':activeFilterCount>0||hideNsfw?'FILTERED CATALOG':'THE LATEST'}</span><h2>{query?`Results for “${query}”`:activeGenre?`${activeGenre} titles`:'Explore the catalog'}</h2></div><SlidersHorizontal size={17}/></div>
+    <div className="browse-title"><div><span className="eyebrow">{grouping?'UNIVERSAL SEARCH':query?'SEARCH RESULTS':activeFilterCount>0||hideNsfw?'FILTERED CATALOG':'THE LATEST'}</span><h2>{query?`Results for “${query}”`:activeGenre?`${activeGenre} titles`:'Explore the catalog'}</h2></div><SlidersHorizontal size={17}/></div>
     {data.errors.length>0&&<div className="inline-error"><AlertCircle size={16}/> Some sources could not be reached or do not support this filter: {data.errors.map(sourceName).join(', ')}.</div>}
-    {data.loading && !data.items.length ? <div className="anime-grid">{Array.from({length:12}).map((_,i)=><div className="skeleton-card" key={i}><div className="skeleton shimmer"/><span className="skeleton shimmer"/><span className="skeleton shimmer"/></div>)}</div> : visibleItems.length ? <><div className="anime-grid">{visibleItems.map((item,i)=><AnimeCard key={identity(item)} item={item} index={i} onOpen={open} inLibrary={has(item)} toggle={toggle} personalMeta={libraryMetaFor(libraryMeta,item)}/>)}</div>{moreButton}</> : data.items.length ? <><Empty icon={hideNsfw?EyeOff:SlidersHorizontal} title="No titles match these filters" body={hideNsfw?'Everything loaded so far is hidden by your filters, or marked NSFW while NSFW is turned off in Settings. Load more titles or clear a filter.':'Everything loaded so far is filtered out. Load more titles from the sources, or clear a filter to see more.'} action={activeFilterCount>0?clearFilters:undefined} actionLabel="Clear filters"/>{moreButton}</> : <Empty icon={Search} title={query?'No titles found':'Nothing to show yet'} body={query?'Try a different title or select another source.':'The source may be unavailable. Try refreshing.'} action={()=>{setQuery('');setDraft('');setSource('all');clearFilters();}} actionLabel="Browse everything"/>}
+    {data.loading && !data.items.length ? <div className="anime-grid">{Array.from({length:12}).map((_,i)=><div className="skeleton-card" key={i}><div className="skeleton shimmer"/><span className="skeleton shimmer"/><span className="skeleton shimmer"/></div>)}</div> : visibleItems.length ? <><div className="anime-grid">{grouping ? visibleGroups.map((group,i)=><AnimeCard key={group.id} item={group.item} index={i} onOpen={open} inLibrary={has(group.item)} toggle={toggle} personalMeta={libraryMetaFor(libraryMeta,group.item)} sourceVariants={group.variants}/>) : visibleItems.map((item,i)=><AnimeCard key={identity(item)} item={item} index={i} onOpen={open} inLibrary={has(item)} toggle={toggle} personalMeta={libraryMetaFor(libraryMeta,item)}/>)}</div>{moreButton}</> : data.items.length ? <><Empty icon={hideNsfw?EyeOff:SlidersHorizontal} title="No titles match these filters" body={hideNsfw?'Everything loaded so far is hidden by your filters, or marked NSFW while NSFW is turned off in Settings. Load more titles or clear a filter.':'Everything loaded so far is filtered out. Load more titles from the sources, or clear a filter to see more.'} action={activeFilterCount>0?clearFilters:undefined} actionLabel="Clear filters"/>{moreButton}</> : <Empty icon={Search} title={query?'No titles found':'Nothing to show yet'} body={query?'Try a different title or select another source.':'The source may be unavailable. Try refreshing.'} action={()=>{setQuery('');setDraft('');setSource('all');clearFilters();}} actionLabel="Browse everything"/>}
   </div>;
 }
 function PersonalShelf({ item, meta, inLibrary, onChange, watchedCount = 0, total = 0 }) {
@@ -339,7 +362,114 @@ function PersonalShelf({ item, meta, inLibrary, onChange, watchedCount = 0, tota
     </form>
   </section>;
 }
-function DetailPage({item, openEpisode, has, toggle, organize, back, history, refreshKey, queueEpisodes, downloads, showDownloads, notify, hideNsfw = false, openSettings, watched, onEpisodesReady, markWatched, smartSelection, smartEnabled, toggleSmartDownload, libraryMeta = {}, updateLibraryMeta}) {
+function SourceVersionsPanel({ item, openItem, linkedItems = [], onLink, onUnlink, notify, hideNsfw = false }) {
+  const [candidates,setCandidates]=useState([]);
+  const [candidateErrors,setCandidateErrors]=useState([]);
+  const [searching,setSearching]=useState(false);
+  const [searched,setSearched]=useState(false);
+  const requestRef=useRef(0);
+  const linkedKeys=new Set((linkedItems || []).filter(candidate=>candidate?.source&&candidate?.url).map(identity));
+  useEffect(()=>{
+    requestRef.current++;
+    setCandidates([]);
+    setCandidateErrors([]);
+    setSearching(false);
+    setSearched(false);
+  },[item?.source,item?.url]);
+
+  const findVersions=async()=>{
+    if(searching || !item?.source || !item?.url) return;
+    const request=++requestRef.current;
+    const category=sourceCategory(item);
+    const sourceIds=Object.values(SOURCES)
+      .filter(source=>source.id!==item.source && (!category || source.category===category))
+      .map(source=>source.id);
+    const found=new Map();
+    const failed=new Set();
+    const bestBySource=new Map();
+    const remember=candidate=>{
+      if(!candidate?.source || !candidate?.url) return;
+      const key=identity(candidate);
+      if(key===identity(item)) return;
+      if(!found.has(key)) found.set(key,candidate);
+      const match=scoreTitleMatch(item,candidate,{categoryOf:sourceCategory});
+      bestBySource.set(candidate.source,Math.max(bestBySource.get(candidate.source)||0,match.score));
+    };
+    setSearching(true);
+    setSearched(true);
+    setCandidateErrors([]);
+    try {
+      for(const searchQuery of titleVariantQueries(item)) {
+        const targets=sourceIds.filter(sourceId=>(bestBySource.get(sourceId)||0)<70);
+        if(!targets.length) break;
+        const results=await Promise.allSettled(targets.map(sourceId=>getCatalog(sourceId,{query:searchQuery,page:1,status:'all',genre:'',year:''})));
+        if(request!==requestRef.current) return;
+        results.forEach((result,index)=>{
+          const sourceId=targets[index];
+          if(result.status==='rejected') failed.add(sourceId);
+          else {
+            failed.delete(sourceId);
+            (result.value?.items || []).forEach(remember);
+          }
+        });
+      }
+      const ranked=[...found.values()]
+        .map(candidate=>({item:candidate,match:scoreTitleMatch(item,candidate,{categoryOf:sourceCategory})}))
+        .filter(entry=>entry.match.score>=SOURCE_MATCH_CANDIDATE_THRESHOLD && (!hideNsfw || !isNsfw(entry.item)))
+        .sort((a,b)=>b.match.score-a.match.score || a.item.title.localeCompare(b.item.title) || sourceName(a.item.source).localeCompare(sourceName(b.item.source)))
+        .slice(0,12);
+      if(request!==requestRef.current) return;
+      setCandidates(ranked);
+      setCandidateErrors([...failed]);
+      if(!ranked.length && failed.size===sourceIds.length) notify?.('No other source could be searched right now');
+    } finally {
+      if(request===requestRef.current) setSearching(false);
+    }
+  };
+
+  const confirmLink=candidate=>{
+    if(window.confirm(`Link the ${sourceName(candidate.source)} listing as the same show?\n\nOnly watched episode numbers will carry between these versions. Your library entries, ratings, notes and downloads will stay separate.`)) onLink?.(item,candidate);
+  };
+  const confirmUnlink=candidate=>{
+    if(window.confirm(`Unlink the ${sourceName(candidate.source)} version?\n\nWatched numbers will no longer be shared with it through this link. Episodes already in each listing’s own history will remain there.`)) onUnlink?.(candidate);
+  };
+  const renderVersion=(candidate,match=null)=>{
+    const linked=linkedKeys.has(identity(candidate));
+    const meta=[yearOf(candidate)||'',candidate.type||'',candidate.status||''].filter(Boolean).join(' · ');
+    return <div className="source-version-row" key={identity(candidate)}>
+      <button className="source-version-open" type="button" onClick={()=>openItem?.(candidate)} aria-label={`Open ${candidate.title} on ${sourceName(candidate.source)}`}>
+        <span className="source-version-cover"><Cover item={candidate}/></span>
+        <span className="source-version-copy">
+          <span className="source-version-top"><SourcePill source={candidate.source} compact/><b>{linked?'Linked version':match?`${match.confidence} match · ${match.score}%`:''}</b></span>
+          <strong>{candidate.title}</strong>
+          {meta&&<small>{meta}</small>}
+          {match?.reasons?.length>0&&<small className="source-version-reasons">{match.reasons.join(' · ')}</small>}
+        </span>
+      </button>
+      <div className="source-version-actions">
+        <button className="btn secondary" type="button" onClick={()=>openItem?.(candidate)}>Open <ArrowUpRight size={14}/></button>
+        {linked
+          ? <button className="btn secondary" type="button" onClick={()=>confirmUnlink(candidate)}><Unlink size={14}/> Unlink version</button>
+          : <button className="btn secondary" type="button" onClick={()=>confirmLink(candidate)}><Link2 size={14}/> Link as same show</button>}
+      </div>
+    </div>;
+  };
+  const unlinkedCandidates=candidates.filter(entry=>!linkedKeys.has(identity(entry.item)));
+
+  return <section className="source-versions" aria-labelledby="source-versions-title">
+    <div className="source-versions-heading">
+      <div><span className="eyebrow">SOURCE VERSIONS</span><h2 id="source-versions-title">Find this show elsewhere</h2><p>Search the other {sourceCategory(item)||''} sources for this title. Watched episode numbers travel only after you explicitly link two listings as the same show.</p></div>
+      <button className="btn secondary" type="button" onClick={findVersions} disabled={searching}>{searching?<LoaderCircle size={15} className="spin"/>:<Search size={15}/>}{searching?'Searching…':searched?'Search again':'Find on other sources'}</button>
+    </div>
+    {linkedItems.length>0&&<div className="source-version-group"><div className="source-version-group-label"><Link2 size={14}/> Linked for watched episode numbers</div><div className="source-version-list">{linkedItems.filter(candidate=>!hideNsfw||!isNsfw(candidate)).map(candidate=>renderVersion(candidate))}</div></div>}
+    {!searched&&<p className="source-version-hint">Mikozora searches other sources only when you ask, so opening a title does not send requests everywhere.</p>}
+    {candidateErrors.length>0&&<div className="inline-error source-version-error"><AlertCircle size={16}/> Some sources could not be searched: {candidateErrors.map(sourceName).join(', ')}.</div>}
+    {searched&&!searching&&unlinkedCandidates.length>0&&<div className="source-version-group"><div className="source-version-group-label">Possible versions</div><div className="source-version-list">{unlinkedCandidates.map(entry=>renderVersion(entry.item,entry.match))}</div></div>}
+    {searched&&!searching&&!unlinkedCandidates.length&&<p className="source-version-hint" role="status">No unlinked likely versions were found on the other sources. Titles, seasons and years can differ between listings, so a matching version may still exist under another name.</p>}
+    {searching&&<p className="source-version-hint" role="status"><LoaderCircle size={14} className="spin"/> Checking the other sources…</p>}
+  </section>;
+}
+function DetailPage({item, openEpisode, has, toggle, organize, back, history, refreshKey, queueEpisodes, downloads, showDownloads, notify, hideNsfw = false, openSettings, watched, onEpisodesReady, markWatched, smartSelection, smartEnabled, toggleSmartDownload, libraryMeta = {}, updateLibraryMeta, openItem, linkedItems = [], linkedKeys = [], watchedNumbers = new Set(), onLinkSource, onUnlinkSource}) {
   const [state,setState]=useState({detail:null,loading:true,error:''});
   const [order,setOrder]=useState('newest'); const [filter,setFilter]=useState(''); const [visible,setVisible]=useState(40);
   const [selecting,setSelecting]=useState(false); const [selected,setSelected]=useState([]);
@@ -349,11 +479,20 @@ function DetailPage({item, openEpisode, has, toggle, organize, back, history, re
   const detail=state.detail || item;
   const orderedEpisodes=useMemo(()=>chronologicalEpisodes(state.detail?.episodes||[]),[state.detail]);
   const episodes=useMemo(()=>{ const sorted=order==='newest'?[...orderedEpisodes].reverse():orderedEpisodes;return filter?sorted.filter(e=>`${e.number} ${e.title}`.toLowerCase().includes(filter.toLowerCase())):sorted; },[orderedEpisodes,order,filter]);
-  const recent=history.find(x=>identity(x.item)===identity(item));
+  const effectiveWatched=useMemo(()=>{
+    const set=new Set(watched || []);
+    if(watchedNumbers?.size) {
+      for(const episode of orderedEpisodes) if(watchedNumbers.has(episodeNumberKey(episode))) set.add(episode.url);
+    }
+    return set;
+  },[watched,watchedNumbers,orderedEpisodes]);
+  const relatedKeySet=new Set(linkedKeys?.length ? linkedKeys : [identity(item)]);
+  const recent=history.find(x=>relatedKeySet.has(identity(x.item)));
   const first=orderedEpisodes[0] || null;
-  const resume=recent && state.detail?.episodes.find(e=>String(e.number)===String(recent.episode.number));
-  const watchedCount=orderedEpisodes.filter(e=>watched?.has(e.url)).length;
-  const nextUnwatched=firstUnwatchedEpisode(orderedEpisodes,watched || new Set());
+  const resumeKey=episodeNumberKey(recent?.episode);
+  const resume=resumeKey ? (state.detail?.episodes.find(e=>episodeNumberKey(e)===resumeKey) || null) : null;
+  const watchedCount=orderedEpisodes.filter(e=>effectiveWatched.has(e.url)).length;
+  const nextUnwatched=firstUnwatchedEpisode(orderedEpisodes,effectiveWatched);
   const personalMeta=libraryMetaFor(libraryMeta,detail);
   const smartOn=!!smartEnabled&&!!smartSelection?.selected;
   const chooseEpisode=ep=>{
@@ -391,6 +530,7 @@ function DetailPage({item, openEpisode, has, toggle, organize, back, history, re
       {state.error && <div className="detail-error"><AlertCircle size={18}/><span>{state.error}</span><button onClick={()=>external(item.url)}>Open source <ExternalLink size={14}/></button></div>}
       {state.detail && <section className="detail-facts" aria-label="Source details"><div><span>STATUS</span><strong>{displayStatus(detail.status)}</strong>{detail.status && displayStatus(detail.status)!==detail.status && <small>Source: {detail.status}</small>}</div><div><span>{SOURCES[detail.source]?.category==='Donghua'?'RELEASED':'DATE AIRED'}</span><strong>{detail.aired || 'Not provided'}</strong></div><div><span>EPISODES REPORTED</span><strong>{detail.episodeCount || 'Not provided'}</strong></div><div><span>AGE RATING</span><strong>{rating ? rating.label : 'Not provided'}</strong>{rating?.adult&&<small>Marked as adult (NSFW) content</small>}{!rating&&<small>Shown as NR on cards</small>}</div><p>Reported by {sourceName(detail.source)} · Details may change.</p></section>}
       <PersonalShelf item={detail} meta={personalMeta} inLibrary={has(detail)} onChange={updateLibraryMeta} watchedCount={watchedCount} total={orderedEpisodes.length}/>
+      <SourceVersionsPanel item={detail} openItem={openItem} linkedItems={linkedItems} onLink={onLinkSource} onUnlink={onUnlinkSource} notify={notify} hideNsfw={hideNsfw}/>
       <div className="episode-section"><div className="episode-head"><div><span className="eyebrow">THE STORY SO FAR</span><h2>Episodes <small>{state.detail?.episodes.length ?? '—'}</small>{watchedCount>0&&<small>{watchedCount} watched</small>}</h2></div><div className="episode-tools"><label className="episode-search"><Search size={15}/><input value={filter} onChange={e=>{setFilter(e.target.value);setVisible(40)}} placeholder="Find episode" aria-label="Find episode"/></label><button className="sort-button" onClick={()=>setOrder(x=>x==='newest'?'oldest':'newest')}>{order==='newest'?'Newest first':'Oldest first'} <SlidersHorizontal size={15}/></button></div></div>
       {state.detail?.source==='bash' && Number(detail.episodeCount)>detail.episodes.length && detail.episodes.length>0 && <p className="batch-hint">AnimeBash reports {detail.episodeCount} episodes but currently lists {detail.episodes.length}. Availability may vary.</p>}
       {!state.loading && orderedEpisodes.length>0 && <div className="episode-shortcuts" aria-label="Episode shortcuts">
@@ -406,11 +546,11 @@ function DetailPage({item, openEpisode, has, toggle, organize, back, history, re
       {selecting&&<p className="batch-hint">Choose up to 50 per batch. Use Select range for a numeric run, or search and choose episodes one by one.</p>}
       {state.loading?<div className="episode-loading"><LoaderCircle className="spin" size={19}/> Fetching episodes from {sourceName(item.source)}...</div>:episodes.length ? <><div className="episode-list">{episodes.slice(0,visible).map((ep,i)=>{
         const offline=downloads.find(d=>d.episode?.url===ep.url && d.item?.source===detail.source && d.status==='completed');
-        const seen=watched?.has(ep.url);
+        const seen=effectiveWatched.has(ep.url);
         return <div className={'episode-row'+(seen?' watched':'')} key={`${ep.url}-${i}`}>
           {selecting&&<input className="episode-check" type="checkbox" checked={selected.includes(ep.url)} onChange={()=>chooseEpisode(ep)} aria-label={`Select episode ${ep.number}`}/>}
           <button className="episode-open" onClick={()=>selecting?chooseEpisode(ep):openEpisode(detail,ep)}><span className="episode-number">{String(ep.number).padStart(2,'0')}</span><span className="episode-info"><strong>{ep.title}</strong><small>{ep.date || sourceName(item.source)}{ep.sub?' · SUB':''}{ep.dub?' · DUB':''}{seen?' · WATCHED':''}{offline?' · DOWNLOADED':''}</small></span><span className="episode-play"><Play size={14} fill="currentColor"/></span></button>
-          {!selecting&&<button className={'episode-watched-toggle'+(watched?.has(ep.url)?' on':'')} onClick={()=>markWatched(detail,[ep],!watched?.has(ep.url))} aria-pressed={!!watched?.has(ep.url)} aria-label={watched?.has(ep.url)?`Mark episode ${ep.number} as not watched`:`Mark episode ${ep.number} as watched`} title={watched?.has(ep.url)?'Watched — tap to undo':'Mark as watched'}><Check size={15}/></button>}{!selecting&&<button className={'episode-download '+(offline?'downloaded':'')} onClick={()=>offline?showDownloads():queueEpisodes(detail,[ep])} aria-label={offline?`View downloaded episode ${ep.number}`:`Download episode ${ep.number}`} title={offline?'View download':'Download episode'}>{offline?<CheckCircle2 size={18}/>:<Download size={18}/>}</button>}
+          {!selecting&&<button className={'episode-watched-toggle'+(effectiveWatched.has(ep.url)?' on':'')} onClick={()=>markWatched(detail,[ep],!effectiveWatched.has(ep.url))} aria-pressed={effectiveWatched.has(ep.url)} aria-label={effectiveWatched.has(ep.url)?`Mark episode ${ep.number} as not watched`:`Mark episode ${ep.number} as watched`} title={effectiveWatched.has(ep.url)?'Watched — tap to undo':'Mark as watched'}><Check size={15}/></button>}{!selecting&&<button className={'episode-download '+(offline?'downloaded':'')} onClick={()=>offline?showDownloads():queueEpisodes(detail,[ep])} aria-label={offline?`View downloaded episode ${ep.number}`:`Download episode ${ep.number}`} title={offline?'View download':'Download episode'}>{offline?<CheckCircle2 size={18}/>:<Download size={18}/>}</button>}
         </div>;
       })}</div>{visible<episodes.length&&<div className="more-wrap"><button className="btn secondary" onClick={()=>setVisible(x=>x+40)}>Show more episodes <ChevronRight size={16}/></button></div>}</> : !state.error&&<Empty icon={ListVideo} title="No episodes found" body="This source may have changed its layout, or there are no matching episodes." action={()=>external(item.url)} actionLabel="Open source"/>}
       </div>
@@ -729,7 +869,7 @@ function SettingsPage({library,history,clearLibrary,clearHistory,openLicenses,op
       <div className="folder-explainer"><p>New playable MP4 copies are organized into a folder for each anime or donghua. Existing downloads can be saved from Downloads; earlier exported files stay where they are.</p><p>After Mikozora verifies the saved video and subtitle files, it removes its private copy to free space. Mikozora then plays the file from your folder. If verification fails or subtitles cannot be safely copied, the private copy stays. Downloading and conversion still need extra storage temporarily.</p>{folder?.configured&&<button className="text-link" onClick={usePrivate}>Stop saving folder copies</button>}</div>
     </div>
     <DeviceSyncSettings {...deviceSync}/>
-    <div className="settings-group"><div className="settings-title">YOUR DATA <span>ON THIS DEVICE</span></div><div className="setting-row"><div className="setting-icon"><Bookmark size={19}/></div><div><strong>Saved library</strong><p>{library.length} {library.length===1?'title':'titles'} saved locally</p></div><button onClick={clearLibrary} disabled={!library.length}>Clear</button></div><div className="setting-row"><div className="setting-icon"><History size={19}/></div><div><strong>Watch history</strong><p>{history.length} recently opened {history.length===1?'episode':'episodes'}</p></div><button onClick={clearHistory} disabled={!history.length}>Clear</button></div><div className="setting-row"><div className="setting-icon"><HardDrive size={19}/></div><div><strong>Back up your data</strong><p>Save your library, collections, personal ratings, notes and shelf statuses, history, watch progress and settings to a file you keep. Downloaded videos are not included.</p></div><button onClick={exportBackup}>Export</button></div><div className="setting-row"><div className="setting-icon"><RotateCcw size={19}/></div><div><strong>Restore a backup</strong><p>Replace this device's library, collections, personal shelf, history, progress and settings with a backup file.</p></div><button onClick={importBackup}>Import</button></div></div><div className="settings-group"><div className="settings-title">ABOUT <span>MIKOZORA {APP_VERSION}</span></div><div className="setting-row"><div className="setting-icon"><Download size={19}/></div><div><strong>App updates</strong><p>{updateText}</p></div>{pendingUpdate?<button onClick={downloadUpdate}>Download</button>:<button onClick={()=>checkUpdate(true)} disabled={updateStatus.phase==='checking'}>{updateStatus.phase==='checking'?'Checking…':updateStatus.phase==='error'?'Try again':'Check'}</button>}</div><div className="setting-row"><div className="setting-icon"><RefreshCw size={19}/></div><div><strong>Check automatically</strong><p>Check GitHub when Mikozora starts, when you return to it, and periodically while it stays open.</p></div><button aria-label="Automatic update checks" aria-pressed={!!appUpdate.autoCheck} onClick={()=>changeAutoCheck(!appUpdate.autoCheck)}>{appUpdate.autoCheck?'On':'Off'}</button></div><div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div><strong>Private by default</strong><p>Your library, collections and history stay on this device. No account is required.</p></div></div><div className="setting-row"><div className="setting-icon"><Film size={19}/></div><div><strong>Player availability</strong><p>Video hosts may restrict embedding or be unavailable. Try another server or open the source page.</p></div></div><div className="setting-row"><div className="setting-icon"><Sparkles size={19}/></div><div><strong>What’s new</strong><p>See the latest changes to Mikozora.</p></div><button onClick={openReleaseNotes}>View</button></div><div className="setting-row"><div className="setting-icon"><CircleHelp size={19}/></div><div><strong>Open source licenses</strong><p>Credits and licenses for Mikozora and its dependencies.</p></div><button onClick={openLicenses}>View</button></div></div></div>;
+    <div className="settings-group"><div className="settings-title">YOUR DATA <span>ON THIS DEVICE</span></div><div className="setting-row"><div className="setting-icon"><Bookmark size={19}/></div><div><strong>Saved library</strong><p>{library.length} {library.length===1?'title':'titles'} saved locally</p></div><button onClick={clearLibrary} disabled={!library.length}>Clear</button></div><div className="setting-row"><div className="setting-icon"><History size={19}/></div><div><strong>Watch history</strong><p>{history.length} recently opened {history.length===1?'episode':'episodes'}</p></div><button onClick={clearHistory} disabled={!history.length}>Clear</button></div><div className="setting-row"><div className="setting-icon"><HardDrive size={19}/></div><div><strong>Back up your data</strong><p>Save your library, collections, personal ratings, notes and shelf statuses, history, watch progress, linked source versions and settings to a file you keep. Downloaded videos are not included.</p></div><button onClick={exportBackup}>Export</button></div><div className="setting-row"><div className="setting-icon"><RotateCcw size={19}/></div><div><strong>Restore a backup</strong><p>Replace this device's library, collections, personal shelf, history, progress, linked source versions and settings with a backup file.</p></div><button onClick={importBackup}>Import</button></div></div><div className="settings-group"><div className="settings-title">ABOUT <span>MIKOZORA {APP_VERSION}</span></div><div className="setting-row"><div className="setting-icon"><Download size={19}/></div><div><strong>App updates</strong><p>{updateText}</p></div>{pendingUpdate?<button onClick={downloadUpdate}>Download</button>:<button onClick={()=>checkUpdate(true)} disabled={updateStatus.phase==='checking'}>{updateStatus.phase==='checking'?'Checking…':updateStatus.phase==='error'?'Try again':'Check'}</button>}</div><div className="setting-row"><div className="setting-icon"><RefreshCw size={19}/></div><div><strong>Check automatically</strong><p>Check GitHub when Mikozora starts, when you return to it, and periodically while it stays open.</p></div><button aria-label="Automatic update checks" aria-pressed={!!appUpdate.autoCheck} onClick={()=>changeAutoCheck(!appUpdate.autoCheck)}>{appUpdate.autoCheck?'On':'Off'}</button></div><div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div><strong>Private by default</strong><p>Your library, collections and history stay on this device. No account is required.</p></div></div><div className="setting-row"><div className="setting-icon"><Film size={19}/></div><div><strong>Player availability</strong><p>Video hosts may restrict embedding or be unavailable. Try another server or open the source page.</p></div></div><div className="setting-row"><div className="setting-icon"><Sparkles size={19}/></div><div><strong>What’s new</strong><p>See the latest changes to Mikozora.</p></div><button onClick={openReleaseNotes}>View</button></div><div className="setting-row"><div className="setting-icon"><CircleHelp size={19}/></div><div><strong>Open source licenses</strong><p>Credits and licenses for Mikozora and its dependencies.</p></div><button onClick={openLicenses}>View</button></div></div></div>;
 }
 function PlayerModal({player,close,onEpisode,watched,markWatched}) {
   const [current,setCurrent]=useState(0);
@@ -1025,6 +1165,9 @@ function App() {
   useEffect(()=>{try{localStorage.setItem(COLLECTIONS_KEY,JSON.stringify(collections))}catch{/* storage can be disabled */}},[collections]);
   const [libraryMeta,setLibraryMetaState]=useState(()=>{try{return readLibraryMeta(window.localStorage);}catch{return {};}});
   useEffect(()=>{try{saveLibraryMeta(window.localStorage,libraryMeta);}catch{/* storage can be disabled */}},[libraryMeta]);
+  const [sourceMatches,setSourceMatchesState]=useState(()=>{try{return readSourceMatches(window.localStorage);}catch{return normalizeSourceMatches(null);}});
+  useEffect(()=>{try{saveSourceMatches(window.localStorage,sourceMatches);}catch{/* storage can be disabled */}},[sourceMatches]);
+  const sourceRelatedKeys=useMemo(()=>relatedKeysByTitle(sourceMatches),[sourceMatches]);
   useEffect(()=>{
     setLibraryMetaState(previous=>{
       const next=pruneLibraryMeta(previous,new Set(library.map(identity)));
@@ -1060,8 +1203,8 @@ function App() {
   const deviceSyncError=useRef('');
   const deviceSyncRun=useRef(null);
   const deviceSyncChangeReady=useRef(false);
-  const syncInputsRef=useRef({library,history,storedProgress,progress,collections,libraryMeta,appearance,contentPrefs,smartDownloads});
-  useEffect(()=>{syncInputsRef.current={library,history,storedProgress,progress,collections,libraryMeta,appearance,contentPrefs,smartDownloads};},[library,history,storedProgress,progress,collections,libraryMeta,appearance,contentPrefs,smartDownloads]);
+  const syncInputsRef=useRef({library,history,storedProgress,progress,collections,libraryMeta,sourceMatches,appearance,contentPrefs,smartDownloads});
+  useEffect(()=>{syncInputsRef.current={library,history,storedProgress,progress,collections,libraryMeta,sourceMatches,appearance,contentPrefs,smartDownloads};},[library,history,storedProgress,progress,collections,libraryMeta,sourceMatches,appearance,contentPrefs,smartDownloads]);
   useEffect(()=>{if(activeCollection!=='all'&&!collections.some(c=>c.id===activeCollection))setActiveCollection('all');},[activeCollection,collections]);
   const updatesAvailable=hasEpisodeUpdates();
   const [updates,setUpdates]=useState({automatic:true,alerts:true,watchedCount:0,initializedCount:0,unreadCount:0,updates:[],errors:[],checking:false,queued:false,notificationStatus:'unknown'});
@@ -1077,6 +1220,19 @@ function App() {
   const downloadsRef=useRef([]);
   useEffect(()=>{downloadsRef.current=downloads;},[downloads]);
   const monitored=useMemo(()=>monitoredTitles(library,collections,smartDownloads,progress,history),[library,collections,smartDownloads,progress,history]);
+  const knownSourceItems=useMemo(()=>{
+    const byKey=new Map();
+    const add=item=>{
+      if(!item?.source||!item?.url)return;
+      const key=identity(item);
+      byKey.set(key,{...(byKey.get(key)||{}),...item});
+    };
+    library.forEach(add);
+    progress.forEach(entry=>add(entry.item));
+    history.forEach(entry=>add(entry.item));
+    downloads.forEach(entry=>add(entry.item));
+    return [...byKey.values()];
+  },[library,progress,history,downloads]);
   const unreadTitles=useMemo(()=>unreadByTitle(updates.updates),[updates.updates]);
   useEffect(()=>{ window.history.replaceState({page:'home'},'',location.pathname+location.search+'#home'); const listener=e=>setRoute(e.state||{page:'home'});window.addEventListener('popstate',listener);return()=>window.removeEventListener('popstate',listener); },[]);
   useEffect(()=>{
@@ -1280,6 +1436,7 @@ function App() {
       window.localStorage.setItem(PROGRESS_KEY,JSON.stringify(current.storedProgress||[]));
       window.localStorage.setItem(COLLECTIONS_KEY,JSON.stringify(current.collections||[]));
       saveLibraryMeta(window.localStorage,current.libraryMeta||{});
+      saveSourceMatches(window.localStorage,current.sourceMatches||normalizeSourceMatches(null));
       // Do not materialize these stores here: prepareDeviceSync treats a
       // never-written scalar store as an implicit default rather than a
       // competing user choice during a first cross-device merge.
@@ -1296,6 +1453,7 @@ function App() {
     if(stableStringify(current.history)!==stableStringify(data.history))setHistory(data.history);
     if(stableStringify(current.progress)!==stableStringify(data.progress))setStoredProgress(data.progress);
     if(stableStringify(current.libraryMeta||{})!==stableStringify(data.libraryMeta||{}))setLibraryMetaState(data.libraryMeta||{});
+    if(stableStringify(current.sourceMatches||normalizeSourceMatches(null))!==stableStringify(data.sourceMatches||normalizeSourceMatches(null)))setSourceMatchesState(normalizeSourceMatches(data.sourceMatches));
     if(stableStringify(current.appearance)!==stableStringify(data.appearance)){
       const nextAppearance=applyAppearance(document,data.appearance);
       setAppearance(nextAppearance);
@@ -1414,7 +1572,7 @@ function App() {
     if(experience||!deviceSyncAvailable||!deviceSyncMeta.autoSync)return;
     const timer=setTimeout(()=>{void deviceSyncRun.current?.({reason:'change'});},2500);
     return ()=>clearTimeout(timer);
-  },[library,history,storedProgress,collections,libraryMeta,appearance,contentPrefs,smartDownloads,experience,deviceSyncAvailable,deviceSyncMeta.autoSync]);
+  },[library,history,storedProgress,collections,libraryMeta,sourceMatches,appearance,contentPrefs,smartDownloads,experience,deviceSyncAvailable,deviceSyncMeta.autoSync]);
   const waitForDeviceSyncIdle=async()=>{
     while(deviceSyncPromise.current){
       try{await deviceSyncPromise.current;}catch{break;}
@@ -1558,7 +1716,7 @@ function App() {
       remember(item,episode);
       setStoredProgress(prev=>recordWatch(prev,item,episode,playlist.episodes,Date.now()));
       const episodeIndex=Math.max(0,playlist.currentIndex);
-      const watchedSet=watchedUrlSet(progress,history,item);
+      const watchedSet=watchedUrlSetForEpisodes(progress,history,item,playlist.episodes,linkedTitleKeys(sourceMatches,item));
       watchedSet.add(episode.url);
       const nativePlaylist=compactPlaybackPlaylist(playlist.episodes,episodeIndex,260000,watchedSet);
       const payload={
@@ -1592,17 +1750,35 @@ function App() {
     }
   };
   playRef.current=play;
-  const continueItems=useMemo(()=>continueWatching(progress,history),[progress,history]);
-  const libraryProgress=useMemo(()=>progressByTitle(progress,history),[progress,history]);
+  const continueItems=useMemo(()=>continueWatching(progress,history,12,sourceRelatedKeys),[progress,history,sourceRelatedKeys]);
+  const libraryProgress=useMemo(()=>progressByTitle(progress,history,sourceRelatedKeys),[progress,history,sourceRelatedKeys]);
   const resumeNext=entry=>play(entry.item,entry.episode,{playlist:entry.episodes});
-  const removeContinue=item=>setStoredProgress(prev=>removeProgressTitle(prev,item));
+  const removeContinue=item=>setStoredProgress(prev=>removeProgressTitles(prev,linkedTitleKeys(sourceMatches,item)));
   const syncProgress=detail=>setStoredProgress(prev=>refreshSnapshot(prev,detail,detail?.episodes||[]));
+  const linkSourceVersion=(current,candidate)=>{
+    setSourceMatchesState(previous=>linkSourceTitles(previous,current,candidate));
+    setToast(`Linked ${sourceName(candidate.source)} version · watched episode numbers now carry over`);
+  };
+  const unlinkSourceVersion=candidate=>{
+    setSourceMatchesState(previous=>unlinkSourceTitle(previous,candidate));
+    setToast(`Unlinked ${sourceName(candidate.source)} version`);
+  };
   const markWatched=(item,episodes,flag)=>{
     const targets=(Array.isArray(episodes)?episodes:[]).filter(episode=>episode?.url);
     if(!targets.length)return;
-    setStoredProgress(prev=>setEpisodesWatched(prev,item,item.episodes||[],targets.map(episode=>episode.url),flag,Date.now()));
-    if(!flag){const urls=new Set(targets.map(episode=>episode.url));setHistory(prev=>prev.filter(entry=>!(identity(entry.item)===identity(item)&&urls.has(entry.episode.url))));}
-    setToast(`${flag?'Marked':'Unmarked'} ${targets.length} episode${targets.length===1?'':'s'}${flag?' as watched':''}`);
+    const relatedKeys=linkedTitleKeys(sourceMatches,item);
+    const relatedKeySet=new Set(relatedKeys);
+    const targetNumbers=new Set(targets.map(episodeNumberKey).filter(Boolean));
+    setStoredProgress(prev=>setLinkedEpisodesWatched(prev,item,item.episodes||[],targets,flag,relatedKeys,Date.now()));
+    if(!flag){
+      const urls=new Set(targets.map(episode=>episode.url));
+      setHistory(prev=>prev.filter(entry=>{
+        const key=identity(entry.item);
+        if(key===identity(item))return !urls.has(entry.episode.url);
+        return !(relatedKeySet.has(key)&&targetNumbers.has(episodeNumberKey(entry.episode)));
+      }));
+    }
+    setToast(`${flag?'Marked':'Unmarked'} ${targets.length} episode${targets.length===1?'':'s'}${flag?' as watched':''}${relatedKeys.length>1?' · linked versions updated':''}`);
   };
   markWatchedRef.current=markWatched;
   const exportBackup=async()=>{
@@ -1620,8 +1796,8 @@ function App() {
       const backup=parseBackup(text);
       const when=backup.createdAt?new Date(backup.createdAt).toLocaleString():'an unknown date';
       const s=backup.summary;
-      const facts=`${s.library} library titles · ${s.collections} collections · ${s.history} history entries · progress for ${s.progress} series`;
-      if(!window.confirm(`Restore the backup from ${when}?\n\n${facts}\n\nThis replaces your current library, collections, personal ratings, notes and shelf statuses, history, watch progress and settings on this device.`))return;
+      const facts=`${s.library} library titles · ${s.collections} collections · ${s.history} history entries · progress for ${s.progress} series${s.sourceMatches?` · ${s.sourceMatches} linked source version${s.sourceMatches===1?'':'s'}`:''}`;
+      if(!window.confirm(`Restore the backup from ${when}?\n\n${facts}\n\nThis replaces your current library, collections, personal ratings, notes and shelf statuses, history, watch progress, linked source versions and settings on this device.`))return;
       applyBackup(window.localStorage,backup.data);
       setToast('Backup restored — restarting…');
       setTimeout(()=>window.location.reload(),400);
@@ -1670,15 +1846,15 @@ function App() {
   const common={open,has,toggle,browse};
   return <div className="app-shell"><SideNav page={route.page} go={go} unread={updates.unreadCount}/><div className="main-shell"><TopBar page={route.page} go={go} submitSearch={submitSearch} refresh={refresh} unread={updates.unreadCount}/>{pendingUpdate&&<UpdateBanner info={pendingUpdate} download={downloadAppUpdate} dismiss={dismissAppUpdate}/>}<main key={route.page==='detail'?identity(route.item):route.page}>
     {route.page==='home'&&<HomePage {...common} recent={history} refreshKey={refreshKey} hideNsfw={hideNsfw} continueItems={continueItems} resumeNext={resumeNext} removeContinue={removeContinue} library={library} progress={progress} libraryMeta={libraryMeta}/>}
-    {route.page==='browse'&&<BrowsePage {...common} query={query} setQuery={setQuery} source={browseSource} setSource={setBrowseSource} refreshKey={refreshKey} hideNsfw={hideNsfw} openSettings={()=>go('settings')} library={library} history={history} progress={progress} libraryMeta={libraryMeta}/>}
-    {route.page==='detail'&&<DetailPage item={route.item} openEpisode={play} has={has} toggle={toggle} organize={item=>setCollectionDialog({kind:'title',item})} back={back} history={history} refreshKey={refreshKey} queueEpisodes={queueEpisodes} downloads={downloads} showDownloads={()=>go('downloads')} notify={setToast} hideNsfw={hideNsfw} openSettings={()=>go('settings')} watched={watchedUrlSet(progress,history,route.item)} onEpisodesReady={syncProgress} markWatched={markWatched} smartSelection={smartTitleSelection(smartDownloads,identity(route.item),collections)} smartEnabled={smartDownloads.enabled} toggleSmartDownload={toggleSmartTitle} libraryMeta={libraryMeta} updateLibraryMeta={updateLibraryMeta}/>}
+    {route.page==='browse'&&<BrowsePage {...common} query={query} setQuery={setQuery} source={browseSource} setSource={setBrowseSource} refreshKey={refreshKey} hideNsfw={hideNsfw} openSettings={()=>go('settings')} library={library} history={history} progress={progress} libraryMeta={libraryMeta} sourceMatches={sourceMatches}/>}
+    {route.page==='detail'&&<DetailPage item={route.item} openEpisode={play} has={has} toggle={toggle} organize={item=>setCollectionDialog({kind:'title',item})} back={back} history={history} refreshKey={refreshKey} queueEpisodes={queueEpisodes} downloads={downloads} showDownloads={()=>go('downloads')} notify={setToast} hideNsfw={hideNsfw} openSettings={()=>go('settings')} watched={watchedUrlSet(progress,history,route.item)} onEpisodesReady={syncProgress} markWatched={markWatched} smartSelection={smartTitleSelection(smartDownloads,identity(route.item),collections)} smartEnabled={smartDownloads.enabled} toggleSmartDownload={toggleSmartTitle} libraryMeta={libraryMeta} updateLibraryMeta={updateLibraryMeta} openItem={open} linkedItems={linkedTitleItems(sourceMatches,route.item,knownSourceItems)} linkedKeys={linkedTitleKeys(sourceMatches,route.item)} watchedNumbers={watchedEpisodeNumbers(progress,history,linkedTitleKeys(sourceMatches,route.item))} onLinkSource={linkSourceVersion} onUnlinkSource={unlinkSourceVersion}/>}
     {route.page==='library'&&<LibraryPage {...common} items={library} collections={collections} activeCollection={activeCollection} setActiveCollection={setActiveCollection} onCreate={()=>setCollectionDialog({kind:'new'})} onRename={id=>setCollectionDialog({kind:'rename',id})} onDelete={removeCollection} onMembers={id=>setCollectionDialog({kind:'members',id})} onFavourite={favourite} unreadTitles={unreadTitles} progressByTitle={libraryProgress} hideNsfw={hideNsfw} smartCollections={smartDownloads.collectionIds} onSmartCollection={toggleSmartCollection} libraryMeta={libraryMeta} onRemoveTitles={removeLibraryTitles} onAddTitlesToCollection={addTitlesToCollection}/>}
     {route.page==='updates'&&<UpdatesPage state={updates} available={updatesAvailable} syncError={updatesSyncError} actionError={updatesActionError} check={checkNow} readAll={readAllUpdates} openUpdate={viewUpdate} openLibrary={()=>go('library')} openSettings={()=>go('settings')}/>}
     {route.page==='downloads'&&<DownloadsPage items={downloads} loading={downloadsLoading} remove={deleteDownload} retry={retryDownload} change={d=>setDownloadModal({item:d.item,episodes:[d.episode],language:d.language||'english',serverChoice:d.serverChoice||'auto',subtitleMode:d.subtitleMode||'auto',subtitleSelection:Array.isArray(d.subtitleSelection)?d.subtitleSelection:[]})} browse={browse} folder={folder} saveCopy={saveCopy} openSettings={()=>go('settings')} playOffline={playOffline}/>}
     {route.page==='history'&&<HistoryPage items={history.filter(entry=>!hideNsfw||!isNsfw(entry.item))} resume={resume} open={open} clear={clearHistory} browse={browse}/>}
     {route.page==='sources'&&<SourcesPage browse={browse}/>}
     {route.page==='settings'&&<SettingsPage library={library} history={history} clearLibrary={clearLibrary} clearHistory={clearHistory} openLicenses={()=>setLicenses(true)} openReleaseNotes={()=>setExperience({mode:'update',manual:true})} folder={folder} chooseFolder={chooseFolder} usePrivate={usePrivate} updates={updates} updatesAvailable={updatesAvailable} changeAutomatic={changeAutomatic} changeAlerts={changeAlerts} notificationPermission={notificationPermission} appearance={appearance} changeAppearance={changeAppearance} contentPrefs={contentPrefs} changeContentPrefs={changeContentPrefs} appUpdate={appUpdate} pendingUpdate={pendingUpdate} updateStatus={updateStatus} checkUpdate={checkAppUpdate} changeAutoCheck={changeAutoCheck} downloadUpdate={downloadAppUpdate} exportBackup={exportBackup} importBackup={importBackup} smartDownloads={smartDownloads} changeSmartDownloads={changeSmartDownloads} deviceSync={{available:deviceSyncAvailable,folder:deviceSyncFolder,meta:deviceSyncMeta,status:deviceSyncStatus,choose:chooseSyncFolder,disconnect:disconnectSyncFolder,syncNow:syncDevicesNow,changeAuto:changeDeviceSyncAuto}}/>}
-  </main></div><BottomNav page={route.page} go={go}/>{collectionDialog?.kind==='new'&&<CollectionNameDialog close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='rename'&&<CollectionNameDialog editing value={collections.find(c=>c.id===collectionDialog.id)?.name||''} close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='title'&&<TitleCollectionsDialog item={collectionDialog.item} collections={collections} close={()=>setCollectionDialog(null)} submit={selected=>saveTitleCollectionChoices(collectionDialog.item,selected)}/>}{collectionDialog?.kind==='members'&&collections.find(c=>c.id===collectionDialog.id)&&<CollectionMembersDialog collection={collections.find(c=>c.id===collectionDialog.id)} items={hideNsfw?library.filter(item=>!isNsfw(item)):library} close={()=>setCollectionDialog(null)} submit={keys=>saveCollectionMembers(collectionDialog.id,keys)}/>} {offlinePlayer&&<OfflinePlayerModal entry={offlinePlayer} close={()=>setOfflinePlayer(null)}/>}{player&&<PlayerModal key={player.episode.url} player={player} close={()=>setPlayer(null)} onEpisode={episode=>play(player.item,episode,{playlist:player.episodes})} watched={watchedUrlSet(progress,history,player.item)} markWatched={markWatched}/>}{licenses&&<LicenseModal close={()=>setLicenses(false)}/>}{downloadModal&&<DownloadModal request={downloadModal} close={()=>setDownloadModal(null)} submit={submitDownload}/>}{busy&&<div className="busy-overlay"><div><LoaderCircle size={20} className="spin"/><span>{busy}</span></div></div>}{toast&&<div className="toast"><Check size={16}/>{toast}</div>}</div>;
+  </main></div><BottomNav page={route.page} go={go}/>{collectionDialog?.kind==='new'&&<CollectionNameDialog close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='rename'&&<CollectionNameDialog editing value={collections.find(c=>c.id===collectionDialog.id)?.name||''} close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='title'&&<TitleCollectionsDialog item={collectionDialog.item} collections={collections} close={()=>setCollectionDialog(null)} submit={selected=>saveTitleCollectionChoices(collectionDialog.item,selected)}/>}{collectionDialog?.kind==='members'&&collections.find(c=>c.id===collectionDialog.id)&&<CollectionMembersDialog collection={collections.find(c=>c.id===collectionDialog.id)} items={hideNsfw?library.filter(item=>!isNsfw(item)):library} close={()=>setCollectionDialog(null)} submit={keys=>saveCollectionMembers(collectionDialog.id,keys)}/>} {offlinePlayer&&<OfflinePlayerModal entry={offlinePlayer} close={()=>setOfflinePlayer(null)}/>}{player&&<PlayerModal key={player.episode.url} player={player} close={()=>setPlayer(null)} onEpisode={episode=>play(player.item,episode,{playlist:player.episodes})} watched={watchedUrlSetForEpisodes(progress,history,player.item,player.episodes||[],linkedTitleKeys(sourceMatches,player.item))} markWatched={markWatched}/>}{licenses&&<LicenseModal close={()=>setLicenses(false)}/>}{downloadModal&&<DownloadModal request={downloadModal} close={()=>setDownloadModal(null)} submit={submitDownload}/>}{busy&&<div className="busy-overlay"><div><LoaderCircle size={20} className="spin"/><span>{busy}</span></div></div>}{toast&&<div className="toast"><Check size={16}/>{toast}</div>}</div>;
 }
 
 createRoot(document.getElementById('root')).render(<App/>);
