@@ -3,8 +3,18 @@
 // "through", "next unwatched" and ranges must reason in story order instead.
 
 export function episodeNumberValue(episode) {
-  const value = Number.parseFloat(episode?.number);
+  const value = Number.parseFloat(episode?.number ?? episode);
   return Number.isFinite(value) ? value : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Canonical key for comparing an episode number across source listings.
+ * "01", "1" and "1.0" all become "1"; unnumbered episodes return '' and
+ * therefore never inherit watched state from another source.
+ */
+export function episodeNumberKey(episode) {
+  const value = episodeNumberValue(episode);
+  return Number.isFinite(value) && value >= 0 ? String(value) : '';
 }
 
 export function chronologicalEpisodes(episodes) {

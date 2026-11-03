@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  episodeNumberKey,
   episodeNumberValue,
   chronologicalEpisodes,
   findEpisodeByNumber,
@@ -45,4 +46,16 @@ test('wrappedIndex cycles server choices safely', () => {
   assert.equal(wrappedIndex(1, 1, 3), 2);
   assert.equal(wrappedIndex(8, 1, 3), 0);
   assert.equal(wrappedIndex(0, 1, 0), 0);
+});
+
+test('episodeNumberKey canonicalizes cross-source numbers without inheriting specials', () => {
+  assert.equal(episodeNumberKey(ep('01')), '1');
+  assert.equal(episodeNumberKey(ep(1)), '1');
+  assert.equal(episodeNumberKey(ep('1.0')), '1');
+  assert.equal(episodeNumberKey(ep('1.5')), '1.5');
+  assert.equal(episodeNumberKey(ep(0)), '0');
+  assert.equal(episodeNumberKey(ep('Special A', 'special')), '');
+  assert.equal(episodeNumberKey(ep('OVA', 'ova')), '');
+  assert.equal(episodeNumberKey({ url: 'https://example.test/missing-number' }), '');
+  assert.equal(episodeNumberKey(ep(-1)), '');
 });

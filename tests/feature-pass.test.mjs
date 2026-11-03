@@ -15,7 +15,7 @@ test('shared UI wires discovery, personal shelf, library tools and player upgrad
   assert.match(ui, /Because you watch|recommendationReason/);
   assert.match(ui, /<option value="for-you">For you<\/option>/);
   assert.match(ui, /\['saved','Saved'\],\['not-saved','Not saved'\]/);
-  assert.match(ui, /sortBrowseTitles\(savedFilteredItems, sort\)/);
+  assert.match(ui, /sortBrowseTitles\(filteredItems, effectiveSort\)/);
 
   // Personal shelf and richer Library tools.
   assert.match(ui, /function PersonalShelf/);
@@ -53,4 +53,59 @@ test('shared UI wires discovery, personal shelf, library tools and player upgrad
   assert.match(css, /\.library-bulk-bar\{/);
   assert.match(css, /\.player-episode-actions\{/);
   assert.match(css, /\.offline-controls\{/);
+});
+
+test('0.29 UI wires grouped Universal Search and confirmation-gated Source Match progress', async () => {
+  const ui = await readFile('src/main.jsx', 'utf8');
+  const css = await readFile('src/style.css', 'utf8');
+
+  // Multi-source search stays grouped for display and keeps every variant openable.
+  assert.equal(ui.includes('const grouping = searching && selectedSources(source).length > 1;'), true);
+  assert.equal(ui.includes('rankUniversalResults(filteredItems, query'), true);
+  assert.equal(ui.includes('groupUniversalResults(sortedItems, { query, links:sourceMatches, categoryOf:sourceCategory'), true);
+  assert.equal(ui.includes('sourceVariants={group.variants}'), true);
+  assert.equal(ui.includes('Universal Search groups likely versions of the same show for display; grouping never links watched progress by itself.'), true);
+  assert.equal(ui.includes('sourceVariants = []'), true);
+  assert.equal(ui.includes('className="card-sources"'), true);
+  assert.equal(ui.includes('<span>Also on</span>'), true);
+
+  // Find-on-another-source only searches the existing sources in this title's
+  // category, and a progress link is created only through the confirmation.
+  assert.equal(ui.includes('function SourceVersionsPanel'), true);
+  assert.equal(ui.includes('<h2 id="source-versions-title">Find this show elsewhere</h2>'), true);
+  assert.equal(ui.includes('source.id!==item.source && (!category || source.category===category)'), true);
+  assert.equal(ui.includes('for(const searchQuery of titleVariantQueries(item))'), true);
+  assert.equal(ui.includes('getCatalog(sourceId,{query:searchQuery,page:1'), true);
+  assert.equal(ui.includes('entry.match.score>=SOURCE_MATCH_CANDIDATE_THRESHOLD'), true);
+  assert.equal(ui.includes('Link the ${sourceName(candidate.source)} listing as the same show?'), true);
+  assert.equal(ui.includes('Only watched episode numbers will carry between these versions.'), true);
+  assert.equal(ui.includes('Link as same show'), true);
+  assert.equal(ui.includes('Unlink version'), true);
+
+  // Detail, Home/Library summaries and the shared player all use the effective
+  // linked watched numbers rather than just the current listing's URLs.
+  assert.equal(ui.includes('linkedItems={linkedTitleItems(sourceMatches,route.item,knownSourceItems)}'), true);
+  assert.equal(ui.includes('watchedNumbers={watchedEpisodeNumbers(progress,history,linkedTitleKeys(sourceMatches,route.item))}'), true);
+  assert.equal(ui.includes('const effectiveWatched=useMemo'), true);
+  assert.equal(ui.includes('if(watchedNumbers.has(episodeNumberKey(episode))) set.add(episode.url);'), true);
+  assert.equal(ui.includes('const nextUnwatched=firstUnwatchedEpisode(orderedEpisodes,effectiveWatched);'), true);
+  assert.equal(ui.includes('continueWatching(progress,history,12,sourceRelatedKeys)'), true);
+  assert.equal(ui.includes('progressByTitle(progress,history,sourceRelatedKeys)'), true);
+  assert.equal(ui.includes('watchedUrlSetForEpisodes(progress,history,player.item'), true);
+  assert.equal(ui.includes('const watchedSet=watchedUrlSetForEpisodes(progress,history,item,playlist.episodes'), true);
+  assert.equal(ui.includes('setLinkedEpisodesWatched(prev,item,item.episodes||[],targets,flag,relatedKeys,Date.now())'), true);
+
+  // App handlers, backup restore facts and Settings copy name linked versions
+  // as portable local data without merging the underlying source identities.
+  assert.equal(ui.includes('linkSourceTitles(previous,current,candidate)'), true);
+  assert.equal(ui.includes('unlinkSourceTitle(previous,candidate)'), true);
+  assert.equal(ui.includes('watched episode numbers now carry over'), true);
+  assert.equal(ui.includes('${s.sourceMatches} linked source version'), true);
+  assert.equal(ui.includes('history, watch progress, linked source versions and settings to a file you keep'), true);
+  assert.equal(ui.includes('history, progress, linked source versions and settings with a backup file'), true);
+
+  assert.match(css, /\.card-sources\{/);
+  assert.match(css, /\.source-versions\{/);
+  assert.match(css, /\.source-version-row\{flex-direction:column/);
+  assert.match(css, /\.source-version-actions \.btn\{flex:1\}/);
 });

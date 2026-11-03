@@ -1,13 +1,23 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; the app shows only that newest entry.
-export const APP_VERSION = '0.28.0';
+export const APP_VERSION = '0.29.0';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.28.0',
+    version: '0.29.0',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'One search across your sources', description: 'Universal Search now groups likely versions of the same show when you search across Mikozora’s existing sources. A grouped card keeps an “Also on” button for the other listings, so you can open the exact source version you want. Grouping is display-only and deliberately conservative: different seasons or parts, far-apart years, movies versus series or specials, and Anime versus Donghua mismatches are not silently merged.' },
+      { title: 'Find a show on another source', description: 'Every series page now has a Source Versions section. Choose “Find on other sources” and Mikozora searches the other sources in that title’s Anime or Donghua category, then shows likely matches with a confidence score and the reasons behind it. Mikozora searches only when you ask, so simply opening a title does not send requests to every source.' },
+      { title: 'Watched episode numbers can carry over', description: 'When two listings really are the same show, choose “Link as same show” and confirm. Watched episode numbers—not source-specific episode URLs—then carry between the linked versions on the series page, in Continue Watching and Library progress, and in the players. Unnumbered specials do not inherit a watched mark. Your separate library entries, collections, ratings, notes and downloads stay separate, and you can unlink a version at any time.' },
+      { title: 'Your confirmed links travel with your data', description: 'Confirmed source-version links are included in manual backups and in shared-folder device sync between Android and Windows, including later unlinks and relinks. Restoring an older backup replaces those links with the backup’s set, just like the rest of the local data it restores.' },
+    ],
+  },
+  {
+    version: '0.28.0',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Picks shaped by your watching', description: 'Discover now adds a “Made for your taste” rail built only from this device’s library, history, watch progress and your own ratings or shelf choices. Cards explain matching genres, and your most-watched genres are shown above the rail. Browse can also show saved or not-yet-saved titles and sort the results already loaded—including a “For you” order. Nothing about your taste is uploaded.' },
       { title: 'Your own shelf for every story', description: 'Open any series to add a five-star rating, a Plan to watch/Watching/Paused/Completed/Dropped shelf status and a private note. Adding one to an unsaved title saves it to your library automatically. Library now shows progress and shelf statistics and can search, sort, filter and bulk-add or bulk-remove selected titles. Your shelf is included in backups and shared-folder device sync.' },

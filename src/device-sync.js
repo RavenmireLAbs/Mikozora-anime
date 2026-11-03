@@ -18,6 +18,7 @@ import { APPEARANCE_KEY, normalizeAppearance } from './appearance.js';
 import { CONTENT_KEY, normalizeContentPrefs } from './content.js';
 import { SMART_DOWNLOADS_KEY, normalizeSmartDownloads } from './smart-downloads.js';
 import { LIBRARY_META_KEY, PERSONAL_STATUSES, normalizeLibraryMeta } from './library-meta.js';
+import { SOURCE_MATCHES_KEY, normalizeSourceMatches } from './source-match.js';
 
 export const LIBRARY_KEY = 'moku.library.v1';
 export const HISTORY_KEY = 'moku.history.v1';
@@ -35,6 +36,7 @@ const MAX_META_COLLECTIONS = 500;
 const MAX_META_HISTORY = 1000;
 const MAX_META_PROGRESS = 500;
 const MAX_META_LIBRARY_META = 1000;
+const MAX_META_SOURCE_MATCHES = 1000;
 const MAX_META_SET = 10000;
 const SMART_SCALARS = ['enabled', 'wifiOnly', 'maxUnwatchedPerSeries', 'notifyWhenReady'];
 const ITEM_FIELDS = ['source', 'url', 'title', 'image', 'type', 'badge', 'status', 'genres', 'aired', 'year', 'rating', 'nsfw'];
@@ -110,6 +112,11 @@ function cleanTitleKey(value) {
   const source = cleanSource(key.slice(0, split));
   const url = cleanUrl(key.slice(split + 1));
   return source && url ? `${source}|${url}` : '';
+}
+
+function cleanSourceMatchEdgeId(value) {
+  const keys = [...new Set(String(value ?? '').split('\n').map(cleanTitleKey).filter(Boolean))].sort();
+  return keys.length === 2 ? keys.join('\n') : '';
 }
 
 function cleanCollectionId(value) {
@@ -266,6 +273,7 @@ export function sanitizeSyncSnapshot(raw) {
     history,
     progress,
     libraryMeta: cleanLibraryMeta(value.libraryMeta, new Set(libraryByKey.keys())),
+    sourceMatches: normalizeSourceMatches(value.sourceMatches),
     appearance: normalizeAppearance(value.appearance),
     content: normalizeContentPrefs(value.content),
     smartDownloads: normalizeSmartDownloads(value.smartDownloads),
@@ -279,6 +287,7 @@ export function snapshotFromStorage(storage) {
     history: readStoredJson(storage, HISTORY_KEY, []),
     progress: readStoredJson(storage, PROGRESS_KEY, []),
     libraryMeta: readStoredJson(storage, LIBRARY_META_KEY, {}),
+    sourceMatches: readStoredJson(storage, SOURCE_MATCHES_KEY, null),
     appearance: readStoredJson(storage, APPEARANCE_KEY, null),
     content: readStoredJson(storage, CONTENT_KEY, null),
     smartDownloads: readStoredJson(storage, SMART_DOWNLOADS_KEY, null),
@@ -293,6 +302,7 @@ export function applySyncSnapshotToStorage(storage, snapshot) {
     [HISTORY_KEY, clean.history],
     [PROGRESS_KEY, clean.progress],
     [LIBRARY_META_KEY, clean.libraryMeta],
+    [SOURCE_MATCHES_KEY, clean.sourceMatches],
     [APPEARANCE_KEY, clean.appearance],
     [CONTENT_KEY, clean.content],
     [SMART_DOWNLOADS_KEY, clean.smartDownloads],
@@ -348,6 +358,7 @@ function sanitizeMap(raw, cleanKey, cleanValue, limit) {
 }
 
 const sanitizeTitleRecordMap = (raw, limit = MAX_META_LIBRARY) => sanitizeMap(raw, cleanTitleKey, sanitizeBaseRecord, limit);
+const sanitizeSourceMatchRecordMap = (raw, limit = MAX_META_SOURCE_MATCHES) => sanitizeMap(raw, cleanSourceMatchEdgeId, sanitizeBaseRecord, limit);
 const sanitizeTitleSetMap = (raw, limit = MAX_META_SET) => sanitizeMap(raw, cleanTitleKey, sanitizeSetRecord, limit);
 const sanitizeUrlSetMap = (raw, limit = MAX_META_SET) => sanitizeMap(raw, (url) => cleanUrl(url), sanitizeSetRecord, limit);
 const sanitizeIdSetMap = (raw, limit = MAX_META_SET) => sanitizeMap(raw, cleanCollectionId, sanitizeSetRecord, limit);
@@ -359,6 +370,7 @@ export function emptySyncRecordMeta() {
     history: {},
     progress: {},
     libraryMeta: {},
+    sourceMatches: {},
     settings: {
       appearance: null,
       content: null,
@@ -400,6 +412,7 @@ export function sanitizeSyncRecordMeta(raw) {
     history,
     progress,
     libraryMeta: sanitizeTitleRecordMap(value.libraryMeta, MAX_META_LIBRARY_META),
+    sourceMatches: sanitizeSourceMatchRecordMap(value.sourceMatches, MAX_META_SOURCE_MATCHES),
     settings: {
       appearance: sanitizeBaseRecord(settings.appearance),
       content: sanitizeBaseRecord(settings.content),
@@ -526,6 +539,10 @@ export function stampSyncSnapshot(snapshot, previousMeta, now = Date.now()) {
   for (const [key, record] of Object.entries(data.libraryMeta)) setOwn(libraryMetaTimes, key, record.updatedAt);
   stampBaseMap(meta.libraryMeta, data.libraryMeta, eventNow, libraryMetaTimes);
 
+  const sourceMatchTimes = {};
+  for (const [id, edge] of Object.entries(data.sourceMatches.edges)) setOwn(sourceMatchTimes, id, edge.updatedAt);
+  stampBaseMap(meta.sourceMatches, data.sourceMatches.edges, eventNow, sourceMatchTimes);
+
   meta.settings.appearance = stampScalar(meta.settings.appearance, data.appearance, eventNow);
   meta.settings.content = stampScalar(meta.settings.content, data.content, eventNow);
   const smartMeta = meta.settings.smartDownloads;
@@ -561,6 +578,7 @@ function pruneSyncRecordMeta(meta) {
   clean.progress = pruneMap(clean.progress, MAX_META_PROGRESS);
   for (const record of Object.values(clean.progress)) record.watched = pruneMap(record.watched, MAX_META_SET, (entry) => timestamp(entry?.updatedAt));
   clean.libraryMeta = pruneMap(clean.libraryMeta, MAX_META_LIBRARY_META);
+  clean.sourceMatches = pruneMap(clean.sourceMatches, MAX_META_SOURCE_MATCHES);
   const smart = clean.settings.smartDownloads;
   smart.titleKeys = pruneMap(smart.titleKeys, MAX_META_SET, (entry) => timestamp(entry?.updatedAt));
   smart.collectionIds = pruneMap(smart.collectionIds, MAX_META_SET, (entry) => timestamp(entry?.updatedAt));
@@ -913,6 +931,12 @@ export function mergeDeviceSyncSnapshots(localCandidate, peerCandidates = []) {
     (candidate) => candidate.meta.libraryMeta,
   );
 
+  const sourceMatchesMerged = mergeBaseRecords(
+    candidates,
+    (candidate) => candidate.data.sourceMatches.edges,
+    (candidate) => candidate.meta.sourceMatches,
+  );
+
   const appearanceChoice = scalarCandidate(candidates, (candidate) => candidate.data.appearance, (candidate) => candidate.meta.settings.appearance);
   const contentChoice = scalarCandidate(candidates, (candidate) => candidate.data.content, (candidate) => candidate.meta.settings.content);
   const smart = { ...candidates[0].data.smartDownloads };
@@ -948,6 +972,7 @@ export function mergeDeviceSyncSnapshots(localCandidate, peerCandidates = []) {
     history,
     progress,
     libraryMeta: libraryMetaMerged.values,
+    sourceMatches: { version: 1, edges: sourceMatchesMerged.values },
     appearance: appearanceChoice?.value,
     content: contentChoice?.value,
     smartDownloads: smart,
@@ -959,6 +984,7 @@ export function mergeDeviceSyncSnapshots(localCandidate, peerCandidates = []) {
     history: historyMerged.meta,
     progress: progressMeta,
     libraryMeta: libraryMetaMerged.meta,
+    sourceMatches: sourceMatchesMerged.meta,
     settings: {
       appearance: appearanceChoice ? { hash: hashValue(appearanceChoice.value), updatedAt: appearanceChoice.updatedAt, deletedAt: 0 } : null,
       content: contentChoice ? { hash: hashValue(contentChoice.value), updatedAt: contentChoice.updatedAt, deletedAt: 0 } : null,
@@ -976,6 +1002,10 @@ export function mergeDeviceSyncSnapshots(localCandidate, peerCandidates = []) {
   const retainedLibraryMeta = new Set(Object.keys(data.libraryMeta));
   for (const [key, record] of Object.entries(meta.libraryMeta)) {
     if (!retainedLibraryMeta.has(key) && !record.deletedAt) record.deletedAt = Math.max(1, record.updatedAt || 1);
+  }
+  const retainedSourceMatches = new Set(Object.keys(data.sourceMatches.edges));
+  for (const [key, record] of Object.entries(meta.sourceMatches)) {
+    if (!retainedSourceMatches.has(key) && !record.deletedAt) record.deletedAt = Math.max(1, record.updatedAt || 1);
   }
 
   return { data, meta, clock: Math.max(...candidates.map((candidate) => maxMetaClock(candidate.meta)), maxMetaClock(meta)) };
