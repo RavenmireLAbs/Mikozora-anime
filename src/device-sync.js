@@ -564,10 +564,6 @@ function defaultDeviceName(platform, deviceId) {
   return `${platform === 'windows' ? 'Windows PC' : 'Android device'} ${String(deviceId || '').slice(-4).toUpperCase()}`;
 }
 
-function cleanDeviceSyncTransport(value) {
-  return value === 'google' ? 'google' : 'folder';
-}
-
 export function normalizeDeviceSyncMeta(raw, platform = 'android', randomId = randomDeviceId) {
   const value = isObject(raw) ? raw : {};
   const actualPlatform = cleanPlatform(value.platform || platform);
@@ -579,9 +575,6 @@ export function normalizeDeviceSyncMeta(raw, platform = 'android', randomId = ra
     deviceId: validId,
     deviceName: cleanText(value.deviceName, 80) || defaultDeviceName(actualPlatform, validId),
     platform: actualPlatform,
-    // The transport choice is installation-local: it is stored with the
-    // device identity and tombstones, never in a payload or manual backup.
-    transport: cleanDeviceSyncTransport(value.transport),
     autoSync: value.autoSync !== false,
     revision: Math.max(0, Math.floor(Number(value.revision) || 0)),
     clock: timestamp(value.clock),
@@ -615,7 +608,6 @@ export function publicDeviceSyncMeta(meta) {
     deviceId: clean.deviceId,
     deviceName: clean.deviceName,
     platform: clean.platform,
-    transport: clean.transport,
     autoSync: clean.autoSync,
     revision: clean.revision,
     lastSyncAt: clean.lastSyncAt,
@@ -630,18 +622,11 @@ export function setDeviceSyncAuto(storage, enabled, platform = 'android') {
   return publicDeviceSyncMeta(meta);
 }
 
-export function setDeviceSyncTransport(storage, transport, platform = 'android') {
-  const meta = readDeviceSyncMeta(storage, platform, { create: true });
-  meta.transport = cleanDeviceSyncTransport(transport);
-  saveDeviceSyncMeta(storage, meta);
-  return publicDeviceSyncMeta(meta);
-}
-
 /**
- * Forget only that this snapshot was published. Connecting a folder or
- * Google account that may not contain this device's file yet must publish
- * once even when the same snapshot was already sent through the other
- * transport. Record metadata and revision history stay intact.
+ * Forget only that this snapshot was published. Connecting a folder that
+ * may not contain this device's file yet must publish once even when the
+ * same snapshot was already sent to a previous folder. Record metadata and
+ * revision history stay intact.
  */
 export function resetDeviceSyncPublication(storage, platform = 'android') {
   const meta = readDeviceSyncMeta(storage, platform, { create: true });

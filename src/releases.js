@@ -1,13 +1,21 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; the app shows only that newest entry.
-export const APP_VERSION = '0.27.0';
+export const APP_VERSION = '0.27.1';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.27.0',
+    version: '0.27.1',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Google Drive sync removed', description: 'Direct Google Drive sync has been removed from Mikozora. Settings → Device Sync now uses the shared-folder method only: choose the same folder kept by Syncthing, OneDrive, Dropbox, a NAS, or another file-sync service on Android and Windows.' },
+      { title: 'Your data stays put', description: 'Removing the Drive transport does not delete your library, collections, history, watch progress, downloads, or the old Mikozora folder/files in Google Drive. Local Google connection state is cleared where Mikozora stored it. If you used Drive sync in 0.27.0, choose a shared folder on both devices and Mikozora will publish and merge each device’s current data there; delete the old Drive folder yourself if you no longer want it.' },
+    ],
+  },
+  {
+    version: '0.27.0',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Google Drive sync, without another sync app', description: 'Settings → Device Sync can now use Google Drive directly on Android and Windows. Choose Google Drive as the sync method, connect the same Google account on both devices, and Mikozora keeps one small sync file per device in a visible “Mikozora” folder in that account’s Drive. No FolderSync, Autosync, Drive for Desktop, or manually paired shared folder is needed.' },
       { title: 'Your account, your sync files', description: 'Drive sync uses the Google account connected on each device, so a user’s files stay in that user’s own Drive—not in the developer’s account. Mikozora asks Google only for per-file access to files it creates, plus the account email so Settings can show which account is connected. Shared-folder sync remains available if you prefer it.' },

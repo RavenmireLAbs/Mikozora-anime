@@ -44,19 +44,6 @@ validation and merging stay in the shared `src/device-sync.js`. The folder
 is expected to be the same Syncthing, OneDrive, Dropbox, NAS or equivalent
 folder selected in **Settings → Device Sync** on Android.
 
-Direct Google Drive sync uses `GoogleDriveSyncService`
-(`desktop/src/lib/google-drive-sync-service.js`). Windows signs in with a
-system-browser loopback + PKCE flow, requests only `openid`, `email`, and
-Google's per-file `drive.file` scope, refreshes access in the Electron main
-process, and stores the refresh token through Electron `safeStorage` where
-available. The service finds or creates Mikozora's visible Drive folder and
-applies the same filename and size bounds as folder sync. The desktop OAuth
-client is empty in git: local runs may set
-`MIKOZORA_GOOGLE_CLIENT_ID`/`MIKOZORA_GOOGLE_CLIENT_SECRET`, while GitHub
-packaging generates the config from repository secrets. See
-`docs/GOOGLE_DRIVE_SYNC.md` in the repo root for the one-time Google Cloud
-setup shared with Android.
-
 ## Run it locally (any OS with Node)
 
 ```sh
