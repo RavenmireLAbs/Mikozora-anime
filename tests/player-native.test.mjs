@@ -49,3 +49,11 @@ test('native offline player exposes speed, ten-second seeks and restart', async 
   assert.match(player, /new PlaybackParameters\(speed\)/);
   assert.match(player, /Speed 1×/);
 });
+
+test('native offline tools auto-hide with the Media3 controller', async () => {
+  const player = await readFile('android/app/src/main/java/app/moku/anime/OfflinePlayerActivity.java', 'utf8');
+  assert.match(player, /setControllerShowTimeoutMs\(5000\)/);
+  assert.match(player, /setControllerVisibilityListener\(\(PlayerView\.ControllerVisibilityListener\)\(visibility->header\.setVisibility\(visibility\)\)\)/);
+  assert.equal((player.match(/view\.showController\(\)/g) || []).length, 5,
+    'initial playback and each custom seek, restart and speed action restart the shared hide timer');
+});
