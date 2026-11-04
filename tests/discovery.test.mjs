@@ -6,6 +6,8 @@ import {
   recommendTitles,
   sortBrowseTitles,
   personalRecordFor,
+  moodShelves,
+  similarTitles,
 } from '../src/discovery.js';
 
 const item = (id, patch = {}) => ({
@@ -103,4 +105,34 @@ test('personalRecordFor returns a safe empty record when no shelf data exists', 
     status: '',
     updatedAt: 0,
   });
+});
+
+test('discovery merges duplicate feed copies instead of losing shelf metadata', () => {
+  const catalogCopy = item('merged', {
+    title: 'Merged Show',
+    image: 'https://example.test/poster.jpg',
+    type: 'TV',
+    genres: [],
+  });
+  const featuredCopy = {
+    ...catalogCopy,
+    image: 'https://example.test/banner.jpg',
+    banner: 'https://example.test/banner.jpg',
+    type: 'Anime',
+    genres: 'Fantasy, Romance',
+  };
+  const shelves = moodShelves([catalogCopy, featuredCopy], {}, { limitPerShelf: 5 });
+  const wonder = shelves.find(shelf => shelf.id === 'wonder');
+
+  assert.equal(wonder?.items.length, 1);
+  assert.equal(wonder.items[0].image, 'https://example.test/poster.jpg');
+  assert.equal(wonder.items[0].banner, 'https://example.test/banner.jpg');
+  assert.equal(wonder.items[0].type, 'TV');
+  assert.deepEqual(wonder.items[0].genres, ['Fantasy', 'Romance']);
+
+  const seed = item('seed', { title: 'Seed Show', genres: ['Fantasy'] });
+  const [featuredFirst] = similarTitles(seed, [featuredCopy, catalogCopy], {}, { limit: 1 });
+  assert.equal(featuredFirst.image, 'https://example.test/poster.jpg');
+  assert.equal(featuredFirst.type, 'TV');
+  assert.match(featuredFirst.recommendationReason, /Similar Fantasy/);
 });
