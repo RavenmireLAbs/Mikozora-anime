@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { allowedSource, allowedProjectRelease } from './lib/allowlist.js';
 import { get as httpGet } from './lib/http.js';
 import { backgroundFor } from './lib/appearance.js';
-import { cleanUserAgent, playerEmbedHeaders } from './lib/player-network.js';
+import { cleanOnlineStreamContext, cleanUserAgent, playerRequestHeaders, playerResponseHeaders } from './lib/player-network.js';
 import { registerBridge } from './bridge.js';
 import { DownloadService } from './lib/download-service.js';
 import { EpisodeStore } from './lib/episode-store.js';
@@ -97,14 +97,23 @@ function webRoot() { return join(app.getAppPath(), 'web'); }
 // Set over IPC immediately before the web player opens. This is the origin
 // of the source page that supplied the currently selected embed.
 let currentPlayerReferer = '';
+// Set only by the main-process bridge after DownloadService resolves a
+// direct stream. It lets Chromium/HLS requests use that host's own referer;
+// the renderer never receives the referer or subtitle URLs.
+let currentOnlineStreamContext = null;
 
 function installPlayerNetwork() {
   const ses = session.defaultSession;
   const browserUserAgent = cleanUserAgent(typeof ses.getUserAgent === 'function' ? ses.getUserAgent() : '');
   if (browserUserAgent && typeof ses.setUserAgent === 'function') ses.setUserAgent(browserUserAgent);
   ses.webRequest.onBeforeSendHeaders({ urls: ['https://*/*'] }, (details, callback) => {
-    callback({ cancel: false, requestHeaders: playerEmbedHeaders(details, currentPlayerReferer) });
+    callback({ cancel: false, requestHeaders: playerRequestHeaders(details, currentPlayerReferer, currentOnlineStreamContext) });
   });
+  if (typeof ses.webRequest.onHeadersReceived === 'function') {
+    ses.webRequest.onHeadersReceived({ urls: ['https://*/*'] }, (details, callback) => {
+      callback({ cancel: false, responseHeaders: playerResponseHeaders(details, currentOnlineStreamContext) });
+    });
+  }
 }
 
 function parseRange(header, size) {
@@ -182,11 +191,22 @@ async function handleDownloadRequest(request, url, id, subtitleIndex) {
   return new Response(Readable.toWeb(nodeStream), { status: range.status, headers });
 }
 
+async function handleOnlineSubtitleRequest(token, subtitleIndex) {
+  if (!downloadService) return new Response('Not found', { status: 404 });
+  const text = await downloadService.onlineSubtitleContent(token, Number(subtitleIndex)).catch(() => null);
+  if (text == null) return new Response('Not found', { status: 404 });
+  return new Response(text, {
+    headers: { 'content-type': 'text/vtt; charset=utf-8', 'cache-control': 'private, no-store' },
+  });
+}
+
 async function handleAppRequest(request) {
   try {
     const url = new URL(request.url);
     const download = /^\/api\/download\/([a-f0-9]{32})\/(?:(video)|subtitle\/(\d{1,3}))$/.exec(url.pathname);
     if (download) return handleDownloadRequest(request, url, download[1], download[2] ? null : download[3]);
+    const onlineSubtitle = /^\/api\/online-stream\/([A-Za-z0-9-]{16,120})\/subtitle\/(\d{1,3})$/.exec(url.pathname);
+    if (onlineSubtitle) return handleOnlineSubtitleRequest(onlineSubtitle[1], onlineSubtitle[2]);
     if (url.pathname === '/api/image') {
       const target = url.searchParams.get('url') || '';
       const cached = imageCache.get(target);
@@ -373,7 +393,16 @@ if (!app.requestSingleInstanceLock()) {
     episodeService.start().then(() => syncTray(episodeService.state())).catch(() => {});
     deviceSyncService = new DeviceSyncService({ store });
     protocol.handle('mikozora', handleAppRequest);
-    registerBridge(ipcMain, () => win, store, (referer) => { currentPlayerReferer = referer; }, downloadService, episodeService, deviceSyncService);
+    registerBridge(
+      ipcMain,
+      () => win,
+      store,
+      (referer) => { currentPlayerReferer = referer; },
+      downloadService,
+      episodeService,
+      deviceSyncService,
+      (context) => { currentOnlineStreamContext = context ? cleanOnlineStreamContext(context) : null; },
+    );
     createWindow();
   });
   app.on('window-all-closed', () => { if (!tray) app.quit(); });

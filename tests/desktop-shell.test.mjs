@@ -75,7 +75,7 @@ test('desktop window is sandboxed and packaging ships installer + portable', () 
   assert.match(main, /nodeIntegration: false/);
   assert.match(main, /sandbox: true/);
   assert.match(main, /onBeforeSendHeaders/);
-  assert.match(main, /playerEmbedHeaders/);
+  assert.match(main, /playerRequestHeaders/);
   assert.match(main, /setUserAgent\(browserUserAgent\)/);
   assert.match(main, /registerSchemesAsPrivileged/);
   assert.match(main, /new DownloadService/);

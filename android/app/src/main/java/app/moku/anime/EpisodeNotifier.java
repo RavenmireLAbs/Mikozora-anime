@@ -44,7 +44,7 @@ final class EpisodeNotifier {
             ensureChannel(c);
             JSONArray items=state.getJSONArray("updates");StringBuilder lines=new StringBuilder();int shown=0;
             for(int i=0;i<items.length()&&shown<3;i++) {
-                JSONObject event=items.optJSONObject(i);if(event==null||event.optBoolean("read"))continue;
+                JSONObject event=items.optJSONObject(i);if(event==null||event.optBoolean("read")||event.optBoolean("alertSuppressed"))continue;
                 JSONObject item=event.optJSONObject("item"),ep=event.optJSONObject("episode");
                 if(item==null||ep==null)continue;
                 if(lines.length()>0)lines.append('\n');

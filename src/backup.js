@@ -16,6 +16,10 @@ import { SOURCE_MATCHES_KEY } from './source-match.js';
 import { WATCH_PLANNER_KEY } from './watch-planner.js';
 import { OFFLINE_MANAGER_KEY } from './offline-manager.js';
 import { OFFLINE_PLAYBACK_KEY } from './offline-playback.js';
+import { ONLINE_PLAYBACK_KEY, ONLINE_POSITIONS_KEY } from './online-playback.js';
+import { RELEASE_RADAR_KEY } from './release-radar.js';
+import { LIBRARY_PORTABILITY_KEY } from './library-portability.js';
+import { SEARCH_CENTRE_KEY } from './command-centre.js';
 
 export const BACKUP_FORMAT = 'mikozora-backup';
 export const BACKUP_VERSION = 1;
@@ -30,6 +34,11 @@ export const BACKUP_KEYS = [
   WATCH_PLANNER_KEY,
   OFFLINE_MANAGER_KEY,
   OFFLINE_PLAYBACK_KEY,
+  ONLINE_PLAYBACK_KEY,
+  ONLINE_POSITIONS_KEY,
+  RELEASE_RADAR_KEY,
+  LIBRARY_PORTABILITY_KEY,
+  SEARCH_CENTRE_KEY,
   APPEARANCE_KEY,
   CONTENT_KEY,
   UPDATE_KEY,

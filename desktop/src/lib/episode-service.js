@@ -35,7 +35,7 @@ export function buildNotification(state) {
   const lines = [];
   for (const event of state.updates || []) {
     if (lines.length >= 3) break;
-    if (!event || event.read || !event.item || !event.episode) continue;
+    if (!event || event.read || event.alertSuppressed || !event.item || !event.episode) continue;
     const number = String(event.episode.number || '');
     lines.push(`${event.item.title || 'Your series'} · ${number === '' ? (event.episode.title || 'New episode') : `Episode ${number}`}`);
   }

@@ -15,6 +15,8 @@ final class PlayerNavigation {
         void onEpisodeRequested(int index, String url);
         void onWatchedChanged(String url, boolean watched);
         void onPlayerClosed();
+        void onOnlinePosition(String url, long positionMs, long durationMs, int playbackRateMilli, boolean ended);
+        void onEmbeddedFallbackRequested(String url, String reason);
     }
 
     interface ErrorListener {
@@ -60,6 +62,32 @@ final class PlayerNavigation {
         }
         if (listener == null) return false;
         listener.onWatchedChanged(url == null ? "" : url, watched);
+        return true;
+    }
+
+    static boolean reportOnlinePosition(String url, long positionMs, long durationMs, int playbackRateMilli, boolean ended) {
+        RequestListener listener;
+        synchronized (PlayerNavigation.class) {
+            listener = requestListener.get();
+        }
+        if (listener == null) return false;
+        listener.onOnlinePosition(
+            url == null ? "" : url,
+            Math.max(0, positionMs),
+            Math.max(0, durationMs),
+            Math.max(250, Math.min(4000, playbackRateMilli)),
+            ended
+        );
+        return true;
+    }
+
+    static boolean requestEmbeddedFallback(String url, String reason) {
+        RequestListener listener;
+        synchronized (PlayerNavigation.class) {
+            listener = requestListener.get();
+        }
+        if (listener == null) return false;
+        listener.onEmbeddedFallbackRequested(url == null ? "" : url, reason == null ? "" : reason);
         return true;
     }
 

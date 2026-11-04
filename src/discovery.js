@@ -197,3 +197,115 @@ export function sortBrowseTitles(items, sort) {
 export function personalRecordFor(meta, item) {
   return libraryMetaFor(meta, item);
 }
+
+const DONGHUA_SOURCES = new Set(['xin', 'narul', 'stream', 'world']);
+
+function genreSlugs(item) {
+  return new Set(genreList(item).map(genre => canonicalGenreSlug(genre)).filter(Boolean));
+}
+
+function profileFromContext(context = {}) {
+  return context.genres instanceof Map ? context : buildTasteProfile(context);
+}
+
+function candidatePool(candidates, profile, { excludeKeys = new Set(), excludeLibrary = true, excludeWatched = true } = {}) {
+  const seen = new Set();
+  const pool = [];
+  for (const item of Array.isArray(candidates) ? candidates : []) {
+    const key = keyOf(item);
+    if (!key || seen.has(key) || excludeKeys.has(key)) continue;
+    seen.add(key);
+    if (excludeLibrary && profile.libraryKeys?.has(key)) continue;
+    if (excludeWatched && profile.watchedKeys?.has(key)) continue;
+    pool.push(item);
+  }
+  return pool;
+}
+
+export function similarTitles(seed, candidates, context = {}, {
+  limit = 10,
+  excludeLibrary = true,
+  excludeWatched = true,
+} = {}) {
+  if (!validItem(seed)) return [];
+  const profile = profileFromContext(context);
+  const seedKey = keyOf(seed);
+  const seedGenres = genreSlugs(seed);
+  const seedYear = yearOf(seed) || 0;
+  const seedCategory = DONGHUA_SOURCES.has(seed.source) ? 'donghua' : 'anime';
+  return candidatePool(candidates, profile, { excludeKeys: new Set([seedKey]), excludeLibrary, excludeWatched })
+    .map((item, index) => {
+      const genres = genreSlugs(item);
+      const shared = [...genres].filter(slug => seedGenres.has(slug));
+      const union = new Set([...seedGenres, ...genres]);
+      const jaccard = union.size ? shared.length / union.size : 0;
+      let score = jaccard * 12 + shared.length * 1.4 + scoreCandidate(item, profile, index) * 0.35;
+      const category = DONGHUA_SOURCES.has(item.source) ? 'donghua' : 'anime';
+      if (category === seedCategory) score += 2;
+      if (String(item.type || '').trim().toUpperCase() === String(seed.type || '').trim().toUpperCase() && seed.type) score += 1.2;
+      if (statusGroup(item.status) === statusGroup(seed.status) && seed.status) score += 0.6;
+      const year = yearOf(item) || 0;
+      if (seedYear && year) score += Math.max(0, 1.2 - Math.abs(seedYear - year) * 0.12);
+      const sharedLabels = shared.slice(0, 2).map(slug => genreList(item).find(genre => canonicalGenreSlug(genre) === slug) || titleLabel(slug));
+      return {
+        ...item,
+        similarityScore: score,
+        recommendationReason: sharedLabels.length
+          ? `Similar ${sharedLabels.join(' · ')} to ${seed.title}`
+          : `A nearby ${category} pick to ${seed.title}`,
+      };
+    })
+    .sort((a, b) => b.similarityScore - a.similarityScore || String(a.title).localeCompare(String(b.title)))
+    .slice(0, Math.max(0, Math.min(50, Math.trunc(Number(limit) || 10))));
+}
+
+const MOOD_DEFINITIONS = [
+  { id: 'cozy', label: 'Cozy and light', description: 'Gentler stories for an easy sitting.', genres: ['slice-of-life', 'comedy', 'romance', 'iyashikei'] },
+  { id: 'adrenaline', label: 'Adrenaline', description: 'Action, adventure and forward momentum.', genres: ['action', 'adventure', 'martial-arts', 'sports'] },
+  { id: 'wonder', label: 'Wonder worlds', description: 'Fantasy, sci-fi and places beyond the ordinary.', genres: ['fantasy', 'sci-fi', 'science-fiction', 'supernatural', 'magic'] },
+  { id: 'intense', label: 'Dark and intense', description: 'Higher stakes, tension and psychological turns.', genres: ['thriller', 'psychological', 'horror', 'mystery', 'suspense'] },
+  { id: 'heart', label: 'Heart first', description: 'Drama and character-led stories.', genres: ['drama', 'romance', 'slice-of-life'] },
+];
+
+export function moodShelves(candidates, context = {}, { limitPerShelf = 10, excludeLibrary = true, excludeWatched = true } = {}) {
+  const profile = profileFromContext(context);
+  const pool = candidatePool(candidates, profile, { excludeLibrary, excludeWatched });
+  return MOOD_DEFINITIONS.map(definition => {
+    const wanted = new Set(definition.genres);
+    const items = pool.map((item, index) => {
+      const matches = [...genreSlugs(item)].filter(slug => wanted.has(slug));
+      if (!matches.length) return null;
+      const labels = matches.slice(0, 2).map(slug => genreList(item).find(genre => canonicalGenreSlug(genre) === slug) || titleLabel(slug));
+      return {
+        ...item,
+        moodScore: matches.length * 3 + scoreCandidate(item, profile, index) * 0.3,
+        recommendationReason: `${definition.label} · ${labels.join(' · ')}`,
+      };
+    }).filter(Boolean)
+      .sort((a, b) => b.moodScore - a.moodScore || String(a.title).localeCompare(String(b.title)))
+      .slice(0, Math.max(0, Math.min(30, Math.trunc(Number(limitPerShelf) || 10))));
+    return { ...definition, items };
+  }).filter(shelf => shelf.items.length);
+}
+
+function stableHash(text) {
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  return hash;
+}
+
+export function pickRandomTitle(candidates, { seed = 'mikozora', excludeKeys = [] } = {}) {
+  const excluded = new Set((Array.isArray(excludeKeys) ? excludeKeys : []).map(value => typeof value === 'string' ? value : keyOf(value)).filter(Boolean));
+  const pool = (Array.isArray(candidates) ? candidates : []).filter(item => {
+    const key = keyOf(item);
+    return key && !excluded.has(key);
+  });
+  if (!pool.length) return null;
+  return pool.reduce((best, item) => {
+    const score = stableHash(`${seed}\n${keyOf(item)}`);
+    return !best || score < best.score ? { item, score } : best;
+  }, null).item;
+}

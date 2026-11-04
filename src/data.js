@@ -46,9 +46,9 @@ function bridgeCall(method, ...args) {
       return;
     }
     const id = String(++nextRequest);
-    const timeout = ['chooseDownloadFolder', 'chooseDeviceSyncFolder', 'saveBackupFile', 'openBackupFile'].includes(method) ? 300000
+    const timeout = ['chooseDownloadFolder', 'chooseDeviceSyncFolder', 'saveBackupFile', 'openBackupFile', 'saveTextFile', 'openTextFile'].includes(method) ? 300000
       : ['readDeviceSyncFolder', 'writeDeviceSyncFile'].includes(method) ? 120000
-        : method === 'downloadOptions' ? 90000 : method === 'request' ? 120000 : 30000;
+        : ['downloadOptions', 'resolveOnlineStream'].includes(method) ? 90000 : method === 'request' ? 120000 : 30000;
     const timer = setTimeout(() => { pending.delete(id); reject(new Error('The app took too long to respond.')); }, timeout);
     pending.set(id, { resolve, reject, timer, parts: [] });
     try { window.MokuBridge[method](id, ...args); }
@@ -93,6 +93,58 @@ export async function exportDownload(id) { return JSON.parse(await bridgeCall('e
 // {text} from the native side; see backup.js for the file format itself.
 export async function exportBackupToFile(name, text) { return JSON.parse(await bridgeCall('saveBackupFile', name, text)); }
 export async function readBackupFromFile() { return JSON.parse(await bridgeCall('openBackupFile')); }
+// Generic local text files for Library Portability and share cards. The
+// native side only opens/saves a user-chosen text document; parsing and all
+// merge decisions stay in the validated shared modules.
+export function hasTextFiles() {
+  return isAndroid() && (typeof window.MokuBridge.saveTextFile === 'function' || typeof window.MokuBridge.saveBackupFile === 'function');
+}
+export async function exportTextToFile(name, text, mime = 'text/plain') {
+  if (typeof window !== 'undefined' && typeof window.MokuBridge?.saveTextFile === 'function') {
+    return JSON.parse(await bridgeCall('saveTextFile', name, text, mime));
+  }
+  return exportBackupToFile(name, text);
+}
+export async function readTextFromFile() {
+  if (typeof window !== 'undefined' && typeof window.MokuBridge?.openTextFile === 'function') {
+    return JSON.parse(await bridgeCall('openTextFile'));
+  }
+  return readBackupFromFile();
+}
+// Online Player Pro. Android resolves and plays inside its native Media3
+// activity; Windows returns a short-lived stream description to the trusted
+// app renderer while subtitle bodies and request headers stay in the main
+// process. Servers that cannot be resolved this way keep the embed player.
+export function hasOnlinePlayerPro() {
+  if (!isAndroid()) return false;
+  return isDesktopApp()
+    ? typeof window.MokuBridge.resolveOnlineStream === 'function'
+    : typeof window.MokuBridge.openOnlinePlayerPro === 'function';
+}
+export async function resolveOnlineStream(item, episode, options = {}) {
+  return JSON.parse(await bridgeCall('resolveOnlineStream', JSON.stringify({
+    item: { source: item?.source || '', url: item?.url || '', title: item?.title || '', image: item?.image || '', type: item?.type || '' },
+    episode: { url: episode?.url || '', number: episode?.number || '', title: episode?.title || '', ids: episode?.ids || '' },
+    language: options.language === 'indonesian' ? 'indonesian' : 'english',
+    server: typeof options.server === 'string' && options.server ? options.server : 'auto',
+    quality: typeof options.quality === 'string' && options.quality ? options.quality : 'best',
+  })));
+}
+export async function clearOnlineStream(token = '') {
+  if (!isDesktopApp() || typeof window.MokuBridge.clearOnlineStream !== 'function') return;
+  try { await bridgeCall('clearOnlineStream', String(token || '')); } catch { /* best-effort cleanup */ }
+}
+export function openOnlinePlayerPro(payload) {
+  if (!isAndroid() || isDesktopApp() || typeof window.MokuBridge.openOnlinePlayerPro !== 'function') {
+    throw new Error('Direct online playback is not available in this Android build.');
+  }
+  window.MokuBridge.openOnlinePlayerPro(JSON.stringify(payload && typeof payload === 'object' ? payload : {}));
+}
+export function onlineSubtitleUrl(stream, track) {
+  if (track?.url) return track.url;
+  if (!isDesktopApp() || !stream?.token) return '';
+  return `mikozora://app/api/online-stream/${encodeURIComponent(stream.token)}/subtitle/${Number(track?.index) || 0}`;
+}
 // Device-sync folder bridge: the native side only handles the user-chosen
 // folder and whitelisted mikozora-sync-*.json files. Device-sync.js owns
 // validation and merging, so a damaged or hostile file cannot write storage.

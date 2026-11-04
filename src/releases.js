@@ -1,13 +1,24 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; the app shows only that newest entry.
-export const APP_VERSION = '0.30.0';
+export const APP_VERSION = '0.31.0';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.30.0',
+    version: '0.31.0',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Online Player Pro & True Resume', description: 'When a server provides a stream Mikozora can play directly, Android now opens it in Mikozora’s own Media3 player and Windows opens it in the built-in direct player. Those direct players remember the exact timestamp on that device and use your remembered speed, seek length, subtitle style, subtitle-language preference, quality cap, sleep timer and auto-next choices. Mikozora tries a direct stream first when you leave that setting on; if the server only offers an embed—or the direct stream fails—it clearly falls back to the embedded player. Embedded third-party players still control their own playback and cannot report an exact resume timestamp to Mikozora.' },
+      { title: 'Release Radar & Updates Inbox 2.0', description: 'Updates is now one inbox for newly discovered episodes and Smart Downloads that are ready offline. Switch between the inbox, a per-series digest, a Last 14 days view and alert history for every monitored title. The calendar uses the dates Mikozora discovered episodes, never invented air dates, and an “observed pattern” appears only when at least three separate discovery days support it. Each title can use Alerts + inbox, Inbox only or Muted, with optional 7-day or 30-day snoozes; Inbox only keeps the entry visible without a device alert.' },
+      { title: 'Library Portability & Sharing', description: 'Settings can export your library, collections, shelf status, ratings, notes and watched counts as Mikozora JSON, CSV, MAL-style XML or AniList-style JSON, all as local files. Importing always shows a merge preview first, separating new exact source listings, titles already saved, possible duplicates, invalid rows and title-only rows. A title-only row is never attached to a guessed listing: choose “Find source listing” only if you want Mikozora to search, then pick the exact result yourself. Wrapped and series SVG share cards are also generated on this device from Stats and a series page.' },
+      { title: 'Discovery 2.0 & Command Centre', description: 'Home now adds “Because you watched” picks, mood shelves such as Cozy and light, Adrenaline, Wonder worlds, Dark and intense and Heart first, plus a random watch picker. Series pages explain similar titles from shared genres and nearby details. Browse keeps recent and saved searches, and the Command button—or Ctrl/⌘+K—opens Command Centre across pages, your library, history, progress, Planner, Downloads and Release Radar already stored on this device. Command Centre itself does not search the web.' },
+      { title: 'The new choices travel in a manual backup', description: 'Online Player Pro preferences and direct-playback positions, Release Radar rules and dismissed inbox entries, pending imported watched counts, recent searches and saved searches are included in a manual Mikozora backup. Downloaded video files and native download records still stay on the device where they were downloaded.' },
+    ],
+  },
+  {
+    version: '0.30.0',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Offline Manager 2.0', description: 'Downloads now shows how much space each series and source uses, which completed episodes are watched, and which have a verified folder copy. Search, filter, sort or group downloads by series, select several for bulk actions, and move waiting episodes earlier, later or to the front. The chosen order is remembered by the Android and Windows download engines; an episode already transferring is not cancelled just to swap places. Storage limits and watched-episode age rules can identify safe cleanup candidates, with optional automatic cleanup kept off until you turn it on. Incomplete downloads, active folder exports and verified folder-only records are protected from cleanup, and removing a Mikozora entry never deletes a file already saved to your chosen folder.' },
       { title: 'Catch-Up & Binge Planner', description: 'Home now includes a Catch up rail, and the new Planner brings every started-but-unfinished series into one Up Next queue with its next episode and episodes-behind count. Sort by Mikozora’s smart order, quickest finish, most behind, recent activity or your plans. Mark a show for Tonight, This weekend or Later, choose how many episodes belong in a sitting, and build a binge session you can open episode by episode or send through the normal download choices. The planner uses progress already stored on this device, respects Dropped and Completed shelf choices, and shows each confirmed linked source version only once.' },
