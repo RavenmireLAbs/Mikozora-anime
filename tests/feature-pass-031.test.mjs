@@ -10,7 +10,9 @@ import {
   normalizeOnlinePlayback,
   normalizeOnlinePositions,
   onlinePositionFor,
+  readOnlinePlayback,
   rememberOnlinePosition,
+  saveOnlinePlayback,
 } from '../src/online-playback.js';
 import {
   buildReleaseRadar,
@@ -41,7 +43,7 @@ import {
 import { moodShelves, pickRandomTitle, similarTitles } from '../src/discovery.js';
 import { monitoredTitles } from '../src/episode-updates.js';
 import { BACKUP_KEYS } from '../src/backup.js';
-import { ONLINE_PLAYBACK_KEY, ONLINE_POSITIONS_KEY } from '../src/online-playback.js';
+import { ONLINE_PLAYBACK_KEY, ONLINE_PLAYBACK_PREFERENCE_VERSION, ONLINE_POSITIONS_KEY } from '../src/online-playback.js';
 import { RELEASE_RADAR_KEY } from '../src/release-radar.js';
 import { LIBRARY_PORTABILITY_KEY } from '../src/library-portability.js';
 import { SEARCH_CENTRE_KEY } from '../src/command-centre.js';
@@ -80,12 +82,23 @@ test('Online Player Pro keeps only bounded direct positions and clears finished 
   const second = episode(1, 2);
 
   assert.deepEqual(normalizeOnlinePlayback({ qualityCap: 4320, subtitleLanguage: 'spanish' }), {
-    directFirst: true,
+    preferenceVersion: ONLINE_PLAYBACK_PREFERENCE_VERSION,
+    directFirst: false,
     resume: true,
     autoPlayNext: true,
     qualityCap: 2160,
     subtitleLanguage: 'english',
   });
+  assert.equal(normalizeOnlinePlayback({ directFirst: true }).directFirst, false, 'legacy auto-saved preferences move to the new off default');
+  assert.equal(normalizeOnlinePlayback({ preferenceVersion: ONLINE_PLAYBACK_PREFERENCE_VERSION, directFirst: true }).directFirst, true, 'a later explicit on choice is remembered');
+  const playbackStorage = new Map([[ONLINE_PLAYBACK_KEY, JSON.stringify({ directFirst: true })]]);
+  const playbackStore = {
+    getItem: key => playbackStorage.get(key) || null,
+    setItem: (key, value) => playbackStorage.set(key, value),
+  };
+  assert.equal(readOnlinePlayback(playbackStore).directFirst, false);
+  saveOnlinePlayback(playbackStore, { preferenceVersion: ONLINE_PLAYBACK_PREFERENCE_VERSION, directFirst: true });
+  assert.equal(readOnlinePlayback(playbackStore).directFirst, true);
   assert.equal(formatPlaybackClock(3661.8), '1:01:01');
 
   let positions = rememberOnlinePosition({}, series, first, 321.9, 1400, 1000);
