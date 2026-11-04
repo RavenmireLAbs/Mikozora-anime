@@ -150,19 +150,23 @@ public final class OfflinePlayerActivity extends Activity {
             title.setTextColor(Color.WHITE);title.setTextSize(13);title.setMaxLines(1);titleRow.addView(title,new LinearLayout.LayoutParams(0,-2,1));
             header.addView(titleRow,new LinearLayout.LayoutParams(-1,dp(48)));
             LinearLayout tools=new LinearLayout(this);tools.setOrientation(LinearLayout.HORIZONTAL);tools.setGravity(Gravity.CENTER_VERTICAL);tools.setPadding(dp(48),dp(2),0,0);
-            Button backTen=toolButton("−10s","Back 10 seconds");backTen.setOnClickListener(v->seekBy(-10000));
+            Button backTen=toolButton("−10s","Back 10 seconds");backTen.setOnClickListener(v->{seekBy(-10000);view.showController();});
             tools.addView(backTen,new LinearLayout.LayoutParams(0,dp(38),1));
-            Button restartButton=toolButton("Restart","Restart from the beginning");restartButton.setOnClickListener(v->restart());
+            Button restartButton=toolButton("Restart","Restart from the beginning");restartButton.setOnClickListener(v->{restart();view.showController();});
             LinearLayout.LayoutParams restartParams=new LinearLayout.LayoutParams(0,dp(38),1);restartParams.leftMargin=dp(6);tools.addView(restartButton,restartParams);
-            speedButton=toolButton("Speed 1×","Playback speed 1×. Tap to change speed.");speedButton.setOnClickListener(v->cycleSpeed());
+            speedButton=toolButton("Speed 1×","Playback speed 1×. Tap to change speed.");speedButton.setOnClickListener(v->{cycleSpeed();view.showController();});
             LinearLayout.LayoutParams speedParams=new LinearLayout.LayoutParams(0,dp(38),1);speedParams.leftMargin=dp(6);tools.addView(speedButton,speedParams);
-            Button forwardTen=toolButton("+10s","Forward 10 seconds");forwardTen.setOnClickListener(v->seekBy(10000));
+            Button forwardTen=toolButton("+10s","Forward 10 seconds");forwardTen.setOnClickListener(v->{seekBy(10000);view.showController();});
             LinearLayout.LayoutParams forwardParams=new LinearLayout.LayoutParams(0,dp(38),1);forwardParams.leftMargin=dp(6);tools.addView(forwardTen,forwardParams);
             header.addView(tools,new LinearLayout.LayoutParams(-1,dp(42)));
+            // Keep Mikozora's title/tools bar in step with Media3's controller:
+            // during playback both disappear after the same five-second timeout,
+            // and tapping the video brings both back together.
+            view.setControllerVisibilityListener((PlayerView.ControllerVisibilityListener)(visibility->header.setVisibility(visibility)));
             root.addView(header,new FrameLayout.LayoutParams(-1,dp(102),Gravity.TOP));setContentView(root);
             player.setMediaItem(item);
             long position=getPreferences(MODE_PRIVATE).getLong(id,0);if(position>0)player.seekTo(position);
-            player.prepare();player.setPlayWhenReady(true);
+            player.prepare();player.setPlayWhenReady(true);view.showController();
         }catch(Exception e){Toast.makeText(this,"Could not open the offline player",Toast.LENGTH_LONG).show();finish();}
     }
     @Override protected void onPause(){

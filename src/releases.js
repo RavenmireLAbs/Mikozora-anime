@@ -1,13 +1,20 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; the app shows only that newest entry.
-export const APP_VERSION = '0.29.0';
+export const APP_VERSION = '0.29.1';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.29.0',
+    version: '0.29.1',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Offline player controls now get out of the way', description: 'On Android, the downloaded-episode player’s title and −10s, Restart, Speed and +10s tools now hide together with the regular playback controls after five seconds while a video is playing. Tap the video to bring them back; using any of those tools restarts the timer. The controls remain visible while playback is paused or ended so resuming stays easy.' },
+    ],
+  },
+  {
+    version: '0.29.0',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'One search across your sources', description: 'Universal Search now groups likely versions of the same show when you search across Mikozora’s existing sources. A grouped card keeps an “Also on” button for the other listings, so you can open the exact source version you want. Grouping is display-only and deliberately conservative: different seasons or parts, far-apart years, movies versus series or specials, and Anime versus Donghua mismatches are not silently merged.' },
       { title: 'Find a show on another source', description: 'Every series page now has a Source Versions section. Choose “Find on other sources” and Mikozora searches the other sources in that title’s Anime or Donghua category, then shows likely matches with a confidence score and the reasons behind it. Mikozora searches only when you ask, so simply opening a title does not send requests to every source.' },
