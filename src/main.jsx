@@ -30,6 +30,7 @@ import { normalizeOnlinePlayback, readOnlinePlayback, saveOnlinePlayback, normal
 import { RELEASE_RADAR_MODES, normalizeReleaseRadar, readReleaseRadar, saveReleaseRadar, setReleaseRadarRule, dismissReleaseRadarEntry, effectiveReleaseRadarRule, buildReleaseRadar, releaseRadarModeLabel } from './release-radar';
 import { normalizeSearchCentre, readSearchCentre, saveSearchCentre, recordSearch, clearSearchHistory, saveSearch, removeSavedSearch, buildCommandIndex } from './command-centre';
 import { normalizePortabilityState, readPortabilityState, savePortabilityState, pendingProgressFor, clearPendingProgress, buildShareCardSvg, portableFileName } from './library-portability';
+import { buildFranchiseChainViews, buildMarathonSession, chainForTitle, createFranchiseChain, deleteFranchiseChain, dismissFranchiseSuggestion, franchiseChainByTitleKey, franchiseChainForTitleView, franchiseChainList, franchiseChainSummary, franchiseEntryLabel, franchiseSearchQueries, normalizeFranchiseChains, rankFranchiseCandidates, readFranchiseChains, saveFranchiseChains, scoreFranchiseCandidate, sortFranchiseItems, suggestedChainName, suggestFranchiseChains, updateFranchiseChain } from './franchise-chains';
 import { DirectOnlinePlayer } from './direct-online-player.jsx';
 import { CommandCentre } from './command-centre-ui.jsx';
 import { OnlinePlayerSettings, LibraryPortabilitySettings } from './feature-settings.jsx';
@@ -101,6 +102,7 @@ function SideNav({ page, go, unread = 0 }) {
     <div className="nav-label second">COLLECTION</div>
     <nav className="side-nav" aria-label="More navigation">
       <button onClick={() => go('sources')} className={'nav-item ' + (page==='sources' ? 'active' : '')}><Layers3 size={19}/><span>Sources</span><em>{Object.keys(SOURCES).length}</em></button>
+      <button onClick={() => go('chains')} className={'nav-item ' + (page==='chains' ? 'active' : '')}><ListVideo size={19}/><span>Franchise chains</span></button>
       <button onClick={() => go('stats')} className={'nav-item ' + (page==='stats' ? 'active' : '')}><Flame size={19}/><span>Watch stats</span></button>
       <button onClick={() => go('settings')} className={'nav-item ' + (page==='settings' ? 'active' : '')}><Settings2 size={19}/><span>Settings</span></button>
     </nav>
@@ -114,7 +116,7 @@ function BottomNav({ page, go }) {
 }
 function TopBar({ page, go, submitSearch, refresh, unread = 0, openCommandCentre = () => {} }) {
   const [input, setInput] = useState('');
-  const labels = { home:'Discover', browse:'Browse', library:'Library', planner:'Planner', updates:'Updates', history:'History', downloads:'Downloads', sources:'Sources', stats:'Watch stats', settings:'Settings', detail:'Anime details' };
+  const labels = { home:'Discover', browse:'Browse', library:'Library', planner:'Planner', chains:'Franchise chains', updates:'Updates', history:'History', downloads:'Downloads', sources:'Sources', stats:'Watch stats', settings:'Settings', detail:'Anime details' };
   function submit(e) { e.preventDefault(); submitSearch(input.trim()); }
   return <header className="topbar">
     <div className="mobile-brand"><Brand onClick={() => go('home')}/></div>
@@ -229,7 +231,7 @@ function TrendingSection({ rankings, loading, open, hideNsfw = false }) {
       </button>)}</div> : <div className="source-error"><AlertCircle size={17}/><span>The weekly ranking from {sourceName(source)} is unavailable. Try refreshing.</span></div>}
   </section>;
 }
-function HomePage({open, has, toggle, browse, recent, refreshKey, hideNsfw = false, continueItems = [], resumeNext, removeContinue, library = [], progress = [], libraryMeta = {}, catchUpItems = [], catchUpSummary = null, openPlanner}) {
+function HomePage({open, has, toggle, browse, recent, refreshKey, hideNsfw = false, continueItems = [], resumeNext, removeContinue, library = [], progress = [], libraryMeta = {}, catchUpItems = [], catchUpSummary = null, openPlanner, marathonChains = [], continueMarathon, openChains}) {
   const [state,setState] = useState({featured:[],sogo:[],xin:[],discover:[],trendSogo:[],trendXin:[],loadingSogo:true,loadingXin:true,loadingDiscover:true,loadingTrendSogo:true,loadingTrendXin:true});
   useEffect(()=>{ let alive=true; setState(x=>({...x,loadingSogo:true,loadingXin:true,loadingDiscover:true,loadingTrendSogo:true,loadingTrendXin:true}));
     getFeatured().then(value=>{if(alive)setState(x=>({...x,featured:value}))}).catch(()=>{if(alive)setState(x=>({...x,featured:[]}))});
@@ -244,6 +246,7 @@ function HomePage({open, has, toggle, browse, recent, refreshKey, hideNsfw = fal
   const shownRecent = (recent || []).filter(entry => !hideNsfw || !isNsfw(entry.item));
   const shownContinue = (continueItems || []).filter(entry => !hideNsfw || !isNsfw(entry.item));
   const shownCatchUp = (catchUpItems || []).filter(entry => !hideNsfw || !isNsfw(entry.item));
+  const shownMarathons = (marathonChains || []).filter(chain => chain.status !== 'completed' && chain.currentEntry && (!hideNsfw || !chain.entries.some(entry => isNsfw(entry.item))));
   const recommendationProfile = useMemo(
     () => buildTasteProfile({ library, history: recent || [], progress, libraryMeta }),
     [library, recent, progress, libraryMeta],
@@ -285,6 +288,7 @@ function HomePage({open, has, toggle, browse, recent, refreshKey, hideNsfw = fal
     <Hero featured={shown(state.featured)} fallback={shown(state.sogo)} open={x=>x?open(x):browse('all')} has={has} toggle={toggle}/>
     {shownContinue.length>0 ? <section className="content-section continue-section"><SectionHeading eyebrow="PICK UP WHERE YOU LEFT OFF" title="Continue watching" link="View history" action={()=>browse('history')}/><div className="continue-rail">{shownContinue.slice(0,8).map((entry)=><div className="continue-card" key={identity(entry.item)}><button className="continue-main" onClick={()=>resumeNext(entry)} aria-label={`Play episode ${entry.episode.number} of ${entry.item.title}`}><div className="continue-cover"><Cover item={entry.item}/></div><div className="continue-info"><span>NEXT · EPISODE {entry.episode.number}</span><strong>{entry.item.title}</strong><small>{sourceName(entry.item.source)} · {entry.watchedCount} of {entry.total} watched</small><span className="continue-progress"><i style={{width:`${Math.min(100,Math.round(entry.watchedCount/entry.total*100))}%`}}/></span></div><span className="continue-play"><Play size={14} fill="currentColor"/></span></button><button className="continue-remove" onClick={()=>removeContinue(entry.item)} aria-label={`Remove ${entry.item.title} from Continue watching`} title="Remove from Continue watching"><X size={13}/></button></div>)}</div></section> : shownRecent.length>0 && <section className="content-section continue-section"><SectionHeading eyebrow="PICK UP WHERE YOU LEFT OFF" title="Recently opened" link="View history" action={()=>browse('history')}/><div className="continue-rail">{shownRecent.slice(0,4).map((entry)=><button className="continue-card" key={`${identity(entry.item)}|${entry.episode.number}`} onClick={()=>open(entry.item)}><div className="continue-cover"><Cover item={entry.item}/></div><div className="continue-info"><span>EPISODE {entry.episode.number}</span><strong>{entry.item.title}</strong><small>{sourceName(entry.item.source)} · {prettyTime(entry.time)}</small></div><span className="continue-play"><Play size={14} fill="currentColor"/></span></button>)}</div></section>}
     {shownCatchUp.length>0&&<section className="content-section catchup-home-section"><SectionHeading eyebrow="YOUR NEXT SITTING" title="Catch up, your way" link="Open planner" action={openPlanner}/><p className="catchup-home-copy">{catchUpSummary?.episodesBehind||0} episodes are waiting across {catchUpSummary?.titlesBehind||shownCatchUp.length} started {(catchUpSummary?.titlesBehind||shownCatchUp.length)===1?'series':'series'}{catchUpSummary?.nearlyFinished?` · ${catchUpSummary.nearlyFinished} nearly finished`:''}.</p><div className="continue-rail">{shownCatchUp.slice(0,4).map(entry=><div className="continue-card catchup-home-card" key={entry.key||identity(entry.item)}><button className="continue-main" onClick={()=>resumeNext(entry)} aria-label={`Play episode ${entry.episode.number} of ${entry.item.title}`}><div className="continue-cover"><Cover item={entry.item}/></div><div className="continue-info"><span>{entry.plan?`${watchPlanLabel(entry.plan.mode).toUpperCase()} · `:''}NEXT · EPISODE {entry.episode.number}</span><strong>{entry.item.title}</strong><small>{entry.behindCount} behind · {entry.watchedCount} of {entry.total} watched</small><span className="continue-progress"><i style={{width:`${Math.min(100,Math.round((entry.percent||0)*100))}%`}}/></span></div><span className="continue-play"><Play size={14} fill="currentColor"/></span></button><button className="catchup-series-link" onClick={()=>open(entry.item)}>Series</button></div>)}</div></section>}
+    {shownMarathons.length>0&&<section className="content-section marathon-home-section"><SectionHeading eyebrow="FRANCHISE MARATHONS" title="Next in your chains" link="Open Marathon Mode" action={openChains}/><div className="continue-rail">{shownMarathons.slice(0,4).map(chain=>{const entry=chain.currentEntry;const percent=chain.percent==null?0:Math.min(100,Math.round(chain.percent*100));return <div className="continue-card marathon-home-card" key={chain.id}><button className="continue-main" onClick={()=>continueMarathon?.(chain)} aria-label={`Continue ${chain.name} with ${entry.item.title}`}><div className="continue-cover"><Cover item={entry.item}/></div><div className="continue-info"><span>{chain.handoff?'NEXT ENTRY':entry.label.toUpperCase()} · {chain.entriesCompleted} OF {chain.entries.length} ENTRIES DONE</span><strong>{entry.item.title}</strong><small>{chain.name}{entry.nextEpisode?` · Episode ${entry.nextEpisode.number} next`:entry.watchedCount?' · Open to load its episodes':' · Ready to start'}</small><span className="continue-progress"><i style={{width:`${percent}%`}}/></span></div><span className="continue-play"><Play size={14} fill="currentColor"/></span></button><button className="catchup-series-link" onClick={openChains}>Chain</button></div>;})}</div></section>}
     {(recommendationLoading||recommendations.length>0)&&<section className="content-section recommendation-section"><SectionHeading eyebrow={recommendationProfile.strength?'MADE FROM YOUR WATCHING':'FRESH FROM YOUR SOURCES'} title={recommendationProfile.strength?'Made for your taste':'Fresh picks for you'} action={()=>browse('all')} link="Browse all"/>{tasteGenres.length>0&&<div className="taste-genre-row" aria-label="Your top watched genres"><span>Often in your space</span>{tasteGenres.map(genre=><b key={genre}>{genre}</b>)}</div>}{recommendationLoading?<SkeletonRail/>:<Rail items={recommendations} open={open} has={has} toggle={toggle} libraryMeta={libraryMeta}/>}</section>}
     <section className="content-section discovery-picker-section" aria-label="Random watch picker"><SectionHeading eyebrow="DISCOVERY 2.0" title="Can't decide?"/><div className="random-picker-card"><div><strong>Let Mikozora choose from your space</strong><p>The picker uses your saved titles and the source picks already loaded here. Nothing leaves the device.</p>{randomPick&&<button className="random-pick-open" onClick={()=>open(randomPick)}><span className="random-pick-cover"><Cover item={randomPick}/></span><span><small>YOUR PICK</small><strong>{randomPick.title}</strong><em>{sourceName(randomPick.source)}</em></span><ArrowRight size={17}/></button>}</div><button className="btn primary" onClick={chooseRandomPick}><Sparkles size={16}/> {randomPick?'Pick another':'Surprise me'}</button></div></section>
     {becauseYouWatched.length>0&&<section className="content-section because-section"><SectionHeading eyebrow="MORE LIKE THAT" title={`Because you watched ${becauseSeed.title}`}/><p className="discovery-note">Matched from genre, type, era and your local taste profile.</p><Rail items={becauseYouWatched} open={open} has={has} toggle={toggle} libraryMeta={libraryMeta}/></section>}
@@ -542,7 +546,116 @@ function SourceVersionsPanel({ item, openItem, linkedItems = [], onLink, onUnlin
     {searching&&<p className="source-version-hint" role="status"><LoaderCircle size={14} className="spin"/> Checking the other sources…</p>}
   </section>;
 }
-function DetailPage({item, openEpisode, has, toggle, organize, back, history, refreshKey, queueEpisodes, downloads, showDownloads, notify, hideNsfw = false, openSettings, watched, onEpisodesReady, markWatched, smartSelection, smartEnabled, toggleSmartDownload, libraryMeta = {}, updateLibraryMeta, openItem, linkedItems = [], linkedKeys = [], watchedNumbers = new Set(), onLinkSource, onUnlinkSource, releaseRadar = {}, onReleaseRadarRule = () => {}, radarActivity = null, onlinePositions = {}, similarCandidates = [], pendingImported = null, saveShareCard = null}) {
+function FranchiseChainPanel({ item, openItem, chainView = null, knownCandidates = [], chainByKey = {}, onCreateChain, onEditChain, onOpenChains, onContinueMarathon, notify, hideNsfw = false }) {
+  const [candidates,setCandidates]=useState([]);
+  const [candidateErrors,setCandidateErrors]=useState([]);
+  const [searching,setSearching]=useState(false);
+  const [searched,setSearched]=useState(false);
+  const requestRef=useRef(0);
+  const currentKeys=new Set((chainView?.entries || []).map(entry=>entry.key));
+  useEffect(()=>{
+    requestRef.current++;
+    setCandidates([]);
+    setCandidateErrors([]);
+    setSearching(false);
+    setSearched(false);
+  },[item?.source,item?.url]);
+
+  const reviewCandidate=candidate=>{
+    if(!candidate?.source||!candidate?.url)return;
+    const candidateChain=chainByKey[identity(candidate)] || null;
+    if(chainView){
+      if(candidateChain?.id===chainView.id)return;
+      onEditChain?.({id:chainView.id,name:chainView.name,items:[...chainView.entries.map(entry=>entry.item),candidate]});
+      return;
+    }
+    if(candidateChain){
+      onEditChain?.({id:candidateChain.id,name:candidateChain.name,items:[...candidateChain.entries.map(entry=>entry.item),item]});
+      return;
+    }
+    onCreateChain?.({name:suggestedChainName([item,candidate]),items:sortFranchiseItems([item,candidate])});
+  };
+  const startOrManage=()=>{
+    if(chainView)onEditChain?.({id:chainView.id,name:chainView.name,items:chainView.entries.map(entry=>entry.item)});
+    else onCreateChain?.({name:suggestedChainName(item),items:[item]});
+  };
+  const findRelated=async()=>{
+    if(searching||!item?.source||!item?.url)return;
+    const request=++requestRef.current;
+    const category=sourceCategory(item);
+    const sourceIds=Object.values(SOURCES).filter(source=>!category||source.category===category).map(source=>source.id);
+    const found=new Map();
+    const failed=new Set();
+    setSearching(true);
+    setSearched(true);
+    setCandidateErrors([]);
+    try{
+      for(const searchQuery of franchiseSearchQueries(item,2)){
+        const results=await Promise.allSettled(sourceIds.map(sourceId=>getCatalog(sourceId,{query:searchQuery,page:1,status:'all',genre:'',year:''})));
+        if(request!==requestRef.current)return;
+        results.forEach((result,index)=>{
+          const sourceId=sourceIds[index];
+          if(result.status==='rejected')failed.add(sourceId);
+          else{
+            failed.delete(sourceId);
+            for(const candidate of result.value?.items || []){
+              if(candidate?.source&&candidate?.url&&identity(candidate)!==identity(item)&&!found.has(identity(candidate)))found.set(identity(candidate),candidate);
+            }
+          }
+        });
+      }
+      const ranked=rankFranchiseCandidates(item,[...found.values()].filter(candidate=>!hideNsfw||!isNsfw(candidate)),{categoryOf:sourceCategory,limit:12,excludeKeys:[...currentKeys]});
+      if(request!==requestRef.current)return;
+      setCandidates(ranked);
+      setCandidateErrors([...failed]);
+      if(!ranked.length&&failed.size===sourceIds.length)notify?.('No source could be searched for related franchise entries right now');
+    }finally{
+      if(request===requestRef.current)setSearching(false);
+    }
+  };
+  const renderCandidate=(entry,groupLabel)=>{
+    const candidate=entry.item;
+    const candidateChain=chainByKey[identity(candidate)] || null;
+    const meta=[yearOf(candidate)||'',candidate.type||'',candidate.status||''].filter(Boolean).join(' · ');
+    const actionLabel=chainView?(candidateChain?'Review move':'Review & add'):(candidateChain?'Add this title to its chain':'Review chain');
+    return <div className="franchise-candidate-row" key={`${groupLabel}:${identity(candidate)}`}>
+      <button className="franchise-candidate-open" type="button" onClick={()=>openItem?.(candidate)} aria-label={`Open ${candidate.title} on ${sourceName(candidate.source)}`}>
+        <span className="franchise-mini-cover"><Cover item={candidate}/></span>
+        <span className="franchise-candidate-copy"><span className="franchise-candidate-top"><SourcePill source={candidate.source} compact/><b>{entry.confidence} · {entry.score}%</b></span><strong>{candidate.title}</strong>{meta&&<small>{meta}</small>}{entry.reasons?.length>0&&<small>{entry.reasons.join(' · ')}</small>}{candidateChain&&<small>Already in “{candidateChain.name}”</small>}</span>
+      </button>
+      <div className="franchise-candidate-actions"><button className="btn secondary" type="button" onClick={()=>openItem?.(candidate)}>Open <ArrowUpRight size={14}/></button><button className="btn secondary" type="button" onClick={()=>reviewCandidate(candidate)}><ListVideo size={14}/> {actionLabel}</button></div>
+    </div>;
+  };
+  const localCandidates=(knownCandidates || []).filter(entry=>entry?.item&&!currentKeys.has(identity(entry.item))&&(!hideNsfw||!isNsfw(entry.item))).slice(0,4);
+  const percent=chainView?(chainView.percent==null?(chainView.entries.length?chainView.entriesCompleted/chainView.entries.length:0):chainView.percent):0;
+  const progressLabel=chainView?(chainView.knownTotalEpisodes?`${chainView.knownWatchedEpisodes} of ${chainView.knownTotalEpisodes} known episodes watched`:`${chainView.watchedEpisodes} watched episode${chainView.watchedEpisodes===1?'':'s'} recorded`):'';
+
+  return <section className="franchise-panel" aria-labelledby="franchise-chain-title">
+    <div className="franchise-panel-heading">
+      <div><span className="eyebrow">FRANCHISE CHAIN</span><h2 id="franchise-chain-title">{chainView?chainView.name:'Watch the whole story in order'}</h2><p>{chainView?`${chainView.entriesCompleted} of ${chainView.entries.length} entries complete · ${progressLabel}`:'Connect seasons, parts, movies and specials into one order you confirm. This is separate from same-show source versions and never merges their progress.'}</p></div>
+      <div className="franchise-panel-actions">
+        {chainView?.nextAction&&<button className="btn primary" type="button" onClick={()=>onContinueMarathon?.(chainView)}><Play size={15} fill="currentColor"/> {chainView.nextAction.kind==='play'?'Continue marathon':'Open next entry'}</button>}
+        <button className="btn secondary" type="button" onClick={findRelated} disabled={searching}>{searching?<LoaderCircle size={15} className="spin"/>:<Search size={15}/>}{searching?'Searching…':searched?'Search again':'Find related entries'}</button>
+        <button className="btn secondary" type="button" onClick={startOrManage}><ListVideo size={15}/> {chainView?'Manage chain':'Start a chain'}</button>
+        {chainView&&<button className="text-link" type="button" onClick={onOpenChains}>Marathon Mode <ArrowRight size={14}/></button>}
+      </div>
+    </div>
+    {chainView&&<>
+      <div className="franchise-progress" aria-label={`${chainView.name} progress`}><span><i style={{width:`${Math.min(100,Math.max(0,Math.round(percent*100)))}%`}}/></span><b>{chainView.knownTotalEpisodes?`${Math.round(percent*100)}% of known episodes`:`${chainView.entriesCompleted}/${chainView.entries.length} entries`}</b></div>
+      {chainView.currentEntry?<p className="franchise-next-note"><ListVideo size={15}/> Up next: <strong>{chainView.currentEntry.label} · {chainView.currentEntry.item.title}</strong>{chainView.currentEntry.nextEpisode?` · Episode ${chainView.currentEntry.nextEpisode.number}`:chainView.currentEntry.watchedCount?' · Open it once to load its episode list':''}{chainView.handoff&&chainView.previousEntry?` · ${chainView.previousEntry.label} is complete`:''}</p>:<p className="franchise-next-note"><CheckCircle2 size={15}/> This chain is complete.</p>}
+      <div className="franchise-timeline" aria-label={`${chainView.name} viewing order`}>{chainView.entries.map(entry=><button type="button" key={entry.key} className={`franchise-timeline-entry ${entry.state}${chainView.currentEntry?.key===entry.key?' current':''}`} onClick={()=>openItem?.(entry.item)} aria-label={`Open ${entry.label}: ${entry.item.title}`}>
+        <span className="franchise-timeline-index">{entry.index+1}</span><span className="franchise-mini-cover"><Cover item={entry.item}/></span><span className="franchise-timeline-copy"><small>{entry.label} · {sourceName(entry.item.source)}</small><strong>{entry.item.title}</strong><em>{entry.completed?'Completed':entry.total?`${entry.watchedCount} of ${entry.total} watched`:entry.watchedCount?`${entry.watchedCount} watched`:'Not started'}</em></span>{entry.completed?<CheckCircle2 size={16}/>:<ArrowUpRight size={15}/>}
+      </button>)}</div>
+    </>}
+    {!chainView&&localCandidates.length>0&&!searched&&<div className="franchise-candidate-group"><div className="franchise-group-label">Likely entries already known on this device</div><div className="franchise-candidate-list">{localCandidates.map(entry=>renderCandidate(entry,'known'))}</div></div>}
+    {candidateErrors.length>0&&<div className="inline-error franchise-search-error"><AlertCircle size={16}/> Some sources could not be searched: {candidateErrors.map(sourceName).join(', ')}.</div>}
+    {searched&&!searching&&candidates.length>0&&<div className="franchise-candidate-group"><div className="franchise-group-label">Possible franchise entries — review before saving</div><div className="franchise-candidate-list">{candidates.map(entry=>renderCandidate(entry,'search'))}</div></div>}
+    {searched&&!searching&&!candidates.length&&<p className="franchise-hint" role="status">No likely separate seasons, parts, movies or specials were found under this base title. A sequel with a very different name can still be added manually in Franchise Chains.</p>}
+    {!searched&&<p className="franchise-hint">Source searches happen only when you ask. Nothing is added to a chain until you review the entries and their order.</p>}
+    {searching&&<p className="franchise-hint" role="status"><LoaderCircle size={14} className="spin"/> Checking the {sourceCategory(item)||''} sources for related entries…</p>}
+  </section>;
+}
+function DetailPage({item, openEpisode, has, toggle, organize, back, history, refreshKey, queueEpisodes, downloads, showDownloads, notify, hideNsfw = false, openSettings, watched, onEpisodesReady, markWatched, smartSelection, smartEnabled, toggleSmartDownload, libraryMeta = {}, updateLibraryMeta, openItem, linkedItems = [], linkedKeys = [], watchedNumbers = new Set(), onLinkSource, onUnlinkSource, releaseRadar = {}, onReleaseRadarRule = () => {}, radarActivity = null, onlinePositions = {}, similarCandidates = [], pendingImported = null, saveShareCard = null, franchiseChainView = null, franchiseCandidates = [], franchiseChainByKey = {}, onFranchiseCreate, onFranchiseEdit, onOpenChains, onContinueMarathon}) {
   const [state,setState]=useState({detail:null,loading:true,error:''});
   const [order,setOrder]=useState('newest'); const [filter,setFilter]=useState(''); const [visible,setVisible]=useState(40);
   const [selecting,setSelecting]=useState(false); const [selected,setSelected]=useState([]);
@@ -616,6 +729,7 @@ function DetailPage({item, openEpisode, has, toggle, organize, back, history, re
       {state.detail && <section className="detail-facts" aria-label="Source details"><div><span>STATUS</span><strong>{displayStatus(detail.status)}</strong>{detail.status && displayStatus(detail.status)!==detail.status && <small>Source: {detail.status}</small>}</div><div><span>{SOURCES[detail.source]?.category==='Donghua'?'RELEASED':'DATE AIRED'}</span><strong>{detail.aired || 'Not provided'}</strong></div><div><span>EPISODES REPORTED</span><strong>{detail.episodeCount || 'Not provided'}</strong></div><div><span>AGE RATING</span><strong>{rating ? rating.label : 'Not provided'}</strong>{rating?.adult&&<small>Marked as adult (NSFW) content</small>}{!rating&&<small>Shown as NR on cards</small>}</div><p>Reported by {sourceName(detail.source)} · Details may change.</p></section>}
       <PersonalShelf item={detail} meta={personalMeta} inLibrary={has(detail)} onChange={updateLibraryMeta} watchedCount={watchedCount} total={orderedEpisodes.length}/>
       <SourceVersionsPanel item={detail} openItem={openItem} linkedItems={linkedItems} onLink={onLinkSource} onUnlink={onUnlinkSource} notify={notify} hideNsfw={hideNsfw}/>
+      <FranchiseChainPanel item={detail} openItem={openItem} chainView={franchiseChainView} knownCandidates={franchiseCandidates} chainByKey={franchiseChainByKey} onCreateChain={onFranchiseCreate} onEditChain={onFranchiseEdit} onOpenChains={onOpenChains} onContinueMarathon={onContinueMarathon} notify={notify} hideNsfw={hideNsfw}/>
       <section className="detail-radar-panel" aria-label="Release Radar for this series">
         <div><span className="eyebrow">RELEASE RADAR</span><h2>Episode alerts for this series</h2><p>{radarActivity?.latestAt?`Mikozora last found a new episode ${prettyTime(radarActivity.latestAt)}.`:'No episode discoveries are recorded for this series yet.'}{radarActivity?.pattern?` Observed pattern only: new episodes were usually found about every ${radarActivity.pattern.typicalDays} day${radarActivity.pattern.typicalDays===1?'':'s'} across ${radarActivity.pattern.basedOnDays} discovery days. This is not a source-provided schedule.`:''}</p>{pendingImported?.count>0&&<p className="pending-import-note">Imported progress is waiting: {pendingImported.count} watched episode{pendingImported.count===1?'':'s'} will be applied when this episode list is available.</p>}</div>
         <ReleaseRadarRuleControls item={detail} radar={releaseRadar} onChange={onReleaseRadarRule}/>
@@ -653,7 +767,7 @@ function DetailPage({item, openEpisode, has, toggle, organize, back, history, re
     </div>
   </div>;
 }
-function LibraryPage({items,open,has,toggle,browse,collections,activeCollection,setActiveCollection,onCreate,onRename,onDelete,onMembers,onFavourite,unreadTitles,progressByTitle,hideNsfw = false,smartCollections = [],onSmartCollection,libraryMeta = {},onRemoveTitles,onAddTitlesToCollection,openPlanner,openStats}) {
+function LibraryPage({items,open,has,toggle,browse,collections,activeCollection,setActiveCollection,onCreate,onRename,onDelete,onMembers,onFavourite,unreadTitles,progressByTitle,hideNsfw = false,smartCollections = [],onSmartCollection,libraryMeta = {},onRemoveTitles,onAddTitlesToCollection,openPlanner,openStats,openChains}) {
   const [filter,setFilter]=useState('all');
   const [search,setSearch]=useState('');
   const [sort,setSort]=useState('saved');
@@ -705,7 +819,7 @@ function LibraryPage({items,open,has,toggle,browse,collections,activeCollection,
       <div><strong>{stats.rated}</strong><span>rated by you</span></div>
       <div><strong>{stats.withNotes}</strong><span>with notes</span></div>
     </section>}
-    {catalog.length>0&&<div className="library-insight-actions"><button className="btn secondary" onClick={openPlanner}><CalendarClock size={15}/> Catch-Up Planner</button><button className="btn secondary" onClick={openStats}><Flame size={15}/> Watch Stats &amp; Wrapped</button></div>}
+    {catalog.length>0&&<div className="library-insight-actions"><button className="btn secondary" onClick={openPlanner}><CalendarClock size={15}/> Catch-Up Planner</button><button className="btn secondary" onClick={openStats}><Flame size={15}/> Watch Stats &amp; Wrapped</button><button className="btn secondary" onClick={openChains}><ListVideo size={15}/> Franchise Chains &amp; Marathons</button></div>}
     <div className="collections-heading"><div><span className="eyebrow">MADE BY YOU</span><h2>Your collections</h2></div><button className="btn secondary new-collection" onClick={onCreate}><Plus size={16}/> New collection</button></div>
     <div className="collection-tabs" role="tablist" aria-label="Library collections">
       <button role="tab" aria-selected={activeCollection==='all'} className={'collection-tab '+(activeCollection==='all'?'selected':'')} onClick={()=>setActiveCollection('all')}><Bookmark size={15}/> <span>All titles</span><b>{catalog.length}</b></button>
@@ -942,7 +1056,134 @@ function DownloadsPage({items,loading,remove,retry,change,browse,folder,saveCopy
     <p className="privacy-footnote"><ShieldCheck size={15}/> Mikozora uses private space during downloading and conversion. After a verified folder save, it removes the private copy; folder files stay if you remove an episode or uninstall Mikozora.</p>
   </div>;
 }
-function PlannerPage({progress=[],history=[],libraryMeta={},plans={},relatedKeysByTitle={},open,resumeNext,queueEpisodes,changePlan,browse}) {
+function FranchiseChainsPage({views=[],suggestions=[],open,continueMarathon,resumeNext,queueEpisodes,browse,onCreateChain,onEditChain,onDeleteChain,onDismissSuggestion}) {
+  const [status,setStatus]=useState('all');
+  const [search,setSearch]=useState('');
+  const [episodeGoal,setEpisodeGoal]=useState(6);
+  const [sessionChainId,setSessionChainId]=useState('');
+  const summary=franchiseChainSummary(views);
+  const searchTerm=search.trim().toLocaleLowerCase();
+  const visibleViews=views.filter(view=>{
+    if(status!=='all'&&view.status!==status)return false;
+    if(searchTerm&&!`${view.name} ${view.entries.map(entry=>entry.item.title).join(' ')}`.toLocaleLowerCase().includes(searchTerm))return false;
+    return true;
+  });
+  const sessionFor=view=>buildMarathonSession(view,{episodeGoal});
+  const sessionGroups=view=>{
+    const groups=[];const byKey=new Map();
+    for(const step of sessionFor(view)){
+      if(!byKey.has(step.entryKey)){const group={key:step.entryKey,item:step.item,label:step.entryLabel,episodes:[]};byKey.set(step.entryKey,group);groups.push(group);}
+      byKey.get(step.entryKey).episodes.push(step.episode);
+    }
+    return groups;
+  };
+  return <div className="content page-content franchise-page">
+    <div className="page-heading franchise-page-heading"><div><div className="eyebrow">FRANCHISE CHAINS &amp; MARATHON MODE</div><h1>One story, in order<span>.</span></h1><p>Confirmed viewing orders for seasons, parts, movies and specials—without merging separate source listings or their watched episodes.</p></div><div className="franchise-heading-actions"><div className="heading-art"><ListVideo size={32}/><span>✦</span></div><button className="btn primary" type="button" onClick={()=>onCreateChain?.({name:'',items:[]})}><Plus size={16}/> New chain</button></div></div>
+    <section className="franchise-summary" aria-label="Franchise chain overview">
+      <div><strong>{summary.chains}</strong><span>chains</span></div>
+      <div><strong>{summary.entries}</strong><span>entries</span></div>
+      <div><strong>{summary.inProgress}</strong><span>marathons underway</span></div>
+      <div><strong>{summary.watchedEpisodes}</strong><span>episodes watched</span></div>
+      <div><strong>{summary.knownEpisodesBehind}</strong><span>known episodes left</span></div>
+      <div><strong>{summary.completed}</strong><span>franchises complete</span></div>
+    </section>
+    {suggestions.length>0&&<section className="franchise-suggestions" aria-label="Suggested franchise chains">
+      <div className="franchise-section-heading"><div><span className="eyebrow">POSSIBLE CHAINS</span><h2>Review a suggested order</h2><p>Built only from titles Mikozora already knows on this device. Nothing is saved until you review it.</p></div></div>
+      <div className="franchise-suggestion-grid">{suggestions.map(suggestion=><article className="franchise-suggestion-card" key={suggestion.id}>
+        <div className="franchise-suggestion-covers">{suggestion.items.slice(0,4).map(item=><span key={identity(item)}><Cover item={item}/></span>)}</div>
+        <div className="franchise-suggestion-copy"><span>{suggestion.kind==='add'?'ADD TO EXISTING CHAIN':'NEW CHAIN'} · {suggestion.score}%</span><h3>{suggestion.name}</h3><p>{suggestion.items.map(item=>franchiseEntryLabel(item,suggestion.items)).join(' → ')}</p><small>{suggestion.reasons.join(' · ')}</small></div>
+        <div className="franchise-suggestion-actions"><button className="btn primary" type="button" onClick={()=>suggestion.kind==='add'?onEditChain?.({id:suggestion.chainId,name:suggestion.name,items:suggestion.items}):onCreateChain?.({name:suggestion.name,items:suggestion.items})}><ListVideo size={15}/> Review order</button><button className="text-link muted" type="button" onClick={()=>onDismissSuggestion?.(suggestion)}><X size={14}/> Dismiss</button></div>
+      </article>)}</div>
+    </section>}
+    <section className="franchise-controls" aria-label="Franchise chain controls">
+      <label className="franchise-search"><Search size={16}/><input value={search} onChange={event=>setSearch(event.target.value)} placeholder="Search chains or entries" aria-label="Search franchise chains"/></label>
+      <label><span>STATUS</span><select aria-label="Filter franchise chains by status" value={status} onChange={event=>setStatus(event.target.value)}><option value="all">All chains</option><option value="in-progress">In progress</option><option value="not-started">Not started</option><option value="completed">Completed</option></select></label>
+      <label><span>MARATHON SESSION</span><select aria-label="Marathon session episode goal" value={episodeGoal} onChange={event=>setEpisodeGoal(Number(event.target.value))}>{[3,6,9,12,18,24].map(value=><option key={value} value={value}>{value} episodes</option>)}</select></label>
+      <p>Episode totals come from local snapshots created when you watch or open an already-tracked series. Open the next entry once if Marathon Mode cannot see its episode list yet.</p>
+    </section>
+    {visibleViews.length?<div className="franchise-chain-list">{visibleViews.map(view=>{
+      const session=sessionChainId===view.id?sessionFor(view):[];
+      const groups=sessionChainId===view.id?sessionGroups(view):[];
+      const percent=view.percent==null?(view.entries.length?view.entriesCompleted/view.entries.length:0):view.percent;
+      const downloadEpisodes=view.currentEntry?.upNextEpisodes?.slice(0,3)||[];
+      return <article className={`franchise-chain-card ${view.status}`} key={view.id}>
+        <header className="franchise-chain-header">
+          <button className="franchise-chain-cover" type="button" onClick={()=>view.currentEntry&&open(view.currentEntry.item)} aria-label={`Open the current entry in ${view.name}`} disabled={!view.currentEntry}>{view.currentEntry?<Cover item={view.currentEntry.item}/>:view.entries[0]?<Cover item={view.entries[0].item}/>:<ListVideo size={24}/>}</button>
+          <div className="franchise-chain-title"><div><span className={`franchise-status ${view.status}`}>{view.status==='completed'?'Complete':view.status==='in-progress'?'In progress':'Not started'}</span>{view.lastWatchedAt>0&&<small>Last watched {prettyTime(view.lastWatchedAt)}</small>}</div><h2>{view.name}</h2><p>{view.entriesCompleted} of {view.entries.length} entries complete{view.knownTotalEpisodes?` · ${view.knownWatchedEpisodes} of ${view.knownTotalEpisodes} known episodes watched`:` · ${view.watchedEpisodes} watched episodes recorded`}</p><span className="franchise-progress compact"><span><i style={{width:`${Math.min(100,Math.max(0,Math.round(percent*100)))}%`}}/></span><b>{view.knownTotalEpisodes?`${Math.round(percent*100)}%`:`${view.entriesCompleted}/${view.entries.length}`}</b></span></div>
+          <div className="franchise-chain-manage"><button className="btn secondary" type="button" onClick={()=>onEditChain?.({id:view.id,name:view.name,items:view.entries.map(entry=>entry.item)})}><Pencil size={14}/> Manage</button><button className="icon-btn" type="button" onClick={()=>onDeleteChain?.(view)} aria-label={`Delete franchise chain ${view.name}`} title="Delete chain"><Trash2 size={16}/></button></div>
+        </header>
+        <div className="franchise-next-box">
+          {view.currentEntry?<><div><span>{view.handoff?'SEASON HANDOFF':'UP NEXT'} · {view.currentEntry.label.toUpperCase()}</span><strong>{view.currentEntry.item.title}</strong><p>{view.currentEntry.nextEpisode?`Episode ${view.currentEntry.nextEpisode.number} is next${view.currentEntry.total?` · ${view.currentEntry.watchedCount} of ${view.currentEntry.total} watched in this entry`:''}.`:view.currentEntry.watchedCount?'Open this entry once so Mikozora can load its current episode list.':'This is the next unwatched entry in your confirmed order.'}{view.followingEntry?` Then: ${view.followingEntry.label} · ${view.followingEntry.item.title}.`:''}</p></div><div className="franchise-next-actions"><button className="btn primary" type="button" onClick={()=>continueMarathon?.(view)}>{view.nextAction?.kind==='play'?<Play size={15} fill="currentColor"/>:<ArrowUpRight size={15}/>}{view.nextAction?.kind==='play'?`Play Episode ${view.currentEntry.nextEpisode.number}`:'Open next entry'}</button>{downloadEpisodes.length>0&&<button className="btn secondary" type="button" onClick={()=>queueEpisodes?.(view.currentEntry.playItem,downloadEpisodes)}><Download size={15}/> Download next {downloadEpisodes.length}</button>}<button className="text-link" type="button" onClick={()=>setSessionChainId(current=>current===view.id?'':view.id)}><ListChecks size={15}/> {sessionChainId===view.id?'Hide session':'Build marathon session'}</button></div></>:<><div><span>FRANCHISE COMPLETE</span><strong>Every entry in this chain is done.</strong><p>Your confirmed order and episode history stay saved if a new season or movie arrives later.</p></div><CheckCircle2 className="franchise-complete-icon" size={28}/></>}
+        </div>
+        {sessionChainId===view.id&&<section className="marathon-session" aria-label={`Marathon session for ${view.name}`}>
+          <div className="marathon-session-heading"><div><span className="eyebrow">MARATHON SESSION</span><h3>{session.length?`${session.length} episode${session.length===1?'':'s'} lined up`:'No playable session yet'}</h3><p>{session.length?'Built in your confirmed chain order from locally snapshotted episode lists.':'Open the current entry and play or open an episode once, then Mikozora can line up the next episodes here.'}</p></div>{session.length>0&&<button className="btn primary" type="button" onClick={()=>resumeNext?.(session[0])}><Play size={15} fill="currentColor"/> Start session</button>}</div>
+          {groups.length>0&&<div className="marathon-session-list">{groups.map((group,index)=><div className="marathon-session-row" key={group.key}><span>{index+1}</span><div><button type="button" onClick={()=>open(group.item)}>{group.item.title}</button><small>{group.label} · Episode{group.episodes.length===1?'':'s'} {group.episodes.map(episode=>episode.number).join(', ')}</small></div><button className="text-link" type="button" onClick={()=>queueEpisodes?.(group.item,group.episodes)}><Download size={14}/> Download these</button></div>)}</div>}
+        </section>}
+        <div className="franchise-entry-list" aria-label={`${view.name} entries in viewing order`}>{view.entries.map(entry=><div className={`franchise-entry-row ${entry.state}${view.currentEntry?.key===entry.key?' current':''}`} key={entry.key}>
+          <span className="franchise-entry-index">{entry.completed?<Check size={14}/>:entry.index+1}</span>
+          <button className="franchise-entry-open" type="button" onClick={()=>open(entry.item)} aria-label={`Open ${entry.label}: ${entry.item.title}`}><span className="franchise-mini-cover"><Cover item={entry.item}/></span><span><small>{entry.label} · {sourceName(entry.item.source)}{entry.personalStatus?` · ${personalStatusLabel(entry.personalStatus)}`:''}</small><strong>{entry.item.title}</strong><em>{entry.completed?'Completed':entry.total?`${entry.watchedCount} of ${entry.total} watched${entry.nextEpisode?` · Episode ${entry.nextEpisode.number} next`:''}`:entry.watchedCount?`${entry.watchedCount} watched · episode total not loaded`:'Not started'}</em>{entry.total>0&&<span className="franchise-entry-progress"><i style={{width:`${Math.min(100,Math.round((entry.percent||0)*100))}%`}}/></span>}</span></button>
+          {entry.nextEpisode&&<button className="franchise-entry-play" type="button" onClick={()=>resumeNext?.({item:entry.playItem,episode:entry.nextEpisode,episodes:entry.episodes})} aria-label={`Play episode ${entry.nextEpisode.number} of ${entry.item.title}`} title={`Play Episode ${entry.nextEpisode.number}`}><Play size={15} fill="currentColor"/></button>}
+        </div>)}</div>
+      </article>;
+    })}</div>:views.length?<Empty icon={ListVideo} title="No chains match this view" body="Try another status or search. Your confirmed chains have not changed." action={()=>{setStatus('all');setSearch('');}} actionLabel="Show all chains"/>:<Empty icon={ListVideo} title="No franchise chains yet" body="Save or open a few related seasons, parts, movies or specials, then review a suggested chain. You can also start one from any title’s details page." action={()=>browse('all')} actionLabel="Find a series"/>}
+    <p className="privacy-footnote"><ShieldCheck size={15}/> Franchise chains stay in Mikozora’s local data, manual backups and your chosen shared sync folder. They do not add titles to your library, merge downloads, or copy watched episodes between different entries.</p>
+  </div>;
+}
+function FranchiseChainDialog({initial={},items=[],chainByKey={},close,submit}) {
+  const initialItems=useMemo(()=>[...new Map((initial.items||[]).filter(item=>item?.source&&item?.url).map(item=>[identity(item),item])).values()],[]);
+  const itemByKey=useMemo(()=>{
+    const map=new Map();
+    for(const item of [...initialItems,...(items||[])])if(item?.source&&item?.url&&!map.has(identity(item)))map.set(identity(item),item);
+    return map;
+  },[items,initialItems]);
+  const [name,setName]=useState(initial.name||'');
+  const [selectedKeys,setSelectedKeys]=useState(()=>initialItems.map(identity));
+  const [search,setSearch]=useState('');
+  const [error,setError]=useState('');
+  const selectedItems=selectedKeys.map(key=>itemByKey.get(key)).filter(Boolean);
+  const searchTerm=search.trim().toLocaleLowerCase();
+  const available=[...itemByKey.values()].filter(item=>!selectedKeys.includes(identity(item))&&(!searchTerm||`${item.title} ${sourceName(item.source)}`.toLocaleLowerCase().includes(searchTerm))).sort((a,b)=>a.title.localeCompare(b.title)||sourceName(a.source).localeCompare(sourceName(b.source)));
+  const toggleItem=item=>{
+    const key=identity(item);
+    setSelectedKeys(previous=>previous.includes(key)?previous.filter(value=>value!==key):[...previous,key]);
+    setError('');
+  };
+  const moveItem=(key,delta)=>setSelectedKeys(previous=>{
+    const from=previous.indexOf(key);const to=Math.max(0,Math.min(previous.length-1,from+delta));
+    if(from<0||to===from)return previous;
+    const next=[...previous];const [moved]=next.splice(from,1);next.splice(to,0,moved);return next;
+  });
+  const suggestedName=suggestedChainName(selectedItems);
+  const save=()=>{
+    if(!selectedItems.length){setError('Choose at least one title to start the chain.');return;}
+    const cleanName=name.trim()||suggestedName;
+    if(!cleanName){setError('Give this franchise chain a name.');return;}
+    const message=submit({id:initial.id||'',name:cleanName,items:selectedItems});
+    if(message)setError(message);
+  };
+  return <DialogFrame title={initial.id?'Manage franchise chain':'New franchise chain'} subtitle="Choose the entries and put them in your viewing order. Different seasons stay separate listings." close={close}>
+    <div className="collection-dialog-body franchise-dialog-body">
+      <label className="collection-input-label" htmlFor="franchise-chain-name">CHAIN NAME</label>
+      <input id="franchise-chain-name" className="collection-input" value={name} onChange={event=>{setName(event.target.value);setError('');}} maxLength={120} placeholder={suggestedName||'For example, Star Journey'} autoFocus/>
+      <div className="franchise-dialog-section-head"><div><span>WATCH ORDER</span><strong>{selectedItems.length} selected</strong></div>{selectedItems.length>1&&<button className="text-link" type="button" onClick={()=>setSelectedKeys(sortFranchiseItems(selectedItems).map(identity))}><ListChecks size={14}/> Sort by season &amp; year</button>}</div>
+      {selectedItems.length?<div className="franchise-order-list">{selectedItems.map((item,index)=>{
+        const key=identity(item);const otherChain=chainByKey[key];const moving=otherChain&&otherChain.id!==initial.id;
+        return <div className="franchise-order-row" key={key}><span className="franchise-entry-index">{index+1}</span><span className="franchise-mini-cover"><Cover item={item}/></span><span className="franchise-order-copy"><small>{franchiseEntryLabel(item,selectedItems)} · {sourceName(item.source)}</small><strong>{item.title}</strong>{moving&&<em>Moves out of “{otherChain.name}” when saved</em>}</span><span className="franchise-order-tools"><button type="button" onClick={()=>moveItem(key,-1)} disabled={index===0} aria-label={`Move ${item.title} earlier`} title="Move earlier"><ArrowUp size={14}/></button><button type="button" onClick={()=>moveItem(key,1)} disabled={index===selectedItems.length-1} aria-label={`Move ${item.title} later`} title="Move later"><ArrowDown size={14}/></button><button type="button" onClick={()=>toggleItem(item)} aria-label={`Remove ${item.title} from this chain`} title="Remove from chain"><X size={14}/></button></span></div>;
+      })}</div>:<p className="collection-help">Choose titles below. You can start with one entry and add the rest later.</p>}
+      <div className="franchise-dialog-section-head"><div><span>ADD TITLES MIKOZORA KNOWS</span><strong>Library, history, progress, downloads and chains</strong></div></div>
+      <label className="collection-search"><Search size={16}/><input aria-label="Find titles for this franchise chain" value={search} onChange={event=>setSearch(event.target.value)} placeholder="Find a season, movie or special"/></label>
+      <div className="collection-choice-list title-picker-list franchise-picker-list">{available.length?available.slice(0,100).map(item=>{
+        const key=identity(item);const otherChain=chainByKey[key];
+        return <label className="collection-choice title-choice" key={key}><span className="collection-mini-cover"><Cover item={item}/></span><span><strong>{item.title}</strong><small>{franchiseEntryLabel(item,[item,...selectedItems])} · {sourceName(item.source)}{otherChain&&otherChain.id!==initial.id?` · In “${otherChain.name}” — selecting moves it`:''}</small></span><input type="checkbox" checked={false} onChange={()=>toggleItem(item)} aria-label={`Add ${item.title} to this franchise chain`}/></label>;
+      }):<p className="collection-help">{itemByKey.size?'No more known titles match your search.':'Open or save a title first, then it can be added here.'}</p>}</div>
+      {available.length>100&&<p className="collection-hint">Showing the first 100 matches. Search to narrow the list.</p>}
+      <p className="collection-hint">Saving a chain only saves this viewing order. It does not add titles to your library or link different seasons as the same show.</p>
+      {error&&<p className="collection-error" role="alert">{error}</p>}
+      <div className="collection-dialog-actions"><button type="button" className="btn secondary" onClick={close}>Cancel</button><button type="button" className="btn primary" onClick={save}>{initial.id?'Save chain':'Create chain'}</button></div>
+    </div>
+  </DialogFrame>;
+}
+function PlannerPage({progress=[],history=[],libraryMeta={},plans={},relatedKeysByTitle={},open,resumeNext,queueEpisodes,changePlan,browse,chainViews=[],continueMarathon,openChains}) {
   const [sort,setSort]=useState('smart');
   const [episodeGoal,setEpisodeGoal]=useState(6);
   const queue=useMemo(()=>buildCatchUpQueue({progress,history,libraryMeta,plans,relatedKeysByTitle,sort,limit:50}),[progress,history,libraryMeta,plans,relatedKeysByTitle,sort]);
@@ -956,6 +1197,7 @@ function PlannerPage({progress=[],history=[],libraryMeta={},plans={},relatedKeys
     }
     return groups;
   },[session]);
+  const marathonHandoffs=(chainViews||[]).filter(view=>view.currentEntry&&(view.handoff||view.status==='in-progress')).slice(0,4);
   return <div className="content page-content planner-page">
     <div className="page-heading"><div><div className="eyebrow">CATCH-UP &amp; BINGE PLANNER</div><h1>Your next sitting<span>.</span></h1><p>Series you have started, how far behind they are, and a practical order for tonight or the weekend.</p></div><div className="heading-art"><CalendarClock size={32}/><span>✦</span></div></div>
     <section className="planner-summary" aria-label="Catch-up overview">
@@ -970,6 +1212,10 @@ function PlannerPage({progress=[],history=[],libraryMeta={},plans={},relatedKeys
       <label><span>SESSION GOAL</span><select aria-label="Binge session episode goal" value={episodeGoal} onChange={event=>setEpisodeGoal(Number(event.target.value))}>{[3,6,9,12,18,24].map(value=><option key={value} value={value}>{value} episodes</option>)}</select></label>
       <p>Plans and catch-up order stay with your local library data. Episode counts come from the snapshots Mikozora already keeps when you watch or open a series.</p>
     </section>
+    {marathonHandoffs.length>0&&<section className="marathon-planner" aria-label="Franchise marathon next entries">
+      <div className="marathon-planner-heading"><div><span className="eyebrow">FRANCHISE MARATHONS</span><h2>Keep the story moving</h2><p>Your confirmed chains, including the moment one season hands off to the next entry.</p></div><button className="text-link" type="button" onClick={openChains}>Open Marathon Mode <ArrowRight size={14}/></button></div>
+      <div className="marathon-planner-list">{marathonHandoffs.map(view=><article className="marathon-planner-card" key={view.id}><button className="planner-cover" type="button" onClick={()=>open(view.currentEntry.item)} aria-label={`Open ${view.currentEntry.item.title}`}><Cover item={view.currentEntry.item}/></button><div><span>{view.handoff?'NEXT ENTRY':'CURRENT ENTRY'} · {view.currentEntry.label.toUpperCase()}</span><h3><button type="button" onClick={()=>open(view.currentEntry.item)}>{view.currentEntry.item.title}</button></h3><p>{view.name} · {view.entriesCompleted} of {view.entries.length} entries complete{view.currentEntry.nextEpisode?` · Episode ${view.currentEntry.nextEpisode.number} next`:view.currentEntry.watchedCount?' · Open to load episodes':''}</p><div className="marathon-planner-actions"><button className="btn primary" type="button" onClick={()=>continueMarathon?.(view)}><Play size={14} fill="currentColor"/> {view.nextAction?.kind==='play'?'Continue marathon':'Open next entry'}</button>{view.currentEntry.upNextEpisodes?.length>0&&<button className="btn secondary" type="button" onClick={()=>queueEpisodes(view.currentEntry.playItem,view.currentEntry.upNextEpisodes.slice(0,3))}><Download size={14}/> Download next {Math.min(3,view.currentEntry.upNextEpisodes.length)}</button>}</div></div></article>)}</div>
+    </section>}
     {session.length>0&&<section className="binge-session" aria-label="Suggested binge session">
       <div className="binge-session-heading"><div><span className="eyebrow">READY-MADE BINGE ORDER</span><h2>{session.length} episode{session.length===1?'':'s'} for this sitting</h2><p>Built from your queue and the episodes-per-sitting choices below.</p></div><button className="btn primary" onClick={()=>resumeNext(session[0])}><Play size={15} fill="currentColor"/> Start session</button></div>
       <div className="binge-session-list">{sessionGroups.map((group,index)=><div className="binge-session-row" key={group.key}><span className="binge-session-index">{index+1}</span><div className="binge-session-copy"><button onClick={()=>open(group.item)}>{group.item.title}</button><span>Episode{group.episodes.length===1?'':'s'} {group.episodes.map(episode=>episode.number).join(', ')}</span></div><button className="text-link" onClick={()=>queueEpisodes(group.item,group.episodes)}><Download size={14}/> Download these</button></div>)}</div>
@@ -1183,7 +1429,7 @@ function DeviceSyncSettings({available=false,folder={},meta={},status={},choose=
     <div className="folder-explainer device-sync-explainer">
       <p>Choose a folder that Syncthing, OneDrive, Dropbox, a NAS, or another file-sync service already keeps on both devices. Mikozora writes only its own small JSON sync file there; your chosen service carries it between devices, so they do not need to be online at the same time. Choose that same folder on your {otherDevice} too.</p>
       <p><strong>Privacy:</strong> anyone or any service that can read this folder can see the title and watch metadata in Mikozora’s sync files; they are not end-to-end encrypted. Use only a folder and sync service you trust. Disconnecting stops future reads and writes, but leaves files already in the folder untouched.</p>
-      <p>Library titles, collections, history, watch progress, personal ratings, shelf statuses and private notes, appearance, content preferences and Smart Downloads settings merge both ways—including later deletions, collection changes and episodes marked unwatched. Downloaded episodes and queues, download/export folder choices, app-update choices, offline playback positions, and episode-alert state stay on each device.</p>
+      <p>Library titles, collections, franchise chains, history, watch progress, personal ratings, shelf statuses and private notes, appearance, content preferences and Smart Downloads settings merge both ways—including later deletions, collection and chain changes and episodes marked unwatched. Downloaded episodes and queues, download/export folder choices, app-update choices, offline playback positions, and episode-alert state stay on each device.</p>
       {folder.configured&&<button className="text-link" onClick={disconnect} disabled={busy}>{status.phase==='disconnecting'?'Disconnecting…':'Disconnect this device'}</button>}
     </div>
   </div>;
@@ -1227,7 +1473,7 @@ function SettingsPage({library,history,clearLibrary,clearHistory,openLicenses,op
     </div>
     <DeviceSyncSettings {...deviceSync}/>
     <LibraryPortabilitySettings library={library} collections={collections} libraryMeta={libraryMeta} progress={progress} portability={portability} canUseFiles={canUseTextFiles} saveText={saveTextFile} readText={readTextFile} onApply={applyPortabilityResult} notify={notify}/>
-    <div className="settings-group"><div className="settings-title">YOUR DATA <span>ON THIS DEVICE</span></div><div className="setting-row"><div className="setting-icon"><Bookmark size={19}/></div><div><strong>Saved library</strong><p>{library.length} {library.length===1?'title':'titles'} saved locally</p></div><button onClick={clearLibrary} disabled={!library.length}>Clear</button></div><div className="setting-row"><div className="setting-icon"><History size={19}/></div><div><strong>Watch history</strong><p>{history.length} recently opened {history.length===1?'episode':'episodes'}</p></div><button onClick={clearHistory} disabled={!history.length}>Clear</button></div><div className="setting-row"><div className="setting-icon"><HardDrive size={19}/></div><div><strong>Back up your data</strong><p>Save your library, collections, personal ratings, notes and shelf statuses, history, watch progress, linked source versions and settings to a file you keep. Downloaded videos are not included.</p></div><button onClick={exportBackup}>Export</button></div><div className="setting-row"><div className="setting-icon"><RotateCcw size={19}/></div><div><strong>Restore a backup</strong><p>Replace this device's library, collections, personal shelf, history, progress, linked source versions and settings with a backup file.</p></div><button onClick={importBackup}>Import</button></div></div><div className="settings-group"><div className="settings-title">ABOUT <span>MIKOZORA {APP_VERSION}</span></div><div className="setting-row"><div className="setting-icon"><Download size={19}/></div><div><strong>App updates</strong><p>{updateText}</p></div>{pendingUpdate?<button onClick={downloadUpdate}>Download</button>:<button onClick={()=>checkUpdate(true)} disabled={updateStatus.phase==='checking'}>{updateStatus.phase==='checking'?'Checking…':updateStatus.phase==='error'?'Try again':'Check'}</button>}</div><div className="setting-row"><div className="setting-icon"><RefreshCw size={19}/></div><div><strong>Check automatically</strong><p>Check GitHub when Mikozora starts, when you return to it, and periodically while it stays open.</p></div><button aria-label="Automatic update checks" aria-pressed={!!appUpdate.autoCheck} onClick={()=>changeAutoCheck(!appUpdate.autoCheck)}>{appUpdate.autoCheck?'On':'Off'}</button></div><div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div><strong>Private by default</strong><p>Your library, collections and history stay on this device. No account is required.</p></div></div><div className="setting-row"><div className="setting-icon"><Film size={19}/></div><div><strong>Player availability</strong><p>Video hosts may restrict embedding or be unavailable. Try another server or open the source page.</p></div></div><div className="setting-row"><div className="setting-icon"><Sparkles size={19}/></div><div><strong>What’s new</strong><p>See the latest changes to Mikozora.</p></div><button onClick={openReleaseNotes}>View</button></div><div className="setting-row"><div className="setting-icon"><CircleHelp size={19}/></div><div><strong>Open source licenses</strong><p>Credits and licenses for Mikozora and its dependencies.</p></div><button onClick={openLicenses}>View</button></div></div></div>;
+    <div className="settings-group"><div className="settings-title">YOUR DATA <span>ON THIS DEVICE</span></div><div className="setting-row"><div className="setting-icon"><Bookmark size={19}/></div><div><strong>Saved library</strong><p>{library.length} {library.length===1?'title':'titles'} saved locally</p></div><button onClick={clearLibrary} disabled={!library.length}>Clear</button></div><div className="setting-row"><div className="setting-icon"><History size={19}/></div><div><strong>Watch history</strong><p>{history.length} recently opened {history.length===1?'episode':'episodes'}</p></div><button onClick={clearHistory} disabled={!history.length}>Clear</button></div><div className="setting-row"><div className="setting-icon"><HardDrive size={19}/></div><div><strong>Back up your data</strong><p>Save your library, collections, franchise chains, personal ratings, notes and shelf statuses, history, watch progress, linked source versions and settings to a file you keep. Downloaded videos are not included.</p></div><button onClick={exportBackup}>Export</button></div><div className="setting-row"><div className="setting-icon"><RotateCcw size={19}/></div><div><strong>Restore a backup</strong><p>Replace this device's library, collections, franchise chains, personal shelf, history, progress, linked source versions and settings with a backup file.</p></div><button onClick={importBackup}>Import</button></div></div><div className="settings-group"><div className="settings-title">ABOUT <span>MIKOZORA {APP_VERSION}</span></div><div className="setting-row"><div className="setting-icon"><Download size={19}/></div><div><strong>App updates</strong><p>{updateText}</p></div>{pendingUpdate?<button onClick={downloadUpdate}>Download</button>:<button onClick={()=>checkUpdate(true)} disabled={updateStatus.phase==='checking'}>{updateStatus.phase==='checking'?'Checking…':updateStatus.phase==='error'?'Try again':'Check'}</button>}</div><div className="setting-row"><div className="setting-icon"><RefreshCw size={19}/></div><div><strong>Check automatically</strong><p>Check GitHub when Mikozora starts, when you return to it, and periodically while it stays open.</p></div><button aria-label="Automatic update checks" aria-pressed={!!appUpdate.autoCheck} onClick={()=>changeAutoCheck(!appUpdate.autoCheck)}>{appUpdate.autoCheck?'On':'Off'}</button></div><div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div><strong>Private by default</strong><p>Your library, collections and history stay on this device. No account is required.</p></div></div><div className="setting-row"><div className="setting-icon"><Film size={19}/></div><div><strong>Player availability</strong><p>Video hosts may restrict embedding or be unavailable. Try another server or open the source page.</p></div></div><div className="setting-row"><div className="setting-icon"><Sparkles size={19}/></div><div><strong>What’s new</strong><p>See the latest changes to Mikozora.</p></div><button onClick={openReleaseNotes}>View</button></div><div className="setting-row"><div className="setting-icon"><CircleHelp size={19}/></div><div><strong>Open source licenses</strong><p>Credits and licenses for Mikozora and its dependencies.</p></div><button onClick={openLicenses}>View</button></div></div></div>;
 }
 function PlayerModal({player,close,onEpisode,watched,markWatched,onlinePrefs,playbackPrefs,onPlaybackRateChange=()=>{},onPosition=()=>{},onEnded=()=>{},onFallback=()=>{},notify=()=>{}}) {
   const servers=Array.isArray(player.servers)?player.servers:[];
@@ -1588,6 +1834,9 @@ function App() {
   const [sourceMatches,setSourceMatchesState]=useState(()=>{try{return readSourceMatches(window.localStorage);}catch{return normalizeSourceMatches(null);}});
   useEffect(()=>{try{saveSourceMatches(window.localStorage,sourceMatches);}catch{/* storage can be disabled */}},[sourceMatches]);
   const sourceRelatedKeys=useMemo(()=>relatedKeysByTitle(sourceMatches),[sourceMatches]);
+  const [franchiseChains,setFranchiseChainsState]=useState(()=>{try{return readFranchiseChains(window.localStorage);}catch{return normalizeFranchiseChains(null);}});
+  useEffect(()=>{try{saveFranchiseChains(window.localStorage,franchiseChains);}catch{/* storage can be disabled */}},[franchiseChains]);
+  const [chainDialog,setChainDialog]=useState(null);
   const [offlineManager,setOfflineManagerState]=useState(()=>{try{return readOfflineManager(window.localStorage);}catch{return normalizeOfflineManager(null);}});
   useEffect(()=>{try{saveOfflineManager(window.localStorage,offlineManager);}catch{/* storage can be disabled */}},[offlineManager]);
   const [offlinePlayback,setOfflinePlaybackState]=useState(()=>{try{return readOfflinePlayback(window.localStorage);}catch{return normalizeOfflinePlayback(null);}});
@@ -1697,8 +1946,8 @@ function App() {
   const deviceSyncError=useRef('');
   const deviceSyncRun=useRef(null);
   const deviceSyncChangeReady=useRef(false);
-  const syncInputsRef=useRef({library,history,storedProgress,progress,collections,libraryMeta,sourceMatches,appearance,contentPrefs,smartDownloads});
-  useEffect(()=>{syncInputsRef.current={library,history,storedProgress,progress,collections,libraryMeta,sourceMatches,appearance,contentPrefs,smartDownloads};},[library,history,storedProgress,progress,collections,libraryMeta,sourceMatches,appearance,contentPrefs,smartDownloads]);
+  const syncInputsRef=useRef({library,history,storedProgress,progress,collections,libraryMeta,sourceMatches,franchiseChains,appearance,contentPrefs,smartDownloads});
+  useEffect(()=>{syncInputsRef.current={library,history,storedProgress,progress,collections,libraryMeta,sourceMatches,franchiseChains,appearance,contentPrefs,smartDownloads};},[library,history,storedProgress,progress,collections,libraryMeta,sourceMatches,franchiseChains,appearance,contentPrefs,smartDownloads]);
   useEffect(()=>{if(activeCollection!=='all'&&!collections.some(c=>c.id===activeCollection))setActiveCollection('all');},[activeCollection,collections]);
   const updatesAvailable=hasEpisodeUpdates();
   const [updates,setUpdates]=useState({automatic:true,alerts:true,watchedCount:0,initializedCount:0,unreadCount:0,updates:[],errors:[],checking:false,queued:false,notificationStatus:'unknown'});
@@ -1723,12 +1972,17 @@ function App() {
       const key=identity(item);
       byKey.set(key,{...(byKey.get(key)||{}),...item});
     };
+    franchiseChainList(franchiseChains).forEach(chain=>chain.entries.forEach(entry=>add(entry.item)));
     library.forEach(add);
     progress.forEach(entry=>add(entry.item));
     history.forEach(entry=>add(entry.item));
     downloads.forEach(entry=>add(entry.item));
     return [...byKey.values()];
-  },[library,progress,history,downloads]);
+  },[library,progress,history,downloads,franchiseChains]);
+  const franchiseChainViewsAll=useMemo(()=>buildFranchiseChainViews(franchiseChains,{knownItems:knownSourceItems,progress,history,libraryMeta,relatedKeysByTitle:sourceRelatedKeys}),[franchiseChains,knownSourceItems,progress,history,libraryMeta,sourceRelatedKeys]);
+  const franchiseChainViews=useMemo(()=>hideNsfw?franchiseChainViewsAll.filter(view=>!view.entries.some(entry=>isNsfw(entry.item))):franchiseChainViewsAll,[franchiseChainViewsAll,hideNsfw]);
+  const franchiseSuggestions=useMemo(()=>suggestFranchiseChains(knownSourceItems,franchiseChains,{categoryOf:sourceCategory,hideNsfw,limit:12}),[knownSourceItems,franchiseChains,hideNsfw]);
+  const franchiseByTitle=useMemo(()=>franchiseChainByTitleKey(franchiseChains),[franchiseChains]);
   const unreadTitles=useMemo(()=>unreadByTitle(updates.updates),[updates.updates]);
   const releaseRadarView=useMemo(()=>buildReleaseRadar({updates:updates.updates||[],downloads,monitoredItems:monitored,radar:releaseRadar}),[updates.updates,downloads,monitored,releaseRadar]);
   const inboxUnread=useMemo(()=>{
@@ -1774,7 +2028,7 @@ function App() {
     if(!experience&&updatesAvailable&&updates.watchedCount>0&&updates.alerts&&updates.notificationStatus==='permission'&&!updates.permissionAsked)
       try{window.MokuBridge.episodeNotificationPermission(true)}catch{}
   },[experience,updatesAvailable,updates.watchedCount,updates.alerts,updates.notificationStatus,updates.permissionAsked]);
-  useEffect(()=>{window.__handleAndroidBack=()=>{if(experience){finishExperience();return true;}if(commandCentreOpen){setCommandCentreOpen(false);return true;}if(collectionDialog){setCollectionDialog(null);return true;}if(downloadModal){setDownloadModal(null);return true;}if(offlinePlayer){setOfflinePlayer(null);return true;}if(player){setPlayer(null);return true;}if(licenses){setLicenses(false);return true;}if(route.page!=='home'){window.history.back();return true;}return false;};},[experience,player,offlinePlayer,route,licenses,downloadModal,collectionDialog,commandCentreOpen]);
+  useEffect(()=>{window.__handleAndroidBack=()=>{if(experience){finishExperience();return true;}if(commandCentreOpen){setCommandCentreOpen(false);return true;}if(chainDialog){setChainDialog(null);return true;}if(collectionDialog){setCollectionDialog(null);return true;}if(downloadModal){setDownloadModal(null);return true;}if(offlinePlayer){setOfflinePlayer(null);return true;}if(player){setPlayer(null);return true;}if(licenses){setLicenses(false);return true;}if(route.page!=='home'){window.history.back();return true;}return false;};},[experience,player,offlinePlayer,route,licenses,downloadModal,collectionDialog,chainDialog,commandCentreOpen]);
   useEffect(()=>{
     const report=message=>{try{window.MokuBridge?.playerNavigationError?.(message);}catch{}};
     const handler=async(index,url)=>{
@@ -2031,6 +2285,7 @@ function App() {
       window.localStorage.setItem(COLLECTIONS_KEY,JSON.stringify(current.collections||[]));
       saveLibraryMeta(window.localStorage,current.libraryMeta||{});
       saveSourceMatches(window.localStorage,current.sourceMatches||normalizeSourceMatches(null));
+      saveFranchiseChains(window.localStorage,current.franchiseChains||normalizeFranchiseChains(null));
       // Do not materialize these stores here: prepareDeviceSync treats a
       // never-written scalar store as an implicit default rather than a
       // competing user choice during a first cross-device merge.
@@ -2048,6 +2303,7 @@ function App() {
     if(stableStringify(current.progress)!==stableStringify(data.progress))setStoredProgress(data.progress);
     if(stableStringify(current.libraryMeta||{})!==stableStringify(data.libraryMeta||{}))setLibraryMetaState(data.libraryMeta||{});
     if(stableStringify(current.sourceMatches||normalizeSourceMatches(null))!==stableStringify(data.sourceMatches||normalizeSourceMatches(null)))setSourceMatchesState(normalizeSourceMatches(data.sourceMatches));
+    if(stableStringify(current.franchiseChains||normalizeFranchiseChains(null))!==stableStringify(data.franchiseChains||normalizeFranchiseChains(null)))setFranchiseChainsState(normalizeFranchiseChains(data.franchiseChains));
     if(stableStringify(current.appearance)!==stableStringify(data.appearance)){
       const nextAppearance=applyAppearance(document,data.appearance);
       setAppearance(nextAppearance);
@@ -2166,7 +2422,7 @@ function App() {
     if(experience||!deviceSyncAvailable||!deviceSyncMeta.autoSync)return;
     const timer=setTimeout(()=>{void deviceSyncRun.current?.({reason:'change'});},2500);
     return ()=>clearTimeout(timer);
-  },[library,history,storedProgress,collections,libraryMeta,sourceMatches,appearance,contentPrefs,smartDownloads,experience,deviceSyncAvailable,deviceSyncMeta.autoSync]);
+  },[library,history,storedProgress,collections,libraryMeta,sourceMatches,franchiseChains,appearance,contentPrefs,smartDownloads,experience,deviceSyncAvailable,deviceSyncMeta.autoSync]);
   const waitForDeviceSyncIdle=async()=>{
     while(deviceSyncPromise.current){
       try{await deviceSyncPromise.current;}catch{break;}
@@ -2530,12 +2786,56 @@ function App() {
   const continueItems=useMemo(()=>continueWatching(progress,history,12,sourceRelatedKeys),[progress,history,sourceRelatedKeys]);
   const libraryProgress=useMemo(()=>progressByTitle(progress,history,sourceRelatedKeys),[progress,history,sourceRelatedKeys]);
   const resumeNext=entry=>play(entry.item,entry.episode,{playlist:entry.episodes});
+  const openFranchiseChainDialog=initial=>setChainDialog({
+    id:initial?.id||'',
+    name:initial?.name||'',
+    items:Array.isArray(initial?.items)?initial.items:[],
+  });
+  const saveFranchiseChainDialog=({id,name,items})=>{
+    if(!Array.isArray(items)||!items.length)return 'Choose at least one title to start the chain.';
+    setFranchiseChainsState(previous=>id
+      ? updateFranchiseChain(previous,id,{name,items})
+      : createFranchiseChain(previous,{name,items}));
+    setChainDialog(null);
+    setToast(id?'Franchise chain updated · your viewing order is saved':'Franchise chain created · your viewing order is saved');
+    return '';
+  };
+  const deleteFranchiseChainView=view=>{
+    if(!view?.id)return;
+    if(!window.confirm(`Delete the “${view.name}” franchise chain?\n\nOnly this viewing order is removed. Library titles, watched progress, downloads and source-version links stay unchanged.`))return;
+    setFranchiseChainsState(previous=>deleteFranchiseChain(previous,view.id));
+    setToast('Franchise chain deleted · titles and progress unchanged');
+  };
+  const dismissFranchiseSuggestionAction=suggestion=>{
+    setFranchiseChainsState(previous=>dismissFranchiseSuggestion(previous,suggestion));
+    setToast('Franchise suggestion dismissed');
+  };
+  const continueMarathon=view=>{
+    const action=view?.nextAction;
+    if(!action){go('chains');return;}
+    if(action.kind==='play'&&action.episode)resumeNext(action);
+    else if(action.item)open(action.item);
+  };
+  const chainDialogItems=useMemo(()=>{
+    const byKey=new Map();
+    const add=item=>{
+      if(!item?.source||!item?.url)return;
+      const key=identity(item);
+      byKey.set(key,{...(byKey.get(key)||{}),...item});
+    };
+    franchiseChainList(franchiseChains).forEach(chain=>chain.entries.forEach(entry=>add(entry.item)));
+    knownSourceItems.forEach(add);
+    (chainDialog?.items||[]).forEach(add);
+    const selected=new Set((chainDialog?.items||[]).filter(item=>item?.source&&item?.url).map(identity));
+    return [...byKey.values()].filter(item=>!hideNsfw||!isNsfw(item)||selected.has(identity(item)));
+  },[knownSourceItems,franchiseChains,chainDialog,hideNsfw]);
   const commandIndex=useMemo(()=>buildCommandIndex({
     actions:[
       {id:'action:home',title:'Discover',subtitle:'Open Home',keywords:'home discover start',page:'home',actionId:'go-home'},
       {id:'action:browse',title:'Browse all sources',subtitle:'Search and filter every source',keywords:'browse search all sources anime donghua',page:'browse',actionId:'go-browse'},
       {id:'action:library',title:'Library',subtitle:'Saved titles and collections',keywords:'library saved collections favourites',page:'library',actionId:'go-library'},
       {id:'action:planner',title:'Catch-Up & Binge Planner',subtitle:`${catchUpSummary.episodesBehind||0} episodes waiting`,keywords:'planner catch up binge behind stats',page:'planner',actionId:'go-planner'},
+      {id:'action:chains',title:'Franchise Chains & Marathon Mode',subtitle:`${franchiseChainViews.length} chain${franchiseChainViews.length===1?'':'s'} · seasons movies specials in order`,keywords:`franchise chains marathon seasons parts movies specials viewing order ${franchiseChainViews.map(view=>view.name).join(' ')}`,page:'chains',actionId:'go-chains'},
       {id:'action:updates',title:'Release Radar & Updates Inbox',subtitle:inboxUnread?`${inboxUnread} unread`:'New episodes and ready downloads',keywords:'updates inbox release radar new episode alerts calendar digest',page:'updates',actionId:'go-updates'},
       {id:'action:downloads',title:'Downloads & Offline Manager',subtitle:`${downloads.length} local records`,keywords:'downloads offline manager storage queue',page:'downloads',actionId:'go-downloads'},
       {id:'action:stats',title:'Watch Stats & Wrapped',subtitle:'Streaks, favourites and share cards',keywords:'stats wrapped streak share card history',page:'stats',actionId:'go-stats'},
@@ -2550,7 +2850,7 @@ function App() {
     downloads,
     updates:updates.updates||[],
     planner:catchUpQueue,
-  }),[library,history,progress,downloads,updates.updates,catchUpQueue,catchUpSummary,inboxUnread]);
+  }),[library,history,progress,downloads,updates.updates,catchUpQueue,catchUpSummary,inboxUnread,franchiseChainViews]);
   const runCommand=command=>{
     if(!command)return;
     if(command.actionId==='random-library'){
@@ -2636,8 +2936,8 @@ function App() {
       const backup=parseBackup(text);
       const when=backup.createdAt?new Date(backup.createdAt).toLocaleString():'an unknown date';
       const s=backup.summary;
-      const facts=`${s.library} library titles · ${s.collections} collections · ${s.history} history entries · progress for ${s.progress} series${s.sourceMatches?` · ${s.sourceMatches} linked source version${s.sourceMatches===1?'':'s'}`:''}`;
-      if(!window.confirm(`Restore the backup from ${when}?\n\n${facts}\n\nThis replaces your current library, collections, personal ratings, notes and shelf statuses, history, watch progress, linked source versions and settings on this device.`))return;
+      const facts=`${s.library} library titles · ${s.collections} collections · ${s.history} history entries · progress for ${s.progress} series${s.sourceMatches?` · ${s.sourceMatches} linked source version${s.sourceMatches===1?'':'s'}`:''}${s.franchiseChains?` · ${s.franchiseChains} franchise chain${s.franchiseChains===1?'':'s'}`:''}`;
+      if(!window.confirm(`Restore the backup from ${when}?\n\n${facts}\n\nThis replaces your current library, collections, franchise chains, personal ratings, notes and shelf statuses, history, watch progress, linked source versions and settings on this device.`))return;
       applyBackup(window.localStorage,backup.data);
       setToast('Backup restored — restarting…');
       setTimeout(()=>window.location.reload(),400);
@@ -2739,18 +3039,19 @@ function App() {
   if(experience) return <WelcomeScreen mode={experience.mode} manual={!!experience.manual} onContinue={finishExperience}/>;
   const common={open,has,toggle,browse};
   return <div className="app-shell"><SideNav page={route.page} go={go} unread={inboxUnread}/><div className="main-shell"><TopBar page={route.page} go={go} submitSearch={submitSearch} refresh={refresh} unread={inboxUnread} openCommandCentre={()=>setCommandCentreOpen(true)}/>{pendingUpdate&&<UpdateBanner info={pendingUpdate} download={downloadAppUpdate} dismiss={dismissAppUpdate}/>}<main key={route.page==='detail'?identity(route.item):route.page}>
-    {route.page==='home'&&<HomePage {...common} recent={history} refreshKey={refreshKey} hideNsfw={hideNsfw} continueItems={continueItems} resumeNext={resumeNext} removeContinue={removeContinue} library={library} progress={progress} libraryMeta={libraryMeta} catchUpItems={catchUpQueue} catchUpSummary={catchUpSummary} openPlanner={()=>go('planner')}/>}
+    {route.page==='home'&&<HomePage {...common} recent={history} refreshKey={refreshKey} hideNsfw={hideNsfw} continueItems={continueItems} resumeNext={resumeNext} removeContinue={removeContinue} library={library} progress={progress} libraryMeta={libraryMeta} catchUpItems={catchUpQueue} catchUpSummary={catchUpSummary} openPlanner={()=>go('planner')} marathonChains={franchiseChainViews} continueMarathon={continueMarathon} openChains={()=>go('chains')}/>}
     {route.page==='browse'&&<BrowsePage {...common} query={query} setQuery={setQuery} source={browseSource} setSource={setBrowseSource} refreshKey={refreshKey} hideNsfw={hideNsfw} openSettings={()=>go('settings')} library={library} history={history} progress={progress} libraryMeta={libraryMeta} sourceMatches={sourceMatches} searchCentre={searchCentre} submitSearch={submitSearch} saveCurrentSearch={saveCurrentSearch} removeSavedSearchEntry={removeSavedSearchEntry} clearSearchHistoryEntries={clearSearchHistoryEntries}/>}
-    {route.page==='detail'&&<DetailPage item={route.item} openEpisode={play} has={has} toggle={toggle} organize={item=>setCollectionDialog({kind:'title',item})} back={back} history={history} refreshKey={refreshKey} queueEpisodes={queueEpisodes} downloads={downloads} showDownloads={()=>go('downloads')} notify={setToast} hideNsfw={hideNsfw} openSettings={()=>go('settings')} watched={watchedUrlSet(progress,history,route.item)} onEpisodesReady={syncProgress} markWatched={markWatched} smartSelection={smartTitleSelection(smartDownloads,identity(route.item),collections)} smartEnabled={smartDownloads.enabled} toggleSmartDownload={toggleSmartTitle} libraryMeta={libraryMeta} updateLibraryMeta={updateLibraryMeta} openItem={open} linkedItems={linkedTitleItems(sourceMatches,route.item,knownSourceItems)} linkedKeys={linkedTitleKeys(sourceMatches,route.item)} watchedNumbers={watchedEpisodeNumbers(progress,history,linkedTitleKeys(sourceMatches,route.item))} onLinkSource={linkSourceVersion} onUnlinkSource={unlinkSourceVersion} releaseRadar={releaseRadar} onReleaseRadarRule={changeReleaseRadarRule} radarActivity={releaseRadarView.activity.find(entry=>entry.key===identity(route.item))||null} onlinePositions={onlinePositions} similarCandidates={knownSourceItems} pendingImported={pendingProgressFor(portability,route.item)} saveShareCard={saveShareCard}/>}
-    {route.page==='library'&&<LibraryPage {...common} items={library} collections={collections} activeCollection={activeCollection} setActiveCollection={setActiveCollection} onCreate={()=>setCollectionDialog({kind:'new'})} onRename={id=>setCollectionDialog({kind:'rename',id})} onDelete={removeCollection} onMembers={id=>setCollectionDialog({kind:'members',id})} onFavourite={favourite} unreadTitles={unreadTitles} progressByTitle={libraryProgress} hideNsfw={hideNsfw} smartCollections={smartDownloads.collectionIds} onSmartCollection={toggleSmartCollection} libraryMeta={libraryMeta} onRemoveTitles={removeLibraryTitles} onAddTitlesToCollection={addTitlesToCollection} openPlanner={()=>go('planner')} openStats={()=>go('stats')}/>}
-    {route.page==='planner'&&<PlannerPage progress={progress} history={history} libraryMeta={libraryMeta} plans={watchPlanner} relatedKeysByTitle={sourceRelatedKeys} open={open} resumeNext={resumeNext} queueEpisodes={queueEpisodes} changePlan={changeWatchPlan} browse={browse}/>}
+    {route.page==='detail'&&<DetailPage item={route.item} openEpisode={play} has={has} toggle={toggle} organize={item=>setCollectionDialog({kind:'title',item})} back={back} history={history} refreshKey={refreshKey} queueEpisodes={queueEpisodes} downloads={downloads} showDownloads={()=>go('downloads')} notify={setToast} hideNsfw={hideNsfw} openSettings={()=>go('settings')} watched={watchedUrlSet(progress,history,route.item)} onEpisodesReady={syncProgress} markWatched={markWatched} smartSelection={smartTitleSelection(smartDownloads,identity(route.item),collections)} smartEnabled={smartDownloads.enabled} toggleSmartDownload={toggleSmartTitle} libraryMeta={libraryMeta} updateLibraryMeta={updateLibraryMeta} openItem={open} linkedItems={linkedTitleItems(sourceMatches,route.item,knownSourceItems)} linkedKeys={linkedTitleKeys(sourceMatches,route.item)} watchedNumbers={watchedEpisodeNumbers(progress,history,linkedTitleKeys(sourceMatches,route.item))} onLinkSource={linkSourceVersion} onUnlinkSource={unlinkSourceVersion} releaseRadar={releaseRadar} onReleaseRadarRule={changeReleaseRadarRule} radarActivity={releaseRadarView.activity.find(entry=>entry.key===identity(route.item))||null} onlinePositions={onlinePositions} similarCandidates={knownSourceItems} pendingImported={pendingProgressFor(portability,route.item)} saveShareCard={saveShareCard} franchiseChainView={franchiseChainForTitleView(franchiseChainViews,route.item)} franchiseCandidates={rankFranchiseCandidates(route.item,knownSourceItems,{categoryOf:sourceCategory,limit:6,excludeKeys:franchiseChainForTitleView(franchiseChainViewsAll,route.item)?.entries.map(entry=>entry.key)||[]})} franchiseChainByKey={franchiseByTitle} onFranchiseCreate={openFranchiseChainDialog} onFranchiseEdit={openFranchiseChainDialog} onOpenChains={()=>go('chains')} onContinueMarathon={continueMarathon}/>}
+    {route.page==='library'&&<LibraryPage {...common} items={library} collections={collections} activeCollection={activeCollection} setActiveCollection={setActiveCollection} onCreate={()=>setCollectionDialog({kind:'new'})} onRename={id=>setCollectionDialog({kind:'rename',id})} onDelete={removeCollection} onMembers={id=>setCollectionDialog({kind:'members',id})} onFavourite={favourite} unreadTitles={unreadTitles} progressByTitle={libraryProgress} hideNsfw={hideNsfw} smartCollections={smartDownloads.collectionIds} onSmartCollection={toggleSmartCollection} libraryMeta={libraryMeta} onRemoveTitles={removeLibraryTitles} onAddTitlesToCollection={addTitlesToCollection} openPlanner={()=>go('planner')} openStats={()=>go('stats')} openChains={()=>go('chains')}/>}
+    {route.page==='planner'&&<PlannerPage progress={progress} history={history} libraryMeta={libraryMeta} plans={watchPlanner} relatedKeysByTitle={sourceRelatedKeys} open={open} resumeNext={resumeNext} queueEpisodes={queueEpisodes} changePlan={changeWatchPlan} browse={browse} chainViews={franchiseChainViews} continueMarathon={continueMarathon} openChains={()=>go('chains')}/>}
+    {route.page==='chains'&&<FranchiseChainsPage views={franchiseChainViews} suggestions={franchiseSuggestions} open={open} continueMarathon={continueMarathon} resumeNext={resumeNext} queueEpisodes={queueEpisodes} browse={browse} onCreateChain={openFranchiseChainDialog} onEditChain={openFranchiseChainDialog} onDeleteChain={deleteFranchiseChainView} onDismissSuggestion={dismissFranchiseSuggestionAction}/>}
     {route.page==='stats'&&<StatsPage history={history} progress={progress} library={library} libraryMeta={libraryMeta} relatedKeysByTitle={sourceRelatedKeys} open={open} browse={browse} notify={setToast} saveShareCard={saveShareCard}/>}
     {route.page==='updates'&&<UpdatesPage state={updates} available={updatesAvailable} syncError={updatesSyncError} actionError={updatesActionError} check={checkNow} readAll={readAllUpdates} openUpdate={viewRadarEntry} openLibrary={()=>go('library')} openSettings={()=>go('settings')} radar={releaseRadarView} releaseRadar={releaseRadar} onReleaseRadarRule={changeReleaseRadarRule} dismissRadarEntry={dismissRadarEntry} openDownloads={()=>go('downloads')}/>}
     {route.page==='downloads'&&<DownloadsPage items={downloads} loading={downloadsLoading} remove={deleteDownload} retry={retryDownload} change={d=>setDownloadModal({item:d.item,episodes:[d.episode],language:d.language||'english',serverChoice:d.serverChoice||'auto',subtitleMode:d.subtitleMode||'auto',subtitleSelection:Array.isArray(d.subtitleSelection)?d.subtitleSelection:[]})} browse={browse} folder={folder} saveCopy={saveCopy} openSettings={()=>go('settings')} playOffline={playOffline} watchedById={watchedDownloadInfo} managerPrefs={offlineManager} changeManagerPrefs={changeOfflineManager} cleanupCandidates={offlineCleanupCandidates} runCleanup={cleanupWatchedDownloads} removeMany={removeDownloadsBulk} moveQueue={moveDownloadQueue}/>}
     {route.page==='history'&&<HistoryPage items={history.filter(entry=>!hideNsfw||!isNsfw(entry.item))} resume={resume} open={open} clear={clearHistory} browse={browse} onlinePositions={onlinePositions}/>}
     {route.page==='sources'&&<SourcesPage browse={browse}/>}
     {route.page==='settings'&&<SettingsPage library={library} history={history} clearLibrary={clearLibrary} clearHistory={clearHistory} openLicenses={()=>setLicenses(true)} openReleaseNotes={()=>setExperience({mode:'update',manual:true})} folder={folder} chooseFolder={chooseFolder} usePrivate={usePrivate} updates={updates} updatesAvailable={updatesAvailable} changeAutomatic={changeAutomatic} changeAlerts={changeAlerts} notificationPermission={notificationPermission} appearance={appearance} changeAppearance={changeAppearance} contentPrefs={contentPrefs} changeContentPrefs={changeContentPrefs} appUpdate={appUpdate} pendingUpdate={pendingUpdate} updateStatus={updateStatus} checkUpdate={checkAppUpdate} changeAutoCheck={changeAutoCheck} downloadUpdate={downloadAppUpdate} exportBackup={exportBackup} importBackup={importBackup} smartDownloads={smartDownloads} changeSmartDownloads={changeSmartDownloads} deviceSync={{available:deviceSyncAvailable,folder:deviceSyncFolder,meta:deviceSyncMeta,status:deviceSyncStatus,choose:chooseSyncFolder,disconnect:disconnectSyncFolder,syncNow:syncDevicesNow,changeAuto:changeDeviceSyncAuto}} offlinePlayback={offlinePlayback} changeOfflinePlayback={changeOfflinePlayback} openDownloads={()=>go('downloads')} onlinePlayback={onlinePlayback} changeOnlinePlayback={changeOnlinePlayback} onlinePlayerAvailable={hasOnlinePlayerPro()} collections={collections} progress={progress} libraryMeta={libraryMeta} portability={portability} canUseTextFiles={hasTextFiles()||typeof document!=='undefined'} saveTextFile={saveTextFile} readTextFile={readTextFile} applyPortabilityResult={applyPortabilityResult} notify={setToast}/>}
-  </main></div><BottomNav page={route.page} go={go}/>{collectionDialog?.kind==='new'&&<CollectionNameDialog close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='rename'&&<CollectionNameDialog editing value={collections.find(c=>c.id===collectionDialog.id)?.name||''} close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='title'&&<TitleCollectionsDialog item={collectionDialog.item} collections={collections} close={()=>setCollectionDialog(null)} submit={selected=>saveTitleCollectionChoices(collectionDialog.item,selected)}/>}{collectionDialog?.kind==='members'&&collections.find(c=>c.id===collectionDialog.id)&&<CollectionMembersDialog collection={collections.find(c=>c.id===collectionDialog.id)} items={hideNsfw?library.filter(item=>!isNsfw(item)):library} close={()=>setCollectionDialog(null)} submit={keys=>saveCollectionMembers(collectionDialog.id,keys)}/>} {offlinePlayer&&<OfflinePlayerModal key={offlinePlayer.id} entry={offlinePlayer} close={()=>setOfflinePlayer(null)} prefs={offlinePlayback} changePrefs={changeOfflinePlayback} downloads={downloads} playOffline={playOffline} notify={setToast}/>}{commandCentreOpen&&<CommandCentre commands={commandIndex} close={()=>setCommandCentreOpen(false)} run={runCommand}/>}{player&&<PlayerModal key={`${player.episode.url}|${player.mode||'embedded'}|${player.stream?.token||''}`} player={player} close={closePlayer} onEpisode={playPlayerEpisode} watched={watchedUrlSetForEpisodes(progress,history,player.item,player.episodes||[],linkedTitleKeys(sourceMatches,player.item))} markWatched={markWatched} onlinePrefs={onlinePlayback} playbackPrefs={offlinePlayback} onPlaybackRateChange={rate=>changeOfflinePlayback({playbackRate:rate})} onPosition={recordDirectPosition} onEnded={directEnded} onFallback={fallbackDirectToEmbedded} notify={setToast}/>}{licenses&&<LicenseModal close={()=>setLicenses(false)}/>}{downloadModal&&<DownloadModal request={downloadModal} close={()=>setDownloadModal(null)} submit={submitDownload}/>}{busy&&<div className="busy-overlay"><div><LoaderCircle size={20} className="spin"/><span>{busy}</span></div></div>}{toast&&<div className="toast"><Check size={16}/>{toast}</div>}</div>;
+  </main></div><BottomNav page={route.page} go={go}/>{collectionDialog?.kind==='new'&&<CollectionNameDialog close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='rename'&&<CollectionNameDialog editing value={collections.find(c=>c.id===collectionDialog.id)?.name||''} close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='title'&&<TitleCollectionsDialog item={collectionDialog.item} collections={collections} close={()=>setCollectionDialog(null)} submit={selected=>saveTitleCollectionChoices(collectionDialog.item,selected)}/>}{collectionDialog?.kind==='members'&&collections.find(c=>c.id===collectionDialog.id)&&<CollectionMembersDialog collection={collections.find(c=>c.id===collectionDialog.id)} items={hideNsfw?library.filter(item=>!isNsfw(item)):library} close={()=>setCollectionDialog(null)} submit={keys=>saveCollectionMembers(collectionDialog.id,keys)}/>}{chainDialog&&<FranchiseChainDialog initial={chainDialog} items={chainDialogItems} chainByKey={franchiseByTitle} close={()=>setChainDialog(null)} submit={saveFranchiseChainDialog}/>} {offlinePlayer&&<OfflinePlayerModal key={offlinePlayer.id} entry={offlinePlayer} close={()=>setOfflinePlayer(null)} prefs={offlinePlayback} changePrefs={changeOfflinePlayback} downloads={downloads} playOffline={playOffline} notify={setToast}/>}{commandCentreOpen&&<CommandCentre commands={commandIndex} close={()=>setCommandCentreOpen(false)} run={runCommand}/>}{player&&<PlayerModal key={`${player.episode.url}|${player.mode||'embedded'}|${player.stream?.token||''}`} player={player} close={closePlayer} onEpisode={playPlayerEpisode} watched={watchedUrlSetForEpisodes(progress,history,player.item,player.episodes||[],linkedTitleKeys(sourceMatches,player.item))} markWatched={markWatched} onlinePrefs={onlinePlayback} playbackPrefs={offlinePlayback} onPlaybackRateChange={rate=>changeOfflinePlayback({playbackRate:rate})} onPosition={recordDirectPosition} onEnded={directEnded} onFallback={fallbackDirectToEmbedded} notify={setToast}/>}{licenses&&<LicenseModal close={()=>setLicenses(false)}/>}{downloadModal&&<DownloadModal request={downloadModal} close={()=>setDownloadModal(null)} submit={submitDownload}/>}{busy&&<div className="busy-overlay"><div><LoaderCircle size={20} className="spin"/><span>{busy}</span></div></div>}{toast&&<div className="toast"><Check size={16}/>{toast}</div>}</div>;
 }
 
 createRoot(document.getElementById('root')).render(<App/>);
