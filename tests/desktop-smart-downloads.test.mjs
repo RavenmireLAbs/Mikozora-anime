@@ -171,8 +171,11 @@ test('Windows DownloadService marks Smart records and claims the ready notificat
   const id = downloadIdFor(item.source, episode.url);
   const record = await waitFor(async () => {
     const found = (await service.list()).find((entry) => entry.id === id);
-    return found?.status === 'completed' ? found : null;
-  }, 'Smart download to complete');
+    // DownloadService publishes "completed" before its best-effort folder
+    // export and ready-notification claim. Wait for the claim + callback as
+    // well, rather than racing those next awaits under a loaded CI runner.
+    return found?.status === 'completed' && found.readyNotifiedAt > 0 && ready.length === 1 ? found : null;
+  }, 'Smart download to complete and claim its ready notification');
   assert.equal(record.autoDownload, true);
   assert.equal(record.smartWifiOnly, true);
   assert.equal(record.smartNotify, true);
