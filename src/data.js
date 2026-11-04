@@ -297,7 +297,20 @@ export async function getFeatured() {
     const link = item.querySelector('a[href*="/watch/"]');
     const style = attr(item, 'style');
     const bg = style.match(/url\(['"]?([^'")]+)['"]?\)/i)?.[1] || '';
-    return { source: 'sogo', url: normSogo(attr(link, 'href')), title: text(item.querySelector('.title')), banner: absolute(bg, SOURCES.sogo.base), genres: text(item.querySelector('.genre')) };
+    const banner = absolute(bg, SOURCES.sogo.base);
+    // Featured slides are also used as discovery cards, so return the same
+    // card shape as listings: `image` for covers and genres as an array.
+    return enrichCard({
+      source: 'sogo',
+      url: normSogo(attr(link, 'href')),
+      title: text(item.querySelector('.title')),
+      image: banner,
+      banner,
+      type: 'Anime',
+      badge: 'SUB',
+      status: '',
+      genres: uniqueText(text(item.querySelector('.genre')).split(/\s*,\s*/)).filter(name => name.length <= 40),
+    }, item);
   });
   return slides.filter(x => x.url && x.title && x.banner);
 }

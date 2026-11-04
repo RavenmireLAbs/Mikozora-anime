@@ -358,6 +358,9 @@ test('Android and Windows expose the same v0.31 bridge/player contracts', async 
   assert.match(directActivity, /requestFallback/);
   assert.match(main, /nativeFallbackPending/);
   assert.match(main, /nativeFallbackIgnoreCloseUntil/);
+  assert.match(main, /const detailGenres=genreList\(detail\)/);
+  assert.doesNotMatch(main, /detail\.genres\?\.\length\?detail\.genres\.join/);
+  assert.match(main, /imageUrl\(item\.image \|\| item\.banner\)/);
   assert.match(data, /hasOnlinePlayerPro/);
   assert.match(data, /resolveOnlineStream/);
   assert.match(data, /openOnlinePlayer/);

@@ -1,13 +1,20 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; the app shows only that newest entry.
-export const APP_VERSION = '0.31.0';
+export const APP_VERSION = '0.31.1';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.31.0',
+    version: '0.31.1',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Discovery shelves open properly again', description: 'Some AnimeSogo spotlight titles reached the new “Because you watched” row and mood shelves with only banner artwork and their genres stored as text. Their cards could show a blank cover, the shelves could collapse to the same single title, and opening one could leave a black screen. Mikozora now gives those titles a normal cover and genre list, merges the poster and genre details when the same show appears in more than one Home feed, and safely repairs older saved and progress copies so they open normally on Android and Windows.' },
+    ],
+  },
+  {
+    version: '0.31.0',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Online Player Pro & True Resume', description: 'When a server provides a stream Mikozora can play directly, Android now opens it in Mikozora’s own Media3 player and Windows opens it in the built-in direct player. Those direct players remember the exact timestamp on that device and use your remembered speed, seek length, subtitle style, subtitle-language preference, quality cap, sleep timer and auto-next choices. Mikozora tries a direct stream first when you leave that setting on; if the server only offers an embed—or the direct stream fails—it clearly falls back to the embedded player. Embedded third-party players still control their own playback and cannot report an exact resume timestamp to Mikozora.' },
       { title: 'Release Radar & Updates Inbox 2.0', description: 'Updates is now one inbox for newly discovered episodes and Smart Downloads that are ready offline. Switch between the inbox, a per-series digest, a Last 14 days view and alert history for every monitored title. The calendar uses the dates Mikozora discovered episodes, never invented air dates, and an “observed pattern” appears only when at least three separate discovery days support it. Each title can use Alerts + inbox, Inbox only or Muted, with optional 7-day or 30-day snoozes; Inbox only keeps the entry visible without a device alert.' },

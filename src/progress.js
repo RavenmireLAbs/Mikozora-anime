@@ -8,6 +8,7 @@
 import { titleKey } from './collections.js';
 import { buildPlaybackPlaylist } from './playback.js';
 import { episodeNumberKey } from './episode-tools.js';
+import { genreList } from './content.js';
 
 export const PROGRESS_KEY = 'moku.progress.v1';
 const MAX_TITLES = 40;
@@ -65,7 +66,7 @@ function keyListFromValues(values) {
 // identically for progress items.
 function cleanItem(item) {
   if (!item?.source || !item?.url) return null;
-  return { source: item.source, url: item.url, title: item.title, image: item.image, type: item.type, badge: item.badge, status: item.status, genres: item.genres, aired: item.aired, year: item.year, rating: item.rating, nsfw: item.nsfw };
+  return { source: item.source, url: item.url, title: item.title, image: item.image || item.banner, type: item.type, badge: item.badge, status: item.status, genres: genreList(item), aired: item.aired, year: item.year, rating: item.rating, nsfw: item.nsfw };
 }
 
 function cleanEpisode(episode) {

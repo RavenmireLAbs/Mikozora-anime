@@ -25,6 +25,44 @@ function titleLabel(value) {
   return text ? text[0].toUpperCase() + text.slice(1) : '';
 }
 
+function hasCandidateValue(value) {
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'string') return value.trim() !== '';
+  return value !== undefined && value !== null && value !== false && value !== 0;
+}
+
+// The same source listing can arrive from several Home feeds with different
+// pieces of metadata (for example, a catalog poster/type and a featured
+// slide's genres/banner). Merge duplicates instead of letting whichever feed
+// happened to be first discard the rest.
+function mergeCandidate(existing, incoming) {
+  const merged = { ...existing };
+  for (const [field, value] of Object.entries(incoming || {})) {
+    if (!hasCandidateValue(merged[field]) && hasCandidateValue(value)) merged[field] = value;
+  }
+  const genres = [];
+  const genreKeys = new Set();
+  for (const genre of [...genreList(existing), ...genreList(incoming)]) {
+    const slug = canonicalGenreSlug(genre);
+    if (!slug || genreKeys.has(slug)) continue;
+    genreKeys.add(slug);
+    genres.push(genre);
+  }
+  if (genres.length) merged.genres = genres;
+  if (!hasCandidateValue(merged.image) && hasCandidateValue(incoming?.banner)) merged.image = incoming.banner;
+  // A featured slide may temporarily use its banner as the cover. Prefer a
+  // distinct listing poster when another copy of the same title provides one.
+  if (existing?.image && existing.image === existing.banner && incoming?.image && incoming.image !== incoming.banner) merged.image = incoming.image;
+  const genericTypes = new Set(['anime', 'donghua']);
+  const existingType = String(existing?.type || '').trim().toLowerCase();
+  const incomingType = String(incoming?.type || '').trim().toLowerCase();
+  if (genericTypes.has(existingType) && hasCandidateValue(incoming?.type) && !genericTypes.has(incomingType)) merged.type = incoming.type;
+  if (existing?.nsfw || incoming?.nsfw) merged.nsfw = true;
+  const ranks = [existing?.rank, incoming?.rank].map(Number).filter(rank => Number.isFinite(rank) && rank > 0);
+  if (ranks.length) merged.rank = Math.min(...ranks);
+  return merged;
+}
+
 export function buildTasteProfile({ library = [], history = [], progress = [], libraryMeta = {} } = {}) {
   const genres = new Map();
   const genreLabels = new Map();
@@ -38,7 +76,7 @@ export function buildTasteProfile({ library = [], history = [], progress = [], l
 
   const remember = item => {
     const key = keyOf(item);
-    if (key && !itemsByKey.has(key)) itemsByKey.set(key, item);
+    if (key) itemsByKey.set(key, itemsByKey.has(key) ? mergeCandidate(itemsByKey.get(key), item) : item);
   };
   for (const item of Array.isArray(library) ? library : []) {
     remember(item);
@@ -150,16 +188,15 @@ function diversePicks(candidates, limit) {
 
 export function recommendTitles(candidates, context = {}, { limit = 14, excludeLibrary = true, excludeWatched = true } = {}) {
   const profile = context.genres instanceof Map ? context : buildTasteProfile(context);
-  const seen = new Set();
-  const pool = [];
+  const byKey = new Map();
   for (const item of Array.isArray(candidates) ? candidates : []) {
     const key = keyOf(item);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    if (excludeLibrary && profile.libraryKeys.has(key)) continue;
-    if (excludeWatched && profile.watchedKeys.has(key)) continue;
-    pool.push(item);
+    if (!key) continue;
+    byKey.set(key, byKey.has(key) ? mergeCandidate(byKey.get(key), item) : item);
   }
+  const pool = [...byKey.entries()]
+    .filter(([key]) => !(excludeLibrary && profile.libraryKeys.has(key)) && !(excludeWatched && profile.watchedKeys.has(key)))
+    .map(([, item]) => item);
   if (!pool.length) return [];
   if (!profile.strength) return diversePicks(pool.map((item, index) => [item, index]), limit);
 
@@ -209,17 +246,15 @@ function profileFromContext(context = {}) {
 }
 
 function candidatePool(candidates, profile, { excludeKeys = new Set(), excludeLibrary = true, excludeWatched = true } = {}) {
-  const seen = new Set();
-  const pool = [];
+  const byKey = new Map();
   for (const item of Array.isArray(candidates) ? candidates : []) {
     const key = keyOf(item);
-    if (!key || seen.has(key) || excludeKeys.has(key)) continue;
-    seen.add(key);
-    if (excludeLibrary && profile.libraryKeys?.has(key)) continue;
-    if (excludeWatched && profile.watchedKeys?.has(key)) continue;
-    pool.push(item);
+    if (!key || excludeKeys.has(key)) continue;
+    byKey.set(key, byKey.has(key) ? mergeCandidate(byKey.get(key), item) : item);
   }
-  return pool;
+  return [...byKey.entries()]
+    .filter(([key]) => !(excludeLibrary && profile.libraryKeys?.has(key)) && !(excludeWatched && profile.watchedKeys?.has(key)))
+    .map(([, item]) => item);
 }
 
 export function similarTitles(seed, candidates, context = {}, {

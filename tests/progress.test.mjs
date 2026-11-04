@@ -110,6 +110,13 @@ test('normalizeProgress tolerates junk and dedupes titles', () => {
   assert.equal(clean[0].updatedAt, 0);
 });
 
+test('normalizeProgress repairs banner-only artwork and text genres from older saved copies', () => {
+  const old = { ...item('featured'), image: '', banner: 'https://example.com/banner.jpg', genres: 'Fantasy, Romance' };
+  const [clean] = normalizeProgress([{ item: old, watched: [], episodes: [], updatedAt: 10 }]);
+  assert.equal(clean.item.image, 'https://example.com/banner.jpg');
+  assert.deepEqual(clean.item.genres, ['Fantasy', 'Romance']);
+});
+
 test('snapshots are stored in story order even when a source lists newest first', () => {
   const entries = recordWatch([], item('a'), ep('a', 4), eps('a', 4).reverse(), 100);
   assert.deepEqual(entries[0].episodes.map(e => e.number), ['1', '2', '3', '4']);

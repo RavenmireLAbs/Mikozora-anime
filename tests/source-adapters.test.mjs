@@ -33,6 +33,7 @@ const { getFeatured,getTrending,getDiscoverAnime,getCatalog,getDetail,getServers
 
 test('AnimeSogo featured and catalog normalize episode links to series', async()=>{
   const featured=await getFeatured(); assert.equal(featured[0].title,'Test Show');assert.equal(featured[0].url,'https://animesogo.to/watch/test-show');
+  assert.equal(featured[0].image,'https://cdn.anipixcdn.co/thumbnail/hero.jpg');assert.equal(featured[0].banner,'https://cdn.anipixcdn.co/thumbnail/hero.jpg');assert.equal(featured[0].type,'Anime');assert.equal(featured[0].badge,'SUB');assert.deepEqual(featured[0].genres,['Action','Fantasy']);
   const list=await getCatalog('sogo');assert.equal(list.items.length,1);assert.equal(list.items[0].url,'https://animesogo.to/watch/test-show');assert.equal(list.items[0].badge,'EP 2');assert.equal(list.hasMore,true);
   assert.deepEqual(list.items[0].genres,['Action']);assert.equal(list.items[0].year,2024);assert.equal(list.items[0].rating,'PG-13');assert.equal(list.items[0].nsfw,undefined);
 });
