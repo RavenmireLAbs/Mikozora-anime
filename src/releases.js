@@ -1,13 +1,23 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; the app shows only that newest entry.
-export const APP_VERSION = '0.31.2';
+export const APP_VERSION = '0.32.0';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.31.2',
+    version: '0.32.0',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Franchise Chains put a whole story in order', description: 'Open the new Franchise Chains page from the side navigation, Library or Command Centre to connect seasons, parts, movies and specials into a viewing order you confirm. Mikozora can suggest chains from titles it already knows on this device, suggest a missing later entry for an existing chain, or let you build and reorder one by hand. Suggestions always open for review first. A chain is separate from same-show source versions: different seasons and listings keep their own identities, and watched episodes are never copied from one entry into another.' },
+      { title: 'Marathon Mode knows what comes next', description: 'Each chain shows completed entries, watched and remaining known episodes, the current entry and the exact next episode when Mikozora has that episode list saved. Finish one season and Marathon Mode hands you to the next entry instead of leaving you to hunt for it. Build a 3–24 episode marathon session in chain order, play it from the next episode, or send the next few episodes—or a whole session group—through the usual download choices. Home and the Planner also surface active marathons and season handoffs.' },
+      { title: 'Find related entries from a series page', description: 'Series pages now include a Franchise Chain section beside Source Versions. It shows likely related entries already known on this device, and “Find related entries” searches the same Anime or Donghua sources only when you ask. Likely duplicate listings of the same season are kept out of the suggested entries, and every result opens in the chain editor so you can check the title and place it in the order yourself.' },
+      { title: 'Your chains travel with your other Mikozora data', description: 'Franchise chains and dismissed chain suggestions are included in manual backups and shared-folder device sync on Android and Windows, including deletion tombstones so an old sync file cannot bring a deleted chain back. Creating a chain does not force titles into your library or collections, and deleting a chain removes only the viewing order—titles, downloads, progress and confirmed source-version links stay as they were.' },
+    ],
+  },
+  {
+    version: '0.31.2',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Direct streams are now opt-in', description: '“Try direct streams first” is now off by default, so episodes open in the server’s embedded player unless you turn that Online Player Pro setting on. Existing installs are moved to the new off setting once because the first Online Player Pro release saved its old on-by-default value automatically. If you turn direct streams back on after this update, Mikozora will remember your choice.' },
     ],

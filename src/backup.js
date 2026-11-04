@@ -20,6 +20,7 @@ import { ONLINE_PLAYBACK_KEY, ONLINE_POSITIONS_KEY } from './online-playback.js'
 import { RELEASE_RADAR_KEY } from './release-radar.js';
 import { LIBRARY_PORTABILITY_KEY } from './library-portability.js';
 import { SEARCH_CENTRE_KEY } from './command-centre.js';
+import { FRANCHISE_CHAINS_KEY } from './franchise-chains.js';
 
 export const BACKUP_FORMAT = 'mikozora-backup';
 export const BACKUP_VERSION = 1;
@@ -39,6 +40,7 @@ export const BACKUP_KEYS = [
   RELEASE_RADAR_KEY,
   LIBRARY_PORTABILITY_KEY,
   SEARCH_CENTRE_KEY,
+  FRANCHISE_CHAINS_KEY,
   APPEARANCE_KEY,
   CONTENT_KEY,
   UPDATE_KEY,
@@ -72,6 +74,7 @@ export function summarizeBackup(data) {
     return Array.isArray(value) ? value.length : 0;
   };
   const sourceMatches = parseJson(data?.[SOURCE_MATCHES_KEY] || 'null');
+  const franchiseChains = parseJson(data?.[FRANCHISE_CHAINS_KEY] || 'null');
   return {
     library: count('moku.library.v1'),
     collections: count(COLLECTIONS_KEY),
@@ -79,6 +82,8 @@ export function summarizeBackup(data) {
     progress: count(PROGRESS_KEY),
     sourceMatches: sourceMatches?.edges && typeof sourceMatches.edges === 'object' && !Array.isArray(sourceMatches.edges)
       ? Object.keys(sourceMatches.edges).length : 0,
+    franchiseChains: franchiseChains?.chains && typeof franchiseChains.chains === 'object' && !Array.isArray(franchiseChains.chains)
+      ? Object.keys(franchiseChains.chains).length : 0,
   };
 }
 

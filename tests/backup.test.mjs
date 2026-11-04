@@ -48,7 +48,7 @@ test('buildBackup collects only the known stores', () => {
 
 test('parseBackup round-trips and summarizes, applyBackup replaces device state', () => {
   const parsed = parseBackup(JSON.stringify(buildBackup(full())));
-  assert.deepEqual(parsed.summary, { library: 1, collections: 1, history: 2, progress: 1, sourceMatches: 1 });
+  assert.deepEqual(parsed.summary, { library: 1, collections: 1, history: 2, progress: 1, sourceMatches: 1, franchiseChains: 0 });
   const device = new Store({
     'moku.library.v1': '[]',
     'moku.sourceMatches.v1': '{"version":1,"edges":{"stale":{}}}',

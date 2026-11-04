@@ -624,3 +624,179 @@ button.search-chip:hover,.search-chip.saved>button:first-child:hover{color:var(-
   .command-centre-head{padding:16px 16px 10px}
   .command-search{margin-inline:16px}
 }
+
+/* v0.32: Franchise Chains & Marathon Mode. */
+.franchise-panel{margin-top:22px;padding:18px;border:1px solid #39463a;border-radius:12px;background:#171e18}
+.franchise-panel-heading,.franchise-section-heading,.marathon-planner-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:18px}
+.franchise-panel-heading>div:first-child,.franchise-section-heading>div:first-child,.marathon-planner-heading>div:first-child{min-width:0;flex:1}
+.franchise-panel h2,.franchise-section-heading h2,.marathon-planner-heading h2{margin:7px 0 7px;color:#edf2e9;font:600 18px/1.3 Sora,sans-serif;letter-spacing:-.3px}
+.franchise-panel-heading p,.franchise-section-heading p,.marathon-planner-heading p,.franchise-hint{color:#879286;font-size:11px;line-height:1.6}
+.franchise-panel-heading p,.franchise-section-heading p,.marathon-planner-heading p{margin:0}
+.franchise-panel-actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;flex-wrap:wrap;flex:none}
+.franchise-progress{display:flex;align-items:center;gap:12px;margin-top:16px;color:#dce8d8;font-size:10px}
+.franchise-progress>span{display:block;min-width:90px;flex:1;height:7px;overflow:hidden;border-radius:999px;background:#263528}
+.franchise-progress i{display:block;height:100%;border-radius:999px;background:var(--accent)}
+.franchise-progress b{flex:none;color:#caeda7;font-size:10px;white-space:nowrap}
+.franchise-progress.compact{margin-top:10px;max-width:620px}
+.franchise-next-note{display:flex;align-items:flex-start;gap:8px;margin:13px 0 0;padding:11px 12px;border:1px solid #465a3c;border-radius:9px;background:#1c241d;color:#a2b09e;font-size:11px;line-height:1.55}
+.franchise-next-note svg{flex:none;margin-top:1px;color:var(--accent)}
+.franchise-next-note strong{color:#edf2e9}
+.franchise-timeline{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-top:14px}
+.franchise-timeline-entry{display:flex;align-items:center;gap:11px;min-width:0;padding:10px;border:1px solid #39463a;border-radius:10px;background:#1c241d;color:#dce8d8;text-align:left}
+.franchise-timeline-entry:hover{border-color:#596a55}
+.franchise-timeline-entry.current{border-color:var(--accent);background:#263528}
+.franchise-timeline-entry.completed{opacity:.78}
+.franchise-timeline-index,.franchise-entry-index{display:grid;place-items:center;flex:none;width:27px;height:27px;border:1px solid #465a3c;border-radius:50%;background:#263528;color:#caeda7;font-size:10px;font-weight:900}
+.franchise-mini-cover{width:43px;height:60px;flex:none;overflow:hidden;border-radius:6px;background:#263528}
+.franchise-mini-cover .cover-img{width:100%;height:100%}
+.franchise-timeline-copy,.franchise-candidate-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:3px}
+.franchise-timeline-copy small,.franchise-candidate-copy small{color:#879286;font-size:9px;font-weight:800;line-height:1.4;letter-spacing:.3px;text-transform:uppercase}
+.franchise-timeline-copy strong,.franchise-candidate-copy strong{color:#edf2e9;font-size:11px;line-height:1.4;overflow-wrap:anywhere}
+.franchise-timeline-copy em{color:#a2b09e;font-size:10px;font-style:normal;line-height:1.4}
+.franchise-candidate-group{margin-top:16px}
+.franchise-group-label{display:flex;align-items:center;gap:7px;color:#a2b09e;font-size:9px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
+.franchise-candidate-list{display:grid;gap:9px;margin-top:10px}
+.franchise-candidate-row{display:flex;align-items:stretch;justify-content:space-between;gap:12px;padding:10px;border:1px solid #39463a;border-radius:10px;background:#1c241d}
+.franchise-candidate-open{display:flex;align-items:center;gap:11px;min-width:0;flex:1;border:0;background:none;color:inherit;padding:0;text-align:left}
+.franchise-candidate-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.franchise-candidate-top b{color:#caeda7;font-size:9px;letter-spacing:.3px}
+.franchise-candidate-copy small{text-transform:none;letter-spacing:0;font-size:10px;font-weight:600}
+.franchise-candidate-actions{display:flex;align-items:center;gap:8px;flex:none}
+.franchise-search-error{margin-top:14px}
+.franchise-hint{margin:13px 0 0}
+.franchise-hint svg{vertical-align:-2px;margin-right:5px}
+.franchise-page-heading{align-items:flex-start}
+.franchise-heading-actions{display:flex;flex-direction:column;align-items:flex-end;gap:12px;flex:none}
+.franchise-summary{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-top:18px}
+.franchise-summary>div{min-width:0;padding:14px;border:1px solid #39463a;border-radius:10px;background:#171e18}
+.franchise-summary strong{display:block;color:#edf2e9;font-size:20px;line-height:1.1}
+.franchise-summary span{display:block;margin-top:5px;color:#879286;font-size:9px;font-weight:800;line-height:1.4;letter-spacing:.7px;text-transform:uppercase}
+.franchise-suggestions{margin-top:28px}
+.franchise-suggestion-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}
+.franchise-suggestion-card{display:flex;gap:14px;min-width:0;padding:14px;border:1px solid #465a3c;border-radius:12px;background:linear-gradient(145deg,#202a20,#171e18)}
+.franchise-suggestion-covers{display:flex;flex:none}
+.franchise-suggestion-covers>span{width:48px;height:68px;overflow:hidden;border:2px solid #263528;border-radius:7px;background:#263528;margin-left:-14px;box-shadow:5px 0 14px #0006}
+.franchise-suggestion-covers>span:first-child{margin-left:0}
+.franchise-suggestion-covers .cover-img{width:100%;height:100%}
+.franchise-suggestion-copy{min-width:0;flex:1}
+.franchise-suggestion-copy>span{color:#caeda7;font-size:8px;font-weight:900;letter-spacing:1px}
+.franchise-suggestion-copy h3{margin:5px 0 4px;color:#edf2e9;font:600 15px/1.3 Sora,sans-serif}
+.franchise-suggestion-copy p{margin:0;color:#dce8d8;font-size:10px;font-weight:700;line-height:1.5}
+.franchise-suggestion-copy small{display:block;margin-top:4px;color:#879286;font-size:10px;line-height:1.45}
+.franchise-suggestion-actions{display:flex;flex-direction:column;align-items:stretch;justify-content:center;gap:6px;flex:none}
+.franchise-controls{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-top:26px;padding:14px;border:1px solid #39463a;border-radius:11px;background:#171e18}
+.franchise-controls label{display:flex;flex-direction:column;gap:6px;color:#8c9c88;font-size:9px;font-weight:800;letter-spacing:1px;text-transform:uppercase}
+.franchise-controls select{min-height:38px;border:1px solid #39463a;border-radius:8px;background:#1c241d;color:#e0e9de;padding:0 28px 0 10px;font-size:11px;font-weight:700;letter-spacing:0;text-transform:none}
+.franchise-controls .franchise-search{flex-direction:row;align-items:center;flex:1 1 250px;min-height:38px;padding:0 11px;border:1px solid #39463a;border-radius:8px;background:#1c241d;letter-spacing:0;text-transform:none}
+.franchise-search input{min-width:0;flex:1;border:0;outline:none;background:none;color:#e0e9de;font-size:12px}
+.franchise-search input::placeholder{color:#738074}
+.franchise-controls p{flex:1 1 320px;margin:0;color:#879286;font-size:10px;line-height:1.55}
+.franchise-chain-list{display:grid;gap:16px;margin-top:18px}
+.franchise-chain-card{padding:17px;border:1px solid #39463a;border-radius:13px;background:#171e18}
+.franchise-chain-card.in-progress{border-color:#465a3c}
+.franchise-chain-header{display:flex;align-items:flex-start;gap:16px}
+.franchise-chain-cover{width:78px;height:110px;flex:none;overflow:hidden;padding:0;border:1px solid #39463a;border-radius:9px;background:#263528;color:#a2b09e}
+.franchise-chain-cover .cover-img{width:100%;height:100%}
+.franchise-chain-title{min-width:0;flex:1}
+.franchise-chain-title>div:first-child{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.franchise-chain-title small{color:#738074;font-size:10px}
+.franchise-chain-title h2{margin:6px 0 5px;color:#edf2e9;font:600 21px/1.25 Sora,sans-serif;letter-spacing:-.4px;overflow-wrap:anywhere}
+.franchise-chain-title p{margin:0;color:#879286;font-size:11px;line-height:1.55}
+.franchise-status{display:inline-flex;align-items:center;min-height:22px;padding:3px 7px;border:1px solid #465a3c;border-radius:999px;background:#263528;color:#caeda7;font-size:8px;font-weight:900;letter-spacing:.7px;text-transform:uppercase}
+.franchise-status.not-started{color:#a2b09e}
+.franchise-status.completed{background:#2a392b;color:var(--accent)}
+.franchise-chain-manage{display:flex;align-items:center;gap:8px;flex:none}
+.franchise-next-box{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:16px;padding:14px;border:1px solid #465a3c;border-radius:11px;background:#1c241d}
+.franchise-next-box>div:first-child{min-width:0;flex:1}
+.franchise-next-box span{display:block;color:#caeda7;font-size:8px;font-weight:900;letter-spacing:1px}
+.franchise-next-box strong{display:block;margin-top:5px;color:#edf2e9;font-size:14px;line-height:1.4;overflow-wrap:anywhere}
+.franchise-next-box p{margin:5px 0 0;color:#879286;font-size:11px;line-height:1.55}
+.franchise-next-actions,.marathon-planner-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap;flex:none}
+.franchise-complete-icon{flex:none;color:var(--accent)}
+.marathon-session{margin-top:14px;padding:14px;border:1px solid #39463a;border-radius:11px;background:#141a15}
+.marathon-session-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.marathon-session-heading>div{min-width:0;flex:1}
+.marathon-session-heading h3{margin:6px 0 4px;color:#edf2e9;font:600 16px/1.3 Sora,sans-serif}
+.marathon-session-heading p{margin:0;color:#879286;font-size:10px;line-height:1.55}
+.marathon-session-list{display:grid;gap:8px;margin-top:12px}
+.marathon-session-row{display:flex;align-items:center;gap:12px;padding:10px;border:1px solid #39463a;border-radius:9px;background:#1c241d}
+.marathon-session-row>span{display:grid;place-items:center;flex:none;width:27px;height:27px;border-radius:50%;background:#263528;color:#caeda7;font-size:10px;font-weight:900}
+.marathon-session-row>div{min-width:0;flex:1}
+.marathon-session-row>div>button{max-width:100%;border:0;background:none;color:#edf2e9;padding:0;font-size:12px;font-weight:800;text-align:left;overflow-wrap:anywhere}
+.marathon-session-row small{display:block;margin-top:3px;color:#879286;font-size:10px;line-height:1.45}
+.franchise-entry-list{display:grid;gap:8px;margin-top:14px}
+.franchise-entry-row{display:flex;align-items:center;gap:11px;padding:9px;border:1px solid #2f3b30;border-radius:10px;background:#141a15}
+.franchise-entry-row.current{border-color:var(--accent);background:#1c241d}
+.franchise-entry-row.completed{opacity:.76}
+.franchise-entry-index.completed,.franchise-entry-row.completed .franchise-entry-index{background:var(--accent);border-color:var(--accent);color:#233324}
+.franchise-entry-open{display:flex;align-items:center;gap:11px;min-width:0;flex:1;border:0;background:none;color:#dce8d8;padding:0;text-align:left}
+.franchise-entry-open>span:last-child{min-width:0;flex:1;display:flex;flex-direction:column;gap:3px}
+.franchise-entry-open small{color:#879286;font-size:9px;font-weight:800;line-height:1.4;letter-spacing:.3px;text-transform:uppercase}
+.franchise-entry-open strong{color:#edf2e9;font-size:12px;line-height:1.4;overflow-wrap:anywhere}
+.franchise-entry-open em{color:#a2b09e;font-size:10px;font-style:normal;line-height:1.45}
+.franchise-entry-progress{display:block;height:5px;overflow:hidden;border-radius:999px;background:#263528}
+.franchise-entry-progress i{display:block;height:100%;background:var(--accent)}
+.franchise-entry-play{display:grid;place-items:center;flex:none;width:38px;height:38px;border:1px solid #465a3c;border-radius:50%;background:var(--accent);color:#233324}
+.franchise-dialog-body{max-height:min(74vh,760px);overflow-y:auto;scrollbar-width:thin;scrollbar-color:#394739 transparent}
+.franchise-dialog-section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;margin-top:18px;padding-top:15px;border-top:1px solid #39463a}
+.franchise-dialog-section-head span{display:block;color:#8c9c88;font-size:8px;font-weight:900;letter-spacing:1px}
+.franchise-dialog-section-head strong{display:block;margin-top:3px;color:#dce8d8;font-size:12px}
+.franchise-order-list{display:grid;gap:8px;margin-top:11px}
+.franchise-order-row{display:flex;align-items:center;gap:10px;padding:8px;border:1px solid #465a3c;border-radius:9px;background:#1c241d}
+.franchise-order-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:2px}
+.franchise-order-copy small{color:#879286;font-size:9px;font-weight:800;text-transform:uppercase}
+.franchise-order-copy strong{color:#edf2e9;font-size:11px;line-height:1.4;overflow-wrap:anywhere}
+.franchise-order-copy em{color:#d6c393;font-size:9px;font-style:normal;line-height:1.4}
+.franchise-order-tools{display:flex;align-items:center;gap:5px;flex:none}
+.franchise-order-tools button{display:grid;place-items:center;width:31px;height:31px;border:1px solid #39463a;border-radius:7px;background:#263528;color:#dce8d8}
+.franchise-order-tools button:hover:not(:disabled){color:var(--accent);border-color:#596a55}
+.franchise-picker-list{max-height:280px}
+.marathon-planner{margin-top:18px;padding:16px;border:1px solid #465a3c;border-radius:12px;background:#171e18}
+.marathon-planner-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;margin-top:14px}
+.marathon-planner-card{display:flex;gap:13px;min-width:0;padding:11px;border:1px solid #39463a;border-radius:10px;background:#1c241d}
+.marathon-planner-card>div{min-width:0;flex:1}
+.marathon-planner-card>div>span{color:#caeda7;font-size:8px;font-weight:900;letter-spacing:.8px}
+.marathon-planner-card h3{margin:5px 0 4px}
+.marathon-planner-card h3 button{border:0;background:none;color:#edf2e9;padding:0;font:600 14px/1.35 Sora,sans-serif;text-align:left;overflow-wrap:anywhere}
+.marathon-planner-card p{margin:0;color:#879286;font-size:10px;line-height:1.55}
+.marathon-planner-actions{margin-top:10px}
+.marathon-planner-actions .btn{min-height:35px;padding:8px 10px;font-size:10px}
+@media(max-width:1100px){
+  .franchise-summary{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .franchise-suggestion-grid,.marathon-planner-list{grid-template-columns:1fr}
+}
+@media(max-width:760px){
+  .franchise-panel{padding:15px}
+  .franchise-panel-heading,.franchise-section-heading,.marathon-planner-heading,.franchise-next-box,.marathon-session-heading{flex-direction:column}
+  .franchise-panel-actions,.franchise-next-actions{justify-content:flex-start;width:100%}
+  .franchise-panel-actions>.btn,.franchise-next-actions>.btn{flex:1 1 150px}
+  .franchise-candidate-row{flex-direction:column}
+  .franchise-candidate-actions{width:100%}
+  .franchise-candidate-actions>.btn{flex:1}
+  .franchise-heading-actions{flex-direction:row;align-items:center;width:100%}
+  .franchise-heading-actions>.btn{flex:1}
+  .franchise-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .franchise-suggestion-card{flex-direction:column}
+  .franchise-suggestion-actions{flex-direction:row}
+  .franchise-suggestion-actions>.btn{flex:1}
+  .franchise-controls{align-items:stretch}
+  .franchise-controls label{flex:1 1 150px}
+  .franchise-controls select{width:100%}
+  .franchise-chain-card{padding:13px}
+  .franchise-chain-header{gap:11px}
+  .franchise-chain-cover{width:59px;height:84px}
+  .franchise-chain-title h2{font-size:17px}
+  .franchise-chain-manage .btn{padding-inline:9px}
+  .franchise-dialog-body{max-height:72vh}
+  .marathon-planner-actions>.btn{flex:1 1 150px}
+}
+@media(max-width:430px){
+  .franchise-summary{grid-template-columns:1fr 1fr}
+  .franchise-summary strong{font-size:17px}
+  .franchise-timeline{grid-template-columns:1fr}
+  .franchise-chain-manage .btn span{display:none}
+  .franchise-order-tools button{width:29px;height:29px}
+  .franchise-panel-actions>.text-link{flex-basis:100%}
+  .marathon-session-row{align-items:flex-start}
+  .marathon-session-row>.text-link{margin-left:auto}
+}

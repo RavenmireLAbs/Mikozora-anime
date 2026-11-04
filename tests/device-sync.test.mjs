@@ -76,7 +76,7 @@ test('prepares a bounded own-device file and does not republish an unchanged sna
   assert.equal(first.fileName, 'mikozora-sync-android-aaaaaaaaaaaaaaaa.json');
   assert.equal(first.shouldWrite, true);
   assert.deepEqual(Object.keys(first.payload.data).sort(), [
-    'appearance', 'collections', 'content', 'history', 'library', 'libraryMeta', 'progress', 'smartDownloads', 'sourceMatches',
+    'appearance', 'collections', 'content', 'franchiseChains', 'history', 'library', 'libraryMeta', 'progress', 'smartDownloads', 'sourceMatches',
   ]);
   assert.equal(JSON.stringify(first.payload).includes('9.9.9'), false);
   assert.equal(parseDeviceSyncFile(first.payloadText)?.deviceId, 'aaaaaaaaaaaaaaaa');

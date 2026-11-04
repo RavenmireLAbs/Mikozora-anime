@@ -19,6 +19,7 @@ import { CONTENT_KEY, normalizeContentPrefs } from './content.js';
 import { SMART_DOWNLOADS_KEY, normalizeSmartDownloads } from './smart-downloads.js';
 import { LIBRARY_META_KEY, PERSONAL_STATUSES, normalizeLibraryMeta } from './library-meta.js';
 import { SOURCE_MATCHES_KEY, normalizeSourceMatches } from './source-match.js';
+import { FRANCHISE_CHAINS_KEY, normalizeFranchiseChains } from './franchise-chains.js';
 
 export const LIBRARY_KEY = 'moku.library.v1';
 export const HISTORY_KEY = 'moku.history.v1';
@@ -37,6 +38,8 @@ const MAX_META_HISTORY = 1000;
 const MAX_META_PROGRESS = 500;
 const MAX_META_LIBRARY_META = 1000;
 const MAX_META_SOURCE_MATCHES = 1000;
+const MAX_META_FRANCHISE_CHAINS = 500;
+const MAX_META_FRANCHISE_DISMISSALS = 500;
 const MAX_META_SET = 10000;
 const SMART_SCALARS = ['enabled', 'wifiOnly', 'maxUnwatchedPerSeries', 'notifyWhenReady'];
 const ITEM_FIELDS = ['source', 'url', 'title', 'image', 'type', 'badge', 'status', 'genres', 'aired', 'year', 'rating', 'nsfw'];
@@ -123,6 +126,12 @@ function cleanCollectionId(value) {
   const id = cleanText(value, 80);
   if (id === '__proto__' || id === 'constructor' || id === 'prototype') return '';
   return /^[A-Za-z0-9_-]{1,80}$/.test(id) ? id : '';
+}
+
+function cleanFranchiseId(value) {
+  const id = cleanText(value, 96);
+  if (id === '__proto__' || id === 'constructor' || id === 'prototype') return '';
+  return /^[A-Za-z0-9_-]{1,96}$/.test(id) ? id : '';
 }
 
 function cleanGenres(value) {
@@ -223,6 +232,27 @@ function cleanLibraryMeta(raw, validLibraryKeys = null) {
   return normalizeLibraryMeta(out);
 }
 
+function cleanFranchiseChainsForSync(raw) {
+  const normalized = normalizeFranchiseChains(raw);
+  const chains = {};
+  for (const [id, chain] of Object.entries(normalized.chains)) {
+    const entries = [];
+    for (const entry of chain.entries) {
+      const item = cleanItem(entry.item);
+      if (!item) continue;
+      entries.push({
+        key: itemKey(item),
+        item,
+        kind: cleanText(entry.kind, 20) || 'entry',
+        label: cleanText(entry.label, 80),
+        ...(entry.addedAt ? { addedAt: timestamp(entry.addedAt) } : {}),
+      });
+    }
+    if (entries.length) setOwn(chains, id, { ...chain, entries });
+  }
+  return normalizeFranchiseChains({ version: normalized.version, chains, dismissed: normalized.dismissed });
+}
+
 export function sanitizeSyncSnapshot(raw) {
   const value = isObject(raw) ? raw : {};
 
@@ -274,6 +304,7 @@ export function sanitizeSyncSnapshot(raw) {
     progress,
     libraryMeta: cleanLibraryMeta(value.libraryMeta, new Set(libraryByKey.keys())),
     sourceMatches: normalizeSourceMatches(value.sourceMatches),
+    franchiseChains: cleanFranchiseChainsForSync(value.franchiseChains),
     appearance: normalizeAppearance(value.appearance),
     content: normalizeContentPrefs(value.content),
     smartDownloads: normalizeSmartDownloads(value.smartDownloads),
@@ -288,6 +319,7 @@ export function snapshotFromStorage(storage) {
     progress: readStoredJson(storage, PROGRESS_KEY, []),
     libraryMeta: readStoredJson(storage, LIBRARY_META_KEY, {}),
     sourceMatches: readStoredJson(storage, SOURCE_MATCHES_KEY, null),
+    franchiseChains: readStoredJson(storage, FRANCHISE_CHAINS_KEY, null),
     appearance: readStoredJson(storage, APPEARANCE_KEY, null),
     content: readStoredJson(storage, CONTENT_KEY, null),
     smartDownloads: readStoredJson(storage, SMART_DOWNLOADS_KEY, null),
@@ -303,6 +335,7 @@ export function applySyncSnapshotToStorage(storage, snapshot) {
     [PROGRESS_KEY, clean.progress],
     [LIBRARY_META_KEY, clean.libraryMeta],
     [SOURCE_MATCHES_KEY, clean.sourceMatches],
+    [FRANCHISE_CHAINS_KEY, clean.franchiseChains],
     [APPEARANCE_KEY, clean.appearance],
     [CONTENT_KEY, clean.content],
     [SMART_DOWNLOADS_KEY, clean.smartDownloads],
@@ -359,6 +392,7 @@ function sanitizeMap(raw, cleanKey, cleanValue, limit) {
 
 const sanitizeTitleRecordMap = (raw, limit = MAX_META_LIBRARY) => sanitizeMap(raw, cleanTitleKey, sanitizeBaseRecord, limit);
 const sanitizeSourceMatchRecordMap = (raw, limit = MAX_META_SOURCE_MATCHES) => sanitizeMap(raw, cleanSourceMatchEdgeId, sanitizeBaseRecord, limit);
+const sanitizeFranchiseRecordMap = (raw, limit = MAX_META_FRANCHISE_CHAINS) => sanitizeMap(raw, cleanFranchiseId, sanitizeBaseRecord, limit);
 const sanitizeTitleSetMap = (raw, limit = MAX_META_SET) => sanitizeMap(raw, cleanTitleKey, sanitizeSetRecord, limit);
 const sanitizeUrlSetMap = (raw, limit = MAX_META_SET) => sanitizeMap(raw, (url) => cleanUrl(url), sanitizeSetRecord, limit);
 const sanitizeIdSetMap = (raw, limit = MAX_META_SET) => sanitizeMap(raw, cleanCollectionId, sanitizeSetRecord, limit);
@@ -371,6 +405,8 @@ export function emptySyncRecordMeta() {
     progress: {},
     libraryMeta: {},
     sourceMatches: {},
+    franchiseChains: {},
+    franchiseDismissals: {},
     settings: {
       appearance: null,
       content: null,
@@ -413,6 +449,8 @@ export function sanitizeSyncRecordMeta(raw) {
     progress,
     libraryMeta: sanitizeTitleRecordMap(value.libraryMeta, MAX_META_LIBRARY_META),
     sourceMatches: sanitizeSourceMatchRecordMap(value.sourceMatches, MAX_META_SOURCE_MATCHES),
+    franchiseChains: sanitizeFranchiseRecordMap(value.franchiseChains, MAX_META_FRANCHISE_CHAINS),
+    franchiseDismissals: sanitizeFranchiseRecordMap(value.franchiseDismissals, MAX_META_FRANCHISE_DISMISSALS),
     settings: {
       appearance: sanitizeBaseRecord(settings.appearance),
       content: sanitizeBaseRecord(settings.content),
@@ -543,6 +581,13 @@ export function stampSyncSnapshot(snapshot, previousMeta, now = Date.now()) {
   for (const [id, edge] of Object.entries(data.sourceMatches.edges)) setOwn(sourceMatchTimes, id, edge.updatedAt);
   stampBaseMap(meta.sourceMatches, data.sourceMatches.edges, eventNow, sourceMatchTimes);
 
+  const franchiseChainTimes = {};
+  for (const [id, chain] of Object.entries(data.franchiseChains.chains)) setOwn(franchiseChainTimes, id, chain.updatedAt);
+  stampBaseMap(meta.franchiseChains, data.franchiseChains.chains, eventNow, franchiseChainTimes);
+  const franchiseDismissalTimes = {};
+  for (const [id, record] of Object.entries(data.franchiseChains.dismissed)) setOwn(franchiseDismissalTimes, id, record.updatedAt);
+  stampBaseMap(meta.franchiseDismissals, data.franchiseChains.dismissed, eventNow, franchiseDismissalTimes);
+
   meta.settings.appearance = stampScalar(meta.settings.appearance, data.appearance, eventNow);
   meta.settings.content = stampScalar(meta.settings.content, data.content, eventNow);
   const smartMeta = meta.settings.smartDownloads;
@@ -579,6 +624,8 @@ function pruneSyncRecordMeta(meta) {
   for (const record of Object.values(clean.progress)) record.watched = pruneMap(record.watched, MAX_META_SET, (entry) => timestamp(entry?.updatedAt));
   clean.libraryMeta = pruneMap(clean.libraryMeta, MAX_META_LIBRARY_META);
   clean.sourceMatches = pruneMap(clean.sourceMatches, MAX_META_SOURCE_MATCHES);
+  clean.franchiseChains = pruneMap(clean.franchiseChains, MAX_META_FRANCHISE_CHAINS);
+  clean.franchiseDismissals = pruneMap(clean.franchiseDismissals, MAX_META_FRANCHISE_DISMISSALS);
   const smart = clean.settings.smartDownloads;
   smart.titleKeys = pruneMap(smart.titleKeys, MAX_META_SET, (entry) => timestamp(entry?.updatedAt));
   smart.collectionIds = pruneMap(smart.collectionIds, MAX_META_SET, (entry) => timestamp(entry?.updatedAt));
@@ -937,6 +984,17 @@ export function mergeDeviceSyncSnapshots(localCandidate, peerCandidates = []) {
     (candidate) => candidate.meta.sourceMatches,
   );
 
+  const franchiseChainsMerged = mergeBaseRecords(
+    candidates,
+    (candidate) => candidate.data.franchiseChains.chains,
+    (candidate) => candidate.meta.franchiseChains,
+  );
+  const franchiseDismissalsMerged = mergeBaseRecords(
+    candidates,
+    (candidate) => candidate.data.franchiseChains.dismissed,
+    (candidate) => candidate.meta.franchiseDismissals,
+  );
+
   const appearanceChoice = scalarCandidate(candidates, (candidate) => candidate.data.appearance, (candidate) => candidate.meta.settings.appearance);
   const contentChoice = scalarCandidate(candidates, (candidate) => candidate.data.content, (candidate) => candidate.meta.settings.content);
   const smart = { ...candidates[0].data.smartDownloads };
@@ -973,6 +1031,7 @@ export function mergeDeviceSyncSnapshots(localCandidate, peerCandidates = []) {
     progress,
     libraryMeta: libraryMetaMerged.values,
     sourceMatches: { version: 1, edges: sourceMatchesMerged.values },
+    franchiseChains: { version: 1, chains: franchiseChainsMerged.values, dismissed: franchiseDismissalsMerged.values },
     appearance: appearanceChoice?.value,
     content: contentChoice?.value,
     smartDownloads: smart,
@@ -985,6 +1044,8 @@ export function mergeDeviceSyncSnapshots(localCandidate, peerCandidates = []) {
     progress: progressMeta,
     libraryMeta: libraryMetaMerged.meta,
     sourceMatches: sourceMatchesMerged.meta,
+    franchiseChains: franchiseChainsMerged.meta,
+    franchiseDismissals: franchiseDismissalsMerged.meta,
     settings: {
       appearance: appearanceChoice ? { hash: hashValue(appearanceChoice.value), updatedAt: appearanceChoice.updatedAt, deletedAt: 0 } : null,
       content: contentChoice ? { hash: hashValue(contentChoice.value), updatedAt: contentChoice.updatedAt, deletedAt: 0 } : null,
@@ -1006,6 +1067,14 @@ export function mergeDeviceSyncSnapshots(localCandidate, peerCandidates = []) {
   const retainedSourceMatches = new Set(Object.keys(data.sourceMatches.edges));
   for (const [key, record] of Object.entries(meta.sourceMatches)) {
     if (!retainedSourceMatches.has(key) && !record.deletedAt) record.deletedAt = Math.max(1, record.updatedAt || 1);
+  }
+  const retainedFranchiseChains = new Set(Object.keys(data.franchiseChains.chains));
+  for (const [key, record] of Object.entries(meta.franchiseChains)) {
+    if (!retainedFranchiseChains.has(key) && !record.deletedAt) record.deletedAt = Math.max(1, record.updatedAt || 1);
+  }
+  const retainedFranchiseDismissals = new Set(Object.keys(data.franchiseChains.dismissed));
+  for (const [key, record] of Object.entries(meta.franchiseDismissals)) {
+    if (!retainedFranchiseDismissals.has(key) && !record.deletedAt) record.deletedAt = Math.max(1, record.updatedAt || 1);
   }
 
   return { data, meta, clock: Math.max(...candidates.map((candidate) => maxMetaClock(candidate.meta)), maxMetaClock(meta)) };
