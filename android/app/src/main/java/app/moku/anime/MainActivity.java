@@ -359,12 +359,72 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
                 catch (Exception e) { sendChunks(id, "", e.getMessage()==null ? "Could not remove the download" : e.getMessage()); }
             });
         }
-        @JavascriptInterface public void openDownload(String downloadId) {
-            if (downloadId == null || !downloadId.matches("[a-f0-9]{32}")) return;
+        @JavascriptInterface public void setDownloadQueueOrder(String id, String payload) {
+            if (id == null || !id.matches("[0-9]{1,12}")) return;
+            requests.execute(() -> {
+                try { sendChunks(id, OfflineStore.setQueueOrder(MainActivity.this, payload).toString(), null); }
+                catch (Exception e) { sendChunks(id, "", e.getMessage()==null ? "Could not reorder downloads" : e.getMessage()); }
+            });
+        }
+        private int offlineAllowedInt(JSONObject options, String key, int fallback, int... allowed) {
+            int value = options == null ? fallback : options.optInt(key, fallback);
+            for (int candidate : allowed) if (candidate == value) return candidate;
+            return fallback;
+        }
+        private String offlineAllowedString(JSONObject options, String key, String fallback, String... allowed) {
+            String value = options == null ? fallback : options.optString(key, fallback);
+            for (String candidate : allowed) if (candidate.equals(value)) return candidate;
+            return fallback;
+        }
+        private float offlinePlaybackRate(JSONObject options) {
+            double requested = options == null ? 1 : options.optDouble("playbackRate", 1);
+            float[] allowed = {0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f};
+            float best = 1f;
+            double bestDistance = Double.MAX_VALUE;
+            for (float candidate : allowed) {
+                double distance = Math.abs(candidate - requested);
+                if (distance < bestDistance) { best = candidate; bestDistance = distance; }
+            }
+            return best;
+        }
+        private void launchOfflinePlayer(String downloadId, JSONObject options) {
+            final JSONObject safe = options == null ? new JSONObject() : options;
             runOnUiThread(() -> {
                 Intent intent = new Intent(MainActivity.this, OfflinePlayerActivity.class);
-                intent.putExtra("downloadId", downloadId); startActivity(intent);
+                intent.putExtra("downloadId", downloadId);
+                intent.putExtra("playbackRate", offlinePlaybackRate(safe));
+                intent.putExtra("seekSeconds", offlineAllowedInt(safe, "seekSeconds", 10, 5, 10, 15, 30));
+                intent.putExtra("subtitleSize", offlineAllowedInt(safe, "subtitleSize", 18, 12, 14, 16, 18, 22, 26, 32));
+                intent.putExtra("subtitleColor", offlineAllowedString(safe, "subtitleColor", "white", "white", "yellow", "cyan", "green"));
+                intent.putExtra("subtitleBackground", offlineAllowedString(safe, "subtitleBackground", "shadow", "shadow", "solid", "none"));
+                intent.putExtra("sleepTimerMinutes", offlineAllowedInt(safe, "sleepTimerMinutes", 0, 0, 5, 10, 15, 30, 45, 60));
+                intent.putExtra("autoPlayNext", safe.optBoolean("autoPlayNext", true));
+                JSONArray rawNext = safe.optJSONArray("nextDownloadIds");
+                String[] scratch = new String[50];
+                int count = 0;
+                if (rawNext != null) {
+                    for (int i = 0; i < rawNext.length() && count < scratch.length; i++) {
+                        String nextId = rawNext.optString(i, "");
+                        if (nextId.matches("[a-f0-9]{32}") && !nextId.equals(downloadId)) scratch[count++] = nextId;
+                    }
+                }
+                String[] nextIds = new String[count];
+                System.arraycopy(scratch, 0, nextIds, 0, count);
+                intent.putExtra("nextDownloadIds", nextIds);
+                startActivity(intent);
             });
+        }
+        @JavascriptInterface public void openDownload(String downloadId) {
+            if (downloadId == null || !downloadId.matches("[a-f0-9]{32}")) return;
+            launchOfflinePlayer(downloadId, null);
+        }
+        @JavascriptInterface public void openOfflinePlayer(String downloadId, String payload) {
+            if (downloadId == null || !downloadId.matches("[a-f0-9]{32}")) return;
+            JSONObject options = new JSONObject();
+            if (payload != null && payload.length() <= 4000) {
+                try { options = new JSONObject(payload); } catch (Exception ignored) { options = new JSONObject(); }
+            }
+            launchOfflinePlayer(downloadId, options);
         }
         @JavascriptInterface public void exportSettings(String id) {
             if(id==null||!id.matches("[0-9]{1,12}"))return;

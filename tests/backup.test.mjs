@@ -28,6 +28,9 @@ const full = () => new Store({
     },
   }),
   'moku.libraryMeta.v1': JSON.stringify({ 'sogo|https://x/1': { rating: 5, note: 'Rewatch', status: 'watching', updatedAt: 1 } }),
+  'moku.watchPlanner.v1': JSON.stringify({ 'sogo|https://x/1': { mode: 'tonight', episodesPerSession: 3, updatedAt: 2 } }),
+  'moku.offlineManager.v1': JSON.stringify({ storageLimitGb: 10, autoDeleteWatchedDays: 30, autoCleanup: true, queueOrder: [] }),
+  'moku.offlinePlayback.v1': JSON.stringify({ playbackRate: 1.25, seekSeconds: 15, subtitleSize: 22, subtitleColor: 'yellow', subtitleBackground: 'solid', sleepTimerMinutes: 30, autoPlayNext: true }),
   'moku.appearance.v1': JSON.stringify({ mode: 'dark', accent: 'blue' }),
   'unrelated.key': 'keep me',
 });
@@ -38,7 +41,7 @@ test('buildBackup collects only the known stores', () => {
   assert.equal(backup.version, BACKUP_VERSION);
   assert.equal(backup.createdAt, '2026-11-02T03:04:00.000Z');
   assert.deepEqual(Object.keys(backup.data).sort(),
-    ['moku.appearance.v1', 'moku.collections.v1', 'moku.history.v1', 'moku.library.v1', 'moku.libraryMeta.v1', 'moku.progress.v1', 'moku.sourceMatches.v1'].sort());
+    ['moku.appearance.v1', 'moku.collections.v1', 'moku.history.v1', 'moku.library.v1', 'moku.libraryMeta.v1', 'moku.offlineManager.v1', 'moku.offlinePlayback.v1', 'moku.progress.v1', 'moku.sourceMatches.v1', 'moku.watchPlanner.v1'].sort());
   assert.ok(!('unrelated.key' in backup.data));
   assert.equal(backupFileName(new Date(2026, 10, 2, 3, 4)), 'mikozora-backup-2026-11-02-0304.json');
 });
@@ -49,6 +52,8 @@ test('parseBackup round-trips and summarizes, applyBackup replaces device state'
   const device = new Store({
     'moku.library.v1': '[]',
     'moku.sourceMatches.v1': '{"version":1,"edges":{"stale":{}}}',
+    'moku.watchPlanner.v1': '{"stale|https://x/old":{"mode":"later"}}',
+    'moku.offlinePlayback.v1': '{"playbackRate":2}',
     'moku.update.v1': '{"autoCheck":false}',
     'unrelated.key': 'keep me',
   });
@@ -57,13 +62,22 @@ test('parseBackup round-trips and summarizes, applyBackup replaces device state'
   assert.equal(JSON.parse(device.getItem('moku.libraryMeta.v1'))['sogo|https://x/1'].rating, 5);
   assert.equal(Object.keys(JSON.parse(device.getItem('moku.sourceMatches.v1')).edges).length, 1);
   assert.equal(JSON.parse(device.getItem('moku.sourceMatches.v1')).edges.stale, undefined);
+  assert.equal(JSON.parse(device.getItem('moku.watchPlanner.v1'))['sogo|https://x/1'].mode, 'tonight');
+  assert.equal(JSON.parse(device.getItem('moku.offlineManager.v1')).storageLimitGb, 10);
+  assert.equal(JSON.parse(device.getItem('moku.offlinePlayback.v1')).seekSeconds, 15);
   assert.equal(device.getItem('moku.update.v1'), null); // absent from backup: cleared
   assert.equal(device.getItem('unrelated.key'), 'keep me'); // never touched
 
-  const withoutSourceMatches = { ...parsed.data };
-  delete withoutSourceMatches['moku.sourceMatches.v1'];
-  applyBackup(device, withoutSourceMatches);
+  const olderBackup = { ...parsed.data };
+  delete olderBackup['moku.sourceMatches.v1'];
+  delete olderBackup['moku.watchPlanner.v1'];
+  delete olderBackup['moku.offlineManager.v1'];
+  delete olderBackup['moku.offlinePlayback.v1'];
+  applyBackup(device, olderBackup);
   assert.equal(device.getItem('moku.sourceMatches.v1'), null, 'a backup without confirmed links must clear stale links');
+  assert.equal(device.getItem('moku.watchPlanner.v1'), null, 'an older point-in-time backup must clear newer planner state');
+  assert.equal(device.getItem('moku.offlineManager.v1'), null);
+  assert.equal(device.getItem('moku.offlinePlayback.v1'), null);
 });
 
 test('parseBackup rejects foreign, damaged and newer files', () => {

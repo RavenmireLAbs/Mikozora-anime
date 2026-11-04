@@ -1,13 +1,24 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; the app shows only that newest entry.
-export const APP_VERSION = '0.29.1';
+export const APP_VERSION = '0.30.0';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.29.1',
+    version: '0.30.0',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Offline Manager 2.0', description: 'Downloads now shows how much space each series and source uses, which completed episodes are watched, and which have a verified folder copy. Search, filter, sort or group downloads by series, select several for bulk actions, and move waiting episodes earlier, later or to the front. The chosen order is remembered by the Android and Windows download engines; an episode already transferring is not cancelled just to swap places. Storage limits and watched-episode age rules can identify safe cleanup candidates, with optional automatic cleanup kept off until you turn it on. Incomplete downloads, active folder exports and verified folder-only records are protected from cleanup, and removing a Mikozora entry never deletes a file already saved to your chosen folder.' },
+      { title: 'Catch-Up & Binge Planner', description: 'Home now includes a Catch up rail, and the new Planner brings every started-but-unfinished series into one Up Next queue with its next episode and episodes-behind count. Sort by Mikozora’s smart order, quickest finish, most behind, recent activity or your plans. Mark a show for Tonight, This weekend or Later, choose how many episodes belong in a sitting, and build a binge session you can open episode by episode or send through the normal download choices. The planner uses progress already stored on this device, respects Dropped and Completed shelf choices, and shows each confirmed linked source version only once.' },
+      { title: 'Offline Playback Pro', description: 'Settings → Offline Playback now remembers your playback speed, 5–30 second seek length, subtitle size, subtitle colour and background, sleep-timer length and whether to play the next saved episode automatically. The same choices drive the Android and Windows offline players, including their speed and seek controls. Auto-play uses only completed downloads from the same series, the sleep deadline carries across an automatic next episode instead of restarting, and your playback place remains remembered on that device. Android’s offline title and tools continue to hide with the regular player controls during playback.' },
+      { title: 'Watch Stats & Wrapped', description: 'Watch Stats turns the history, progress, ratings and shelf data already on this device into current and longest streaks, last-7-day and last-30-day activity, eight weekly and six monthly charts, favourite genres, sources and series, completion totals and a monthly Wrapped recap with a previous-month comparison. History records episodes that were opened—Mikozora keeps the latest 100—so streaks and recaps cover that stored history rather than pretending to know every play forever. Repeated opens of the same episode are counted once, and watch time uses a source-reported duration when available or a clearly estimated 24 minutes otherwise.' },
+      { title: 'Plans and offline choices are backed up', description: 'Planner choices, Offline Manager rules and Offline Playback settings are now included in a manual backup. Restoring an older backup keeps its existing point-in-time behaviour: settings that cannot be present in that older file are cleared rather than left behind. Downloaded videos and native download records themselves still stay on the device where they were downloaded.' },
+    ],
+  },
+  {
+    version: '0.29.1',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Offline player controls now get out of the way', description: 'On Android, the downloaded-episode player’s title and −10s, Restart, Speed and +10s tools now hide together with the regular playback controls after five seconds while a video is playing. Tap the video to bring them back; using any of those tools restarts the timer. The controls remain visible while playback is paused or ended so resuming stays easy.' },
     ],

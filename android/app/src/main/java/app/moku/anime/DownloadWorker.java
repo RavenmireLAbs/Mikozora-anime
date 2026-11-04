@@ -85,6 +85,10 @@ public final class DownloadWorker extends Worker {
                 DownloadService.sendResumeDownloads(c,MokuDownloadService.class,true);
                 return waitForDownload(c,id,false);
             }
+            if(!isQueueTurn(c,id)) {
+                OfflineStore.update(c,id,"status","queued");
+                return Result.retry();
+            }
             OfflineStore.update(c,id,"status","resolving");
             OfflineStore.update(c,id,"error","");
             meta=OfflineStore.get(c,id);if(meta==null || isStopped())return Result.success();
@@ -163,6 +167,21 @@ public final class DownloadWorker extends Worker {
     }
     private static boolean smartWifiOnly(JSONObject meta) {
         return meta!=null&&meta.optBoolean("autoDownload",false)&&meta.optBoolean("smartWifiOnly",false);
+    }
+    private boolean isQueueTurn(Context c,String id) {
+        int occupied=OfflineStore.activeDownloadCount(c);
+        boolean unmetered=isUnmetered(c);
+        for(JSONObject candidate:OfflineStore.queueCandidates(c)) {
+            String candidateId=candidate.optString("id");
+            if(candidateId.equals(id))return occupied<2;
+            // A Wi-Fi-only automatic episode retained its queue place, but its
+            // network constraint should not block an explicitly requested
+            // download while the device is on a metered connection.
+            if(smartWifiOnly(candidate)&&!unmetered)continue;
+            occupied++;
+            if(occupied>=2)return false;
+        }
+        return true;
     }
     private static boolean isUnmetered(Context c) {
         try {

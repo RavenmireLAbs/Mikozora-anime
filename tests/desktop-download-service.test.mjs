@@ -390,3 +390,69 @@ test('a download known to have no audio can still be saved to a folder', async (
   assert.equal(exported.status, 'completed');
   await service.shutdown();
 });
+
+test('download service persists queue priority and schedules waiting episodes in that order', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mikozora-queue-order-'));
+  const baseDir = join(root, 'downloads');
+  const seen = [];
+  let releaseFirst;
+  const firstGate = new Promise((resolve) => { releaseFirst = resolve; });
+  let clock = 1000;
+  const settings = new Map();
+  const service = new DownloadService({
+    baseDir,
+    store: {
+      get: (key, fallback) => (settings.has(key) ? settings.get(key) : fallback),
+      set: (key, value) => settings.set(key, value),
+      flush: () => {},
+    },
+    resolver: {
+      resolve: async (_item, episode) => {
+        seen.push(String(episode.number));
+        if (seen.length === 1) await firstGate;
+        throw new Error('fixture stops after recording queue order');
+      },
+      downloadOptions: async () => ({ servers: [], unavailable: 0 }),
+    },
+    mediaProcessor: null,
+    publicUrlImpl: async (url) => new URL(url),
+    safeGetImpl: async () => Buffer.alloc(0),
+    safeFetchImpl: async () => { throw new Error('resolver must stop this fixture first'); },
+    maxConcurrentDownloads: 1,
+    now: () => ++clock,
+  });
+  await service.init();
+
+  const item = { source: 'sogo', url: 'https://animesogo.to/watch/queue-show', title: 'Queue Show', image: '', type: 'TV' };
+  const episodes = [1, 2, 3].map((number) => ({
+    item,
+    episode: {
+      url: `https://animesogo.to/watch/queue-show-episode-${number}`,
+      number: String(number),
+      title: `Episode ${number}`,
+      ids: 'fixture',
+    },
+  }));
+  const ids = episodes.map(({ episode }) => downloadIdFor('sogo', episode.url));
+  assert.deepEqual(await service.enqueue(JSON.stringify({
+    episodes, language: 'english', server: 'auto', quality: 'best',
+  })), { added: 3, skipped: 0 });
+  await waitFor(async () => seen.length === 1, 'first queued episode to start resolving');
+  assert.deepEqual(seen, ['1']);
+
+  const reordered = [ids[2], ids[1], ids[0]];
+  assert.deepEqual(await service.setQueueOrder(JSON.stringify(reordered)), {
+    ok: true, updated: 3, queueOrder: reordered,
+  });
+  const publicById = new Map((await service.list()).map((record) => [record.id, record]));
+  assert.equal(publicById.get(ids[2]).queueOrder, 0);
+  assert.equal(publicById.get(ids[1]).queueOrder, 1);
+  assert.equal(publicById.get(ids[0]).queueOrder, 2, 'reordering does not pretend to cancel the active attempt');
+  const savedById = new Map(JSON.parse(await readFile(join(baseDir, 'downloads.json'), 'utf8')).map((record) => [record.id, record]));
+  assert.deepEqual(reordered.map((id) => savedById.get(id).queueOrder), [0, 1, 2]);
+
+  releaseFirst();
+  await waitFor(async () => seen.length === 3, 'waiting episodes to be scheduled by queue priority');
+  assert.deepEqual(seen, ['1', '3', '2']);
+  await service.shutdown();
+});

@@ -44,8 +44,8 @@ test('shared UI wires discovery, personal shelf, library tools and player upgrad
   // Offline playback controls in the Windows/shared modal. Native Android
   // equivalents are pinned separately in player-native.test.mjs.
   assert.match(ui, /Offline playback speed/);
-  assert.match(ui, /seekBy\(-10\)/);
-  assert.match(ui, /seekBy\(10\)/);
+  assert.match(ui, /seekBy\(-cleanPrefs\.seekSeconds\)/);
+  assert.match(ui, /seekBy\(cleanPrefs\.seekSeconds\)/);
   assert.match(ui, /> Restart</);
   assert.match(ui, /requestFullscreen/);
 

@@ -13,6 +13,9 @@ import { UPDATE_KEY } from './update.js';
 import { SMART_DOWNLOADS_KEY } from './smart-downloads.js';
 import { LIBRARY_META_KEY } from './library-meta.js';
 import { SOURCE_MATCHES_KEY } from './source-match.js';
+import { WATCH_PLANNER_KEY } from './watch-planner.js';
+import { OFFLINE_MANAGER_KEY } from './offline-manager.js';
+import { OFFLINE_PLAYBACK_KEY } from './offline-playback.js';
 
 export const BACKUP_FORMAT = 'mikozora-backup';
 export const BACKUP_VERSION = 1;
@@ -24,6 +27,9 @@ export const BACKUP_KEYS = [
   'moku.history.v1',
   PROGRESS_KEY,
   SOURCE_MATCHES_KEY,
+  WATCH_PLANNER_KEY,
+  OFFLINE_MANAGER_KEY,
+  OFFLINE_PLAYBACK_KEY,
   APPEARANCE_KEY,
   CONTENT_KEY,
   UPDATE_KEY,

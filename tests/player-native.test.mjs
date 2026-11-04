@@ -39,15 +39,15 @@ test('native online player exposes next-unwatched, episode jump and server cycli
   assert.match(player, /Next video server/);
 });
 
-test('native offline player exposes speed, ten-second seeks and restart', async () => {
+test('native offline player exposes remembered speed, configurable seeks and restart', async () => {
   const player = await readFile('android/app/src/main/java/app/moku/anime/OfflinePlayerActivity.java', 'utf8');
-  assert.match(player, /setSeekBackIncrementMs\(10000\)/);
-  assert.match(player, /setSeekForwardIncrementMs\(10000\)/);
-  assert.match(player, /seekBy\(-10000\)/);
-  assert.match(player, /seekBy\(10000\)/);
+  assert.match(player, /setSeekBackIncrementMs\(seekSeconds\*1000L\)/);
+  assert.match(player, /setSeekForwardIncrementMs\(seekSeconds\*1000L\)/);
+  assert.match(player, /seekBy\(-seekSeconds\*1000L\)/);
+  assert.match(player, /seekBy\(seekSeconds\*1000L\)/);
   assert.match(player, /player\.seekTo\(0\)/);
   assert.match(player, /new PlaybackParameters\(speed\)/);
-  assert.match(player, /Speed 1×/);
+  assert.match(player, /"Speed "\+speedLabel\(SPEEDS\[speedIndex\]\)/);
 });
 
 test('native offline tools auto-hide with the Media3 controller', async () => {

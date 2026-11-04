@@ -26,6 +26,7 @@ import androidx.media3.exoplayer.offline.DownloadManager;
 import androidx.media3.exoplayer.offline.DefaultDownloadIndex;
 import androidx.media3.exoplayer.offline.DefaultDownloaderFactory;
 import androidx.media3.exoplayer.offline.DownloadService;
+import androidx.work.BackoffPolicy;
 import androidx.work.Constraints;
 import androidx.work.Data;
 import androidx.work.ExistingWorkPolicy;
@@ -42,9 +43,11 @@ import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 
@@ -166,6 +169,127 @@ final class OfflineStore {
             }catch(Exception ignored){return null;}
         }
     }
+    private static long queueOrderValue(JSONObject data) {
+        long value=data.optLong("queueOrder",Long.MAX_VALUE);
+        return value<0?Long.MAX_VALUE:value;
+    }
+    private static int compareQueueRecords(JSONObject a,JSONObject b) {
+        int byOrder=Long.compare(queueOrderValue(a),queueOrderValue(b));
+        if(byOrder!=0)return byOrder;
+        int byAdded=Long.compare(a.optLong("added"),b.optLong("added"));
+        return byAdded!=0?byAdded:a.optString("id").compareTo(b.optString("id"));
+    }
+    private static long nextQueueOrder(Context c) {
+        synchronized(LOCK) {
+            long next=0;
+            for(Map.Entry<String,?> e:prefs(c).getAll().entrySet())try {
+                long value=new JSONObject(String.valueOf(e.getValue())).optLong("queueOrder",-1);
+                if(value>=next)next=value+1;
+            }catch(Exception ignored){}
+            return next;
+        }
+    }
+    static List<JSONObject> queueCandidates(Context c) {
+        List<JSONObject> out=new ArrayList<>();
+        synchronized(LOCK) {
+            for(Map.Entry<String,?> e:prefs(c).getAll().entrySet())try {
+                JSONObject meta=new JSONObject(String.valueOf(e.getValue()));
+                String status=meta.optString("status");
+                if(!"queued".equals(status)&&!"resolving".equals(status))continue;
+                Download d=getDownload(c,meta.optString("id"));
+                if(d!=null&&d.state!=Download.STATE_FAILED)continue;
+                out.add(meta);
+            }catch(Exception ignored){}
+        }
+        Collections.sort(out,OfflineStore::compareQueueRecords);
+        return out;
+    }
+    static int activeDownloadCount(Context c) {
+        int count=0;
+        synchronized(LOCK) {
+            for(Map.Entry<String,?> e:prefs(c).getAll().entrySet())try {
+                JSONObject meta=new JSONObject(String.valueOf(e.getValue()));
+                Download d=getDownload(c,meta.optString("id"));
+                if(d!=null&&(d.state==Download.STATE_DOWNLOADING||d.state==Download.STATE_QUEUED||d.state==Download.STATE_RESTARTING))count++;
+            }catch(Exception ignored){}
+        }
+        return count;
+    }
+    static JSONObject setQueueOrder(Context c,String payload) throws Exception {
+        if(payload==null||payload.length()>20000)throw new IOException("Download queue order is too large");
+        JSONArray input=new JSONArray(payload);
+        if(input.length()>500)throw new IOException("Invalid download queue order");
+        List<String> requested=new ArrayList<>();
+        Set<String> requestedSeen=new HashSet<>();
+        for(int i=0;i<input.length();i++) {
+            String id=input.optString(i,"");
+            if(id.matches("[a-f0-9]{32}")&&requestedSeen.add(id))requested.add(id);
+        }
+        Map<String,JSONObject> eligibleById=new HashMap<>();
+        Set<String> waitingIds=new HashSet<>();
+        synchronized(LOCK) {
+            for(Map.Entry<String,?> e:prefs(c).getAll().entrySet())try {
+                JSONObject meta=new JSONObject(String.valueOf(e.getValue()));
+                String id=meta.optString("id");
+                if(!id.matches("[a-f0-9]{32}"))continue;
+                Download d=getDownload(c,id);
+                String state=stateOf(d);
+                String status=meta.optString("status");
+                boolean folder="folder".equals(meta.optString("storageMode"))&&meta.optBoolean("exportVerified",false);
+                if(folder)status="completed";
+                else if(!state.isEmpty()&&!("failed".equals(state)&&"resolving".equals(status)))status=state;
+                if("queued".equals(status)||"resolving".equals(status)||"downloading".equals(status)||"paused".equals(status)) {
+                    eligibleById.put(id,meta);
+                    if("queued".equals(status)&&"queued".equals(meta.optString("status"))&&(d==null||d.state==Download.STATE_FAILED))waitingIds.add(id);
+                }
+            }catch(Exception ignored){}
+        }
+        List<JSONObject> ordered=new ArrayList<>();
+        for(String id:requested) {
+            JSONObject meta=eligibleById.remove(id);
+            if(meta!=null)ordered.add(meta);
+        }
+        List<JSONObject> remaining=new ArrayList<>(eligibleById.values());
+        Collections.sort(remaining,OfflineStore::compareQueueRecords);
+        ordered.addAll(remaining);
+
+        synchronized(LOCK) {
+            SharedPreferences.Editor editor=prefs(c).edit();
+            boolean changed=false;
+            for(int i=0;i<ordered.size();i++) {
+                String id=ordered.get(i).optString("id");
+                JSONObject current=get(c,id);
+                if(current==null||current.optLong("queueOrder",-1)==i)continue;
+                current.put("queueOrder",i);
+                editor.putString(id,current.toString());
+                changed=true;
+            }
+            if(changed&&!editor.commit())throw new IOException("Could not save the download queue order.");
+        }
+
+        // Only jobs that have not submitted a Media3 transfer can be safely
+        // resubmitted in the new order. Resolving/downloading episodes and
+        // any partial Media3 progress stay exactly where they are; the
+        // worker gate applies this order to the next resolver slots.
+        for(JSONObject orderedMeta:ordered) {
+            String id=orderedMeta.optString("id");
+            if(!waitingIds.contains(id))continue;
+            JSONObject meta=get(c,id);
+            if(meta==null||!"queued".equals(meta.optString("status")))continue;
+            OneTimeWorkRequest work=new OneTimeWorkRequest.Builder(DownloadWorker.class)
+                .setInputData(new Data.Builder().putString("id",id).build())
+                .setConstraints(new Constraints.Builder().setRequiredNetworkType(
+                    meta.optBoolean("autoDownload",false)&&meta.optBoolean("smartWifiOnly",false)
+                        ?NetworkType.UNMETERED:NetworkType.CONNECTED).build())
+                .setBackoffCriteria(BackoffPolicy.LINEAR,10,TimeUnit.SECONDS)
+                .addTag("moku-offline").build();
+            meta.put("workId",work.getId().toString());put(c,meta);
+            WorkManager.getInstance(c).enqueueUniqueWork("moku-"+id,ExistingWorkPolicy.REPLACE,work);
+        }
+        JSONArray order=new JSONArray();
+        for(JSONObject meta:ordered)order.put(meta.optString("id"));
+        return new JSONObject().put("ok",true).put("updated",ordered.size()).put("queueOrder",order);
+    }
     static Download getDownload(Context c,String id) {
         try{return manager(c).getDownloadIndex().getDownload(id);}catch(Exception ignored){return null;}
     }
@@ -227,6 +351,7 @@ final class OfflineStore {
         if("auto".equals(server)&&!"best".equals(quality))throw new IOException("Choose a server before selecting a specific quality");
         SubtitlePolicy.Selection subtitleSelection=SubtitlePolicy.selectionFromInput(input,server);
         int added=0,skipped=0;
+        long nextQueueOrder=nextQueueOrder(c);
         for(int i=0;i<episodes.length();i++) {
             JSONObject pair=episodes.getJSONObject(i), item=pair.getJSONObject("item"), ep=pair.getJSONObject("episode");
             String src=item.optString("source"), epUrl=ep.optString("url"), seriesUrl=item.optString("url");
@@ -248,11 +373,12 @@ final class OfflineStore {
                 .put("subtitleMode",subtitleSelection.mode).put("subtitleSelection",new JSONArray(subtitleSelection.tracks.toString()))
                 .put("preferredSubtitleLanguage",subtitleSelection.preferredLanguage)
                 .put("autoDownload",autoDownload).put("smartWifiOnly",autoDownload&&wifiOnly).put("smartNotify",autoDownload&&notifyWhenReady).put("readyNotifiedAt",0L)
-                .put("status","queued").put("error","").put("subtitleDescription","Preparing subtitles")
+                .put("status","queued").put("queueOrder",nextQueueOrder++).put("error","").put("subtitleDescription","Preparing subtitles")
                 .put("added",System.currentTimeMillis());
             OneTimeWorkRequest work=new OneTimeWorkRequest.Builder(DownloadWorker.class)
                 .setInputData(new Data.Builder().putString("id",id).build())
                 .setConstraints(new Constraints.Builder().setRequiredNetworkType(autoDownload&&wifiOnly?NetworkType.UNMETERED:NetworkType.CONNECTED).build())
+                .setBackoffCriteria(BackoffPolicy.LINEAR,10,TimeUnit.SECONDS)
                 .addTag("moku-offline").build();
             meta.put("workId",work.getId().toString());put(c,meta);
             WorkManager.getInstance(c).enqueueUniqueWork("moku-"+id,ExistingWorkPolicy.REPLACE,work);
