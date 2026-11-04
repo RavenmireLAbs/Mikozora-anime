@@ -7,6 +7,7 @@
 // folder export, episode-update checks/alerts, and folder-based device sync.
 import { dialog, shell } from 'electron';
 import { readFile, writeFile, stat } from 'node:fs/promises';
+import { basename, extname } from 'node:path';
 import { allowedSource, allowedProjectRelease } from './lib/allowlist.js';
 import { getText } from './lib/http.js';
 import { normalizeAppearance, backgroundFor } from './lib/appearance.js';
@@ -48,6 +49,52 @@ async function saveBackupFile(win, name, text) {
   try { await writeFile(filePath, String(text ?? ''), 'utf8'); }
   catch { throw new Error('Could not save the backup file.'); }
   return '{"saved":true}';
+}
+
+const TEXT_FILE_FILTERS = {
+  '.json': { name: 'JSON file', extensions: ['json'] },
+  '.csv': { name: 'CSV file', extensions: ['csv'] },
+  '.xml': { name: 'XML file', extensions: ['xml'] },
+  '.svg': { name: 'SVG image', extensions: ['svg'] },
+  '.txt': { name: 'Text file', extensions: ['txt'] },
+};
+
+function cleanTextFileName(name) {
+  const base = basename(String(name || '').replaceAll('\\', '/')).replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 180);
+  return TEXT_FILE_FILTERS[extname(base).toLowerCase()] ? base : 'mikozora-library.txt';
+}
+
+async function saveTextFile(win, name, text) {
+  const body = String(text ?? '');
+  if (Buffer.byteLength(body, 'utf8') > 8 * 1024 * 1024) throw new Error('That file is too large to save.');
+  const defaultPath = cleanTextFileName(name);
+  const filter = TEXT_FILE_FILTERS[extname(defaultPath).toLowerCase()] || TEXT_FILE_FILTERS['.txt'];
+  const { canceled, filePath } = await dialog.showSaveDialog(win, {
+    title: 'Save Mikozora file',
+    defaultPath,
+    filters: [filter],
+  });
+  if (canceled || !filePath) return '{"canceled":true}';
+  try { await writeFile(filePath, body, 'utf8'); }
+  catch { throw new Error('Could not save that file.'); }
+  return '{"saved":true}';
+}
+
+async function openTextFile(win) {
+  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+    title: 'Open a Mikozora library file',
+    properties: ['openFile'],
+    filters: [
+      { name: 'Library files', extensions: ['json', 'csv', 'tsv', 'xml', 'txt'] },
+      { name: 'All files', extensions: ['*'] },
+    ],
+  });
+  if (canceled || !filePaths?.length) return '{"canceled":true}';
+  try {
+    const info = await stat(filePaths[0]);
+    if (info.size > 8 * 1024 * 1024) throw new Error('too large');
+    return JSON.stringify({ text: await readFile(filePaths[0], 'utf8'), name: basename(filePaths[0]) });
+  } catch { throw new Error('Could not read that file. Choose a library JSON, CSV or XML file.'); }
 }
 
 let folderPickerOpen = false;
@@ -99,6 +146,21 @@ function downloadOptionsError(error) {
   return known ? message : 'Could not check server qualities. Try again or use Automatic.';
 }
 
+function onlineStreamError(error) {
+  const message = String(error?.message || '');
+  const safe = message.length < 180 && !/https?:\/\/|file:\/\/|[A-Za-z]:\\|\/home\/|\/Users\//.test(message) && (
+    message === 'Stream check superseded.'
+    || message.startsWith('Invalid episode')
+    || message.startsWith('Invalid download server')
+    || message.startsWith('Choose a server')
+    || message.startsWith('The chosen server')
+    || message.startsWith('This server did not provide a direct stream')
+    || message.startsWith('No supported')
+    || message.startsWith('No compatible')
+  );
+  return safe ? message : 'This server could not provide a direct stream. The embedded player is available.';
+}
+
 async function openBackupFile(win) {
   const { canceled, filePaths } = await dialog.showOpenDialog(win, {
     title: 'Restore a Mikozora backup',
@@ -120,7 +182,7 @@ function fromApp(event) {
   return typeof url === 'string' && url.startsWith('mikozora://');
 }
 
-export function registerBridge(ipcMain, getWindow, store, setPlayerReferer = () => {}, downloadService = null, episodeService = null, deviceSyncService = null) {
+export function registerBridge(ipcMain, getWindow, store, setPlayerReferer = () => {}, downloadService = null, episodeService = null, deviceSyncService = null, setOnlineStreamContext = () => {}) {
   const requireDownloads = () => {
     if (!downloadService) throw new Error('Downloads are unavailable in this Windows build.');
     return downloadService;
@@ -156,6 +218,19 @@ export function registerBridge(ipcMain, getWindow, store, setPlayerReferer = () 
         try { out = JSON.stringify(await requireDownloads().downloadOptions(String(args?.[0] ?? ''))); }
         catch (err) { throw new Error(downloadOptionsError(err)); }
       }
+      else if (method === 'resolveOnlineStream') {
+        try {
+          const stream = await requireDownloads().resolveOnlineStream(String(args?.[0] ?? ''));
+          setOnlineStreamContext(stream?._context || null);
+          const { _context, ...publicStream } = stream || {};
+          out = JSON.stringify(publicStream);
+        } catch (err) { throw new Error(onlineStreamError(err)); }
+      }
+      else if (method === 'clearOnlineStream') {
+        const result = requireDownloads().clearOnlineStream(String(args?.[0] ?? ''));
+        setOnlineStreamContext(null);
+        out = JSON.stringify(result);
+      }
       else if (method === 'enqueueDownloads') out = JSON.stringify(await requireDownloads().enqueue(String(args?.[0] ?? '')));
       else if (method === 'removeDownload') { await requireDownloads().remove(String(args?.[0] ?? '')); out = 'ok'; }
       else if (method === 'setDownloadQueueOrder') out = JSON.stringify(await requireDownloads().setQueueOrder(String(args?.[0] ?? '')));
@@ -171,6 +246,8 @@ export function registerBridge(ipcMain, getWindow, store, setPlayerReferer = () 
       else if (method === 'markEpisodeRead') out = await episodeCall((svc) => svc.markRead(String(args?.[0] ?? '')));
       else if (method === 'saveBackupFile') out = await saveBackupFile(getWindow(), args?.[0], args?.[1]);
       else if (method === 'openBackupFile') out = await openBackupFile(getWindow());
+      else if (method === 'saveTextFile') out = await saveTextFile(getWindow(), args?.[0], args?.[1]);
+      else if (method === 'openTextFile') out = await openTextFile(getWindow());
       else if (method === 'deviceSyncSettings') out = JSON.stringify(await requireDeviceSync().settings());
       else if (method === 'chooseDeviceSyncFolder') out = await chooseDeviceSyncFolder(getWindow(), requireDeviceSync());
       else if (method === 'clearDeviceSyncFolder') out = JSON.stringify(await requireDeviceSync().clearFolder());

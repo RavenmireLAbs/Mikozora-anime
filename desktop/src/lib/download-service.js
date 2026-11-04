@@ -27,6 +27,22 @@ import { episodeFileBase, seriesFolderName } from './folder-names.js';
 const ID_PATTERN = /^[a-f0-9]{32}$/;
 const ACTIVE_EXPORT = new Set(['queued', 'exporting', 'verifying']);
 const QUEUE_ORDER_STATUSES = new Set(['queued', 'resolving', 'downloading', 'paused']);
+const ONLINE_STREAM_TTL_MS = 6 * 60 * 60 * 1000;
+const ONLINE_STREAM_TOKEN_PATTERN = /^[A-Za-z0-9-]{16,120}$/;
+
+function onlineStreamKind(resolved) {
+  const url = String(resolved?.url || '');
+  const mime = String(resolved?.mime || '').toLowerCase();
+  let parsed;
+  try { parsed = new URL(url); } catch { return ''; }
+  if (parsed.protocol !== 'https:' || url.length > 8192) return '';
+  if (isHlsResult(resolved) || mime.includes('mpegurl') || parsed.pathname.toLowerCase().endsWith('.m3u8')) return 'hls';
+  if (mime.startsWith('video/') || /\.(mp4|webm|mov|m4v)(?:$|\?)/i.test(url)) return 'file';
+  // Several supported hosts return extensionless HTTPS media with no useful
+  // MIME. Chromium/MediaSource makes the final playability decision and the
+  // UI falls back to the embed if the stream cannot actually play.
+  return 'file';
+}
 
 function queueOrderValue(record) {
   const value = Number(record?.queueOrder);
@@ -191,6 +207,8 @@ export class DownloadService {
     this.lastProgressSave = new Map();
     this.folderFallback = null;
     this.optionsController = null;
+    this.onlineStreamController = null;
+    this.onlineStreams = new Map();
 
     this.version = 0;
     this.dirty = false;
@@ -524,6 +542,109 @@ export class DownloadService {
     const result = await this.resolver.downloadOptions(data.item, data.episode, language, { signal: controller.signal });
     if (this.optionsController !== controller || controller.signal.aborted) throw new Error('Server check superseded.');
     return result;
+  }
+
+  pruneOnlineStreams(now = this.now()) {
+    for (const [token, entry] of this.onlineStreams) {
+      if (!entry || now - entry.createdAt > ONLINE_STREAM_TTL_MS) this.onlineStreams.delete(token);
+    }
+    while (this.onlineStreams.size > 5) {
+      const oldest = this.onlineStreams.keys().next().value;
+      if (!oldest) break;
+      this.onlineStreams.delete(oldest);
+    }
+  }
+
+  async resolveOnlineStream(rawPayload) {
+    await this.ready;
+    if (typeof rawPayload === 'string' && rawPayload.length > 6000) throw new Error('Invalid episode information');
+    const data = typeof rawPayload === 'string' ? JSON.parse(rawPayload || '{}') : rawPayload;
+    if (!data?.item || typeof data.item !== 'object' || !data?.episode || typeof data.episode !== 'object') {
+      throw new Error('Invalid episode information');
+    }
+    const server = cleanString(data.server || 'auto');
+    const quality = cleanString(data.quality || 'best');
+    validateSelection(server, quality);
+    if (server === 'auto' && quality !== 'best') throw new Error('Choose a server before selecting a specific quality');
+    const clean = this.cleanSelectionPair({ item: data.item, episode: data.episode }, server);
+    const language = languageFor(clean.source, cleanString(data.language || 'english'));
+
+    this.onlineStreamController?.abort();
+    const controller = new AbortController();
+    this.onlineStreamController = controller;
+    const resolved = await this.resolver.resolve(clean.item, clean.episode, language, server, quality, { signal: controller.signal });
+    if (this.onlineStreamController !== controller || controller.signal.aborted) throw new Error('Stream check superseded.');
+    const publicUrl = await this.publicUrlImpl(resolved?.url, { lookup: this.lookup });
+    const kind = onlineStreamKind({ ...resolved, url: publicUrl.href });
+    if (!kind) throw new Error('This server did not provide a direct stream Mikozora can play.');
+
+    const now = this.now();
+    this.pruneOnlineStreams(now);
+    const token = nodeRandomUUID();
+    const stored = {
+      ...resolved,
+      url: publicUrl.href,
+      tracks: Array.isArray(resolved.tracks) ? resolved.tracks : [],
+    };
+    this.onlineStreams.set(token, { resolved: stored, source: clean.source, createdAt: now });
+    this.pruneOnlineStreams(now);
+
+    const tracks = stored.tracks.map((track, index) => {
+      let valid = false;
+      try { valid = new URL(String(track?.url || '')).protocol === 'https:'; } catch { valid = false; }
+      if (!valid) return null;
+      const label = cleanString(track.label || track.name || track.language || `Subtitle ${index + 1}`).slice(0, 120);
+      return {
+        index,
+        label: label || `Subtitle ${index + 1}`,
+        language: subtitleLanguageCode(track.language, label),
+        mime: cleanString(track.mime || '').slice(0, 80),
+        preferred: track.preferred === true || track.default === true,
+      };
+    }).filter(Boolean).slice(0, 30);
+
+    return {
+      token,
+      url: stored.url,
+      mime: cleanString(stored.mime || ''),
+      kind,
+      host: cleanString(stored.host || '').slice(0, 80),
+      serverLabel: cleanString(stored.serverLabel || '').slice(0, 120),
+      subtitleDescription: cleanString(stored.subtitleDescription || '').slice(0, 240),
+      fixedHeight: Math.max(0, Math.min(4320, Math.trunc(Number(stored.fixedHeight) || 0))),
+      tracks,
+      // Consumed only by desktop/src/bridge.js in the main process and
+      // removed before this object is serialized to the renderer.
+      _context: {
+        url: stored.url,
+        referer: cleanString(stored.referer || ''),
+      },
+    };
+  }
+
+  async onlineSubtitleContent(token, index) {
+    const cleanToken = cleanString(token || '');
+    if (!ONLINE_STREAM_TOKEN_PATTERN.test(cleanToken)) return null;
+    this.pruneOnlineStreams();
+    const entry = this.onlineStreams.get(cleanToken);
+    const track = entry?.resolved?.tracks?.[Number(index)];
+    if (!track?.url) return null;
+    const bytes = await this.safeGetImpl(track.url, entry.resolved.referer || '', 2 * 1024 * 1024, {
+      fetchImpl: this.fetchImpl,
+      lookup: this.lookup,
+    });
+    return subtitleTextToVtt(Buffer.from(bytes).toString('utf8'), track.mime || '');
+  }
+
+  clearOnlineStream(token = '') {
+    const cleanToken = cleanString(token || '');
+    if (cleanToken) {
+      const cleared = this.onlineStreams.delete(cleanToken) ? 1 : 0;
+      return { ok: true, cleared };
+    }
+    const cleared = this.onlineStreams.size;
+    this.onlineStreams.clear();
+    return { ok: true, cleared };
   }
 
   scheduleDownloads() {
@@ -1285,6 +1406,8 @@ export class DownloadService {
 
   async shutdown() {
     this.optionsController?.abort();
+    this.onlineStreamController?.abort();
+    this.onlineStreams.clear();
     for (const active of this.activeDownloads.values()) active.controller.abort();
     for (const active of this.activeExports.values()) active.controller.abort();
     await this.flush().catch(() => {});

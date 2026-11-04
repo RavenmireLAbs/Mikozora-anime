@@ -62,9 +62,14 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
     private String pendingSyncFolderRequest;
     private static final int CREATE_BACKUP_FILE = 3182;
     private static final int OPEN_BACKUP_FILE = 3183;
+    private static final int CREATE_TEXT_FILE = 3185;
+    private static final int OPEN_TEXT_FILE = 3186;
     private String pendingBackupSave;
     private String pendingBackupText;
     private String pendingBackupOpen;
+    private String pendingTextSave;
+    private String pendingTextBody;
+    private String pendingTextOpen;
     private static final String HOME = "https://" + Network.APP_HOST + "/index.html";
 
     @Override public void onCreate(Bundle state) {
@@ -73,7 +78,7 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
         // state in this preference file. Clear it on upgrade; Drive files and
         // any Google-side grant are not touched by the app.
         try { getSharedPreferences("moku_google_drive_sync", MODE_PRIVATE).edit().clear().apply(); } catch(Exception ignored) {}
-        if(state!=null){pendingFolderRequest=state.getString("folderRequestId");pendingSyncFolderRequest=state.getString("syncFolderRequestId");pendingBackupSave=state.getString("backupSaveRequestId");pendingBackupOpen=state.getString("backupOpenRequestId");openUpdates.set(state.getBoolean("openUpdates",false));openDownloads.set(state.getBoolean("openDownloads",false));}
+        if(state!=null){pendingFolderRequest=state.getString("folderRequestId");pendingSyncFolderRequest=state.getString("syncFolderRequestId");pendingBackupSave=state.getString("backupSaveRequestId");pendingBackupOpen=state.getString("backupOpenRequestId");pendingTextSave=state.getString("textSaveRequestId");pendingTextOpen=state.getString("textOpenRequestId");openUpdates.set(state.getBoolean("openUpdates",false));openDownloads.set(state.getBoolean("openDownloads",false));}
         if(getIntent()!=null&&getIntent().getBooleanExtra(EpisodeNotifier.EXTRA_OPEN,false)){openUpdates.set(true);getIntent().removeExtra(EpisodeNotifier.EXTRA_OPEN);}
         if(getIntent()!=null&&getIntent().getBooleanExtra(DownloadWorker.EXTRA_OPEN_DOWNLOADS,false)){openDownloads.set(true);getIntent().removeExtra(DownloadWorker.EXTRA_OPEN_DOWNLOADS);}
         EpisodeNotifier.ensureChannel(this);
@@ -155,6 +160,40 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
             if (!closed && web != null) {
                 web.evaluateJavascript("window.__mokuPlayerClosed && window.__mokuPlayerClosed()", null);
             }
+        });
+    }
+
+    @Override public void onOnlinePosition(String url, long positionMs, long durationMs, int playbackRateMilli, boolean ended) {
+        if (url == null || url.length() > 4096 || !Network.allowedSource(url)) return;
+        long safePosition = Math.max(0, Math.min(positionMs, 7L * 24 * 60 * 60 * 1000));
+        long safeDuration = Math.max(0, Math.min(durationMs, 7L * 24 * 60 * 60 * 1000));
+        int safeRate = Math.max(250, Math.min(4000, playbackRateMilli));
+        String script = "window.__mokuOnlinePosition && window.__mokuOnlinePosition("
+            + JSONObject.quote(url) + "," + safePosition + "," + safeDuration + "," + safeRate + "," + ended + ")";
+        runOnUiThread(() -> {
+            if (!closed && web != null) web.evaluateJavascript(script, null);
+        });
+    }
+
+    @Override public void onEmbeddedFallbackRequested(String url, String reason) {
+        if (url == null || url.length() > 4096 || !Network.allowedSource(url)) {
+            PlayerNavigation.reportError("That episode is not available from this source.");
+            return;
+        }
+        String safeReason = reason == null ? "" : reason.trim();
+        if (safeReason.length() > 300) safeReason = safeReason.substring(0, 300);
+        String script = "(function(){try{if(window.__mokuPlayerFallback){return window.__mokuPlayerFallback("
+            + JSONObject.quote(url) + "," + JSONObject.quote(safeReason) + ")===true;}}catch(e){}return false;})()";
+        runOnUiThread(() -> {
+            if (closed || web == null) {
+                PlayerNavigation.reportError("Mikozora is no longer open behind the player. Return to the series and choose an episode again.");
+                return;
+            }
+            web.evaluateJavascript(script, result -> {
+                if (!"true".equals(result)) {
+                    PlayerNavigation.reportError("The embedded player could not be opened for this episode list.");
+                }
+            });
         });
     }
 
@@ -304,6 +343,60 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
                     intent.putExtra("payload", payload);
                     // Reuse the open player for in-player episode changes instead
                     // of closing it or stacking another player activity.
+                    intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+                    startActivity(intent);
+                } catch (Exception ignored) {
+                    rejectPlayerPayload("This episode could not be opened.");
+                }
+            });
+        }
+        @JavascriptInterface public void openOnlinePlayerPro(String payload) {
+            if (payload == null || payload.length() > 300000) {
+                rejectPlayerPayload("This episode list is too large to open in the player.");
+                return;
+            }
+            runOnUiThread(() -> {
+                try {
+                    JSONObject data = new JSONObject(payload);
+                    JSONObject item = data.getJSONObject("item");
+                    JSONObject episode = data.getJSONObject("episode");
+                    String source = item.optString("source", "");
+                    String itemUrl = item.optString("url", "");
+                    String title = item.optString("title", "");
+                    String episodeUrl = episode.optString("url", "");
+                    if (title.trim().isEmpty() || title.length() > 500
+                        || !Network.matchesSource(source, itemUrl)
+                        || !Network.matchesSource(source, episodeUrl)
+                        || episode.optString("ids", "").length() > 1000) {
+                        rejectPlayerPayload("That episode is not available from this source.");
+                        return;
+                    }
+                    JSONArray episodes = data.optJSONArray("episodes");
+                    if (episodes != null) {
+                        int index = data.optInt("episodeIndex", -1);
+                        if (episodes.length() == 0 || episodes.length() > 10000 || index < 0 || index >= episodes.length()) {
+                            rejectPlayerPayload("That episode list could not be opened.");
+                            return;
+                        }
+                        for (int i = 0; i < episodes.length(); i++) {
+                            JSONObject entry = episodes.getJSONObject(i);
+                            String number = entry.optString("number", "");
+                            String url = entry.optString("url", "");
+                            if (number.isEmpty() || number.length() > 40 || url.length() > 4096
+                                || entry.optString("title", "").length() > 240
+                                || entry.optString("ids", "").length() > 1000
+                                || !Network.matchesSource(source, url)) {
+                                rejectPlayerPayload("That episode list contains an unavailable episode.");
+                                return;
+                            }
+                        }
+                        if (!episodeUrl.equals(episodes.getJSONObject(index).optString("url", ""))) {
+                            rejectPlayerPayload("The selected episode does not match this episode list.");
+                            return;
+                        }
+                    }
+                    Intent intent = new Intent(MainActivity.this, DirectPlayerActivity.class);
+                    intent.putExtra("payload", payload);
                     intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
                     startActivity(intent);
                 } catch (Exception ignored) {
@@ -471,6 +564,48 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
                 }catch(Exception e){pendingBackupOpen=null;sendChunks(id,"","No file picker is available on this device.");}
             });
         }
+        @JavascriptInterface public void saveTextFile(String id,String name,String text,String mime) {
+            if(id==null||!id.matches("[0-9]{1,12}"))return;
+            if(text==null||text.length()>8*1024*1024){sendChunks(id,"","That file is too large to save.");return;}
+            runOnUiThread(()->{
+                if(pendingTextSave!=null||pendingBackupSave!=null){sendChunks(id,"","A file picker is already open.");return;}
+                try {
+                    String safeName=name==null?"":name.replace('\\','/');
+                    int slash=safeName.lastIndexOf('/');
+                    if(slash>=0)safeName=safeName.substring(slash+1);
+                    safeName=safeName.replaceAll("[\\u0000-\\u001f\\u007f]"," ").trim();
+                    if(safeName.isEmpty()||".".equals(safeName)||"..".equals(safeName))safeName="mikozora-library.txt";
+                    if(safeName.length()>160)safeName=safeName.substring(0,160);
+                    String lower=safeName.toLowerCase(java.util.Locale.ROOT);
+                    if(!lower.contains(".")){safeName+=".txt";lower+=".txt";}
+                    String safeMime="text/plain";
+                    if("application/json".equals(mime)||lower.endsWith(".json"))safeMime="application/json";
+                    else if("text/csv".equals(mime)||lower.endsWith(".csv"))safeMime="text/csv";
+                    else if("application/xml".equals(mime)||"text/xml".equals(mime)||lower.endsWith(".xml"))safeMime="application/xml";
+                    else if("image/svg+xml".equals(mime)||lower.endsWith(".svg"))safeMime="image/svg+xml";
+                    pendingTextSave=id;pendingTextBody=text;
+                    Intent picker=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                    picker.addCategory(Intent.CATEGORY_OPENABLE);
+                    picker.setType(safeMime);
+                    picker.putExtra(Intent.EXTRA_TITLE,safeName);
+                    startActivityForResult(picker,CREATE_TEXT_FILE);
+                }catch(Exception e){pendingTextSave=null;pendingTextBody=null;sendChunks(id,"","No file picker is available on this device.");}
+            });
+        }
+        @JavascriptInterface public void openTextFile(String id) {
+            if(id==null||!id.matches("[0-9]{1,12}"))return;
+            runOnUiThread(()->{
+                if(pendingTextOpen!=null||pendingBackupOpen!=null){sendChunks(id,"","A file picker is already open.");return;}
+                try {
+                    pendingTextOpen=id;
+                    Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                    picker.addCategory(Intent.CATEGORY_OPENABLE);
+                    picker.setType("*/*");
+                    picker.putExtra(Intent.EXTRA_MIME_TYPES,new String[]{"application/json","text/csv","text/plain","application/xml","text/xml","image/svg+xml"});
+                    startActivityForResult(picker,OPEN_TEXT_FILE);
+                }catch(Exception e){pendingTextOpen=null;sendChunks(id,"","No file picker is available on this device.");}
+            });
+        }
         @JavascriptInterface public void deviceSyncSettings(String id) {
             if(id==null||!id.matches("[0-9]{1,12}"))return;
             requests.execute(()->{try{sendChunks(id,SyncStore.settings(MainActivity.this).toString(),null);}
@@ -592,6 +727,8 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
         if(pendingSyncFolderRequest!=null)out.putString("syncFolderRequestId",pendingSyncFolderRequest);
         if(pendingBackupSave!=null)out.putString("backupSaveRequestId",pendingBackupSave);
         if(pendingBackupOpen!=null)out.putString("backupOpenRequestId",pendingBackupOpen);
+        if(pendingTextSave!=null)out.putString("textSaveRequestId",pendingTextSave);
+        if(pendingTextOpen!=null)out.putString("textOpenRequestId",pendingTextOpen);
         out.putBoolean("openUpdates",openUpdates.get());
         out.putBoolean("openDownloads",openDownloads.get());
     }
@@ -599,6 +736,8 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
         super.onActivityResult(requestCode,resultCode,data);
         if(requestCode==CREATE_BACKUP_FILE){finishBackupSave(resultCode,data);return;}
         if(requestCode==OPEN_BACKUP_FILE){finishBackupOpen(resultCode,data);return;}
+        if(requestCode==CREATE_TEXT_FILE){finishTextSave(resultCode,data);return;}
+        if(requestCode==OPEN_TEXT_FILE){finishTextOpen(resultCode,data);return;}
         if(requestCode==PICK_SYNC_FOLDER){finishSyncFolderPick(resultCode,data);return;}
         if(requestCode!=PICK_DOWNLOAD_FOLDER)return;
         String request=pendingFolderRequest;pendingFolderRequest=null;
@@ -671,6 +810,43 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
                 result.put("text",new String(out.toByteArray(),StandardCharsets.UTF_8));
                 sendChunks(request,result.toString(),null);
             }catch(Exception e){sendChunks(request,"","Could not read that file. Choose a Mikozora backup (.json).");}
+        });
+    }
+    private void finishTextSave(int resultCode,Intent data) {
+        String request=pendingTextSave;String text=pendingTextBody;
+        pendingTextSave=null;pendingTextBody=null;
+        if(request==null)return;
+        if(resultCode!=RESULT_OK||data==null||data.getData()==null){sendChunks(request,"{\"canceled\":true}",null);return;}
+        if(text==null){sendChunks(request,"","Saving was interrupted. Please export again.");return;}
+        Uri uri=data.getData();
+        requests.execute(()->{
+            try(OutputStream out=getContentResolver().openOutputStream(uri,"wt")) {
+                if(out==null)throw new IOException("No output stream");
+                out.write(text.getBytes(StandardCharsets.UTF_8));
+                out.flush();
+                sendChunks(request,"{\"saved\":true}",null);
+            }catch(Exception e){sendChunks(request,"","Could not save that file.");}
+        });
+    }
+    private void finishTextOpen(int resultCode,Intent data) {
+        String request=pendingTextOpen;pendingTextOpen=null;
+        if(request==null)return;
+        if(resultCode!=RESULT_OK||data==null||data.getData()==null){sendChunks(request,"{\"canceled\":true}",null);return;}
+        Uri uri=data.getData();
+        requests.execute(()->{
+            try(InputStream in=getContentResolver().openInputStream(uri)) {
+                if(in==null)throw new IOException("No input stream");
+                ByteArrayOutputStream out=new ByteArrayOutputStream();
+                byte[] buffer=new byte[16384];int count;int total=0;
+                while((count=in.read(buffer))!=-1){
+                    total+=count;
+                    if(total>8*1024*1024)throw new IOException("File is too large");
+                    out.write(buffer,0,count);
+                }
+                JSONObject result=new JSONObject();
+                result.put("text",new String(out.toByteArray(),StandardCharsets.UTF_8));
+                sendChunks(request,result.toString(),null);
+            }catch(Exception e){sendChunks(request,"","Could not read that file. Choose a Mikozora, CSV, JSON, SVG, TXT or XML text file.");}
         });
     }
     private void sendChunks(String id, String body, String error) {

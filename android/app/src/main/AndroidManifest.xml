@@ -23,6 +23,7 @@
         <service android:name="androidx.work.impl.foreground.SystemForegroundService" android:foregroundServiceType="dataSync" tools:node="merge" />
         <activity android:name=".OfflinePlayerActivity" android:configChanges="orientation|screenSize|keyboardHidden" android:exported="false" />
         <activity android:name=".PlayerActivity" android:configChanges="orientation|screenSize|keyboardHidden" android:exported="false" android:launchMode="singleTop" />
+        <activity android:name=".DirectPlayerActivity" android:configChanges="orientation|screenSize|keyboardHidden" android:exported="false" android:launchMode="singleTop" />
         <activity android:name=".MainActivity" android:configChanges="orientation|screenSize|keyboardHidden" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

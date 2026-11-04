@@ -80,6 +80,23 @@ final class EpisodeStore {
         if(value.length()>max)throw new IOException("Invalid collection title");
         return value;
     }
+    private static String sanitizeAlertMode(String raw) {
+        return "inbox".equals(raw)||"muted".equals(raw)?raw:"alerts";
+    }
+    private static long sanitizeAlertsMutedUntil(long raw) {
+        if(raw<0)return 0;
+        return Math.min(raw,4102444800000L);
+    }
+    static boolean alertSuppressed(JSONObject track,long now) {
+        if(track==null)return false;
+        String mode=sanitizeAlertMode(track.optString("alertMode","alerts"));
+        return !"alerts".equals(mode)||sanitizeAlertsMutedUntil(track.optLong("alertsMutedUntil",0))>now;
+    }
+    static boolean inboxSuppressed(JSONObject track,long now) {
+        if(track==null)return false;
+        String mode=sanitizeAlertMode(track.optString("alertMode","alerts"));
+        return "muted".equals(mode)||sanitizeAlertsMutedUntil(track.optLong("alertsMutedUntil",0))>now;
+    }
     static synchronized JSONObject sync(Context c,String payload) throws Exception {
         if(payload==null||payload.length()>6_000_000)throw new IOException("Collection snapshot is too large");
         JSONObject db=read(c),old=db.getJSONObject("titles"),next=new JSONObject();
@@ -122,10 +139,15 @@ final class EpisodeStore {
                 :new JSONArray();
             JSONObject previousPreset=sanitizeDownloadPreset(track.optJSONObject("downloadPreset"));
             JSONArray previousWatched=track.optJSONArray("watchedEpisodes");if(previousWatched==null)previousWatched=new JSONArray();
+            String alertMode=sanitizeAlertMode(legacy?track.optString("alertMode","alerts"):x.optString("alertMode","alerts"));
+            long alertsMutedUntil=sanitizeAlertsMutedUntil(legacy?track.optLong("alertsMutedUntil",0):x.optLong("alertsMutedUntil",0));
             if(track.optBoolean("smartDownload",false)!=smartDownload
                 ||!downloadPreset.toString().equals(previousPreset.toString())
-                ||!watchedEpisodes.toString().equals(previousWatched.toString()))changed=true;
-            track.put("item",item).put("smartDownload",smartDownload).put("downloadPreset",downloadPreset).put("watchedEpisodes",watchedEpisodes);
+                ||!watchedEpisodes.toString().equals(previousWatched.toString())
+                ||!alertMode.equals(sanitizeAlertMode(track.optString("alertMode","alerts")))
+                ||alertsMutedUntil!=sanitizeAlertsMutedUntil(track.optLong("alertsMutedUntil",0)))changed=true;
+            track.put("item",item).put("smartDownload",smartDownload).put("downloadPreset",downloadPreset).put("watchedEpisodes",watchedEpisodes)
+                .put("alertMode",alertMode).put("alertsMutedUntil",alertsMutedUntil);
             next.put(id,track);
         }
         if(old.length()!=next.length())changed=true;
@@ -268,12 +290,19 @@ final class EpisodeStore {
             lastSuccess=Math.max(lastSuccess,t.optLong("lastSuccess",0));
             if(!t.optString("error").isEmpty())errors.put(new JSONObject().put("item",t.getJSONObject("item")).put("message",t.optString("error")).put("at",t.optLong("lastAttempt")));
         }
-        for(int i=0;i<events.length();i++){JSONObject e=events.optJSONObject(i);if(e!=null&&!e.optBoolean("read"))unread++;}
         long now=System.currentTimeMillis();
+        JSONArray publicEvents=new JSONArray(events.toString());
+        for(int i=0;i<publicEvents.length();i++){
+            JSONObject e=publicEvents.optJSONObject(i);
+            if(e==null)continue;
+            JSONObject track=titles.optJSONObject(e.optString("titleId"));
+            e.put("alertSuppressed",alertSuppressed(track,now));
+            if(!e.optBoolean("read")&&!inboxSuppressed(track,now))unread++;
+        }
         return new JSONObject().put("automatic",db.optBoolean("automatic",true)).put("alerts",db.optBoolean("alerts",true)).put("smartDownloads",normalizeSmartSettings(db.optJSONObject("smartDownloads")))
             .put("watchedCount",titles.length()).put("initializedCount",initialized).put("unreadCount",unread)
             .put("lastSuccess",lastSuccess).put("lastRun",db.optLong("lastRun",0))
             .put("checking",db.optLong("runningUntil",0)>now).put("queued",db.optLong("pendingAt",0)>now-24*60*60_000L)
-            .put("errors",errors).put("updates",events);
+            .put("errors",errors).put("updates",publicEvents);
     }
 }

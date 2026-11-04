@@ -40,6 +40,27 @@ export function normalizeSmartSettings(raw) {
   };
 }
 
+export function sanitizeAlertMode(raw) {
+  return raw === 'inbox' || raw === 'muted' ? raw : 'alerts';
+}
+
+export function sanitizeAlertsMutedUntil(raw) {
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? Math.min(Math.trunc(value), 4102444800000) : 0;
+}
+
+export function alertSuppressed(track, now = Date.now()) {
+  if (!track) return false;
+  return sanitizeAlertMode(track.alertMode) !== 'alerts'
+    || sanitizeAlertsMutedUntil(track.alertsMutedUntil) > now;
+}
+
+export function inboxSuppressed(track, now = Date.now()) {
+  if (!track) return false;
+  return sanitizeAlertMode(track.alertMode) === 'muted'
+    || sanitizeAlertsMutedUntil(track.alertsMutedUntil) > now;
+}
+
 export function sanitizeDownloadPreset(raw) {
   const value = raw && typeof raw === 'object' ? raw : {};
   const server = cleanText(value.server, 120);
@@ -172,6 +193,8 @@ export class EpisodeStore {
         for (const track of Object.values(this.db.titles)) {
           if (!track || typeof track !== 'object') continue;
           track.smartDownload = track.smartDownload === true;
+          track.alertMode = sanitizeAlertMode(track.alertMode);
+          track.alertsMutedUntil = sanitizeAlertsMutedUntil(track.alertsMutedUntil);
           track.downloadPreset = sanitizeDownloadPreset(track.downloadPreset);
           track.watchedEpisodes = track.smartDownload
             ? cleanWatchedEpisodes(track.watchedEpisodes, track.item?.source)
@@ -268,15 +291,21 @@ export class EpisodeStore {
       const watchedEpisodes = smartDownload
         ? (legacy ? cleanWatchedEpisodes(track.watchedEpisodes, source) : cleanWatchedEpisodes(x?.watchedEpisodes, source))
         : [];
+      const alertMode = sanitizeAlertMode(legacy ? track.alertMode : x?.alertMode);
+      const alertsMutedUntil = sanitizeAlertsMutedUntil(legacy ? track.alertsMutedUntil : x?.alertsMutedUntil);
       if (track.smartDownload !== smartDownload
         || !sameJson(downloadPreset, sanitizeDownloadPreset(track.downloadPreset))
-        || !sameJson(watchedEpisodes, Array.isArray(track.watchedEpisodes) ? track.watchedEpisodes : [])) {
+        || !sameJson(watchedEpisodes, Array.isArray(track.watchedEpisodes) ? track.watchedEpisodes : [])
+        || sanitizeAlertMode(track.alertMode) !== alertMode
+        || sanitizeAlertsMutedUntil(track.alertsMutedUntil) !== alertsMutedUntil) {
         changed = true;
       }
       track.item = item;
       track.smartDownload = smartDownload;
       track.downloadPreset = downloadPreset;
       track.watchedEpisodes = watchedEpisodes;
+      track.alertMode = alertMode;
+      track.alertsMutedUntil = alertsMutedUntil;
       next[id] = track;
     }
     if (Object.keys(old).length !== Object.keys(next).length) changed = true;
@@ -482,9 +511,14 @@ export class EpisodeStore {
       lastSuccess = Math.max(lastSuccess, Number(t.lastSuccess) || 0);
       if (t.error) errors.push({ item: t.item, message: t.error, at: Number(t.lastAttempt) || 0 });
     }
-    let unread = 0;
-    for (const e of this.db.events) if (e && !e.read) unread++;
     const now = this.now();
+    const updates = JSON.parse(JSON.stringify(this.db.events));
+    let unread = 0;
+    for (const e of updates) {
+      if (!e) continue;
+      e.alertSuppressed = alertSuppressed(this.db.titles[e.titleId], now);
+      if (!e.read && !inboxSuppressed(this.db.titles[e.titleId], now)) unread++;
+    }
     return {
       automatic: this.automatic(),
       alerts: this.alerts(),
@@ -497,7 +531,7 @@ export class EpisodeStore {
       checking: (Number(this.db.runningUntil) || 0) > now,
       queued: (Number(this.db.pendingAt) || 0) > now - 24 * 60 * 60_000 && !!this.db.pendingAt,
       errors,
-      updates: JSON.parse(JSON.stringify(this.db.events)),
+      updates,
     };
   }
 }

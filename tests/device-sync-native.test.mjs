@@ -28,7 +28,7 @@ test('shared data layer exposes the bounded device-sync bridge contract', () => 
   ]) {
     assert.ok(!data.includes(method), `retired direct-Drive wrapper for ${method} must stay removed`);
   }
-  assert.match(data, /\['chooseDownloadFolder', 'chooseDeviceSyncFolder', 'saveBackupFile', 'openBackupFile'\]\.includes\(method\) \? 300000/);
+  assert.match(data, /\['chooseDownloadFolder', 'chooseDeviceSyncFolder', 'saveBackupFile', 'openBackupFile', 'saveTextFile', 'openTextFile'\]\.includes\(method\) \? 300000/);
   assert.match(data, /\['readDeviceSyncFolder', 'writeDeviceSyncFile'\]\.includes\(method\) \? 120000/);
   assert.match(data, /return \{ files: Array\.isArray\(result\?\.files\) \? result\.files : \[\] \}/);
 
@@ -105,13 +105,13 @@ test('Windows exposes folder sync through the isolated preload and service', () 
     assert.ok(!preload.includes(method), `retired direct-Drive preload for ${method} must stay removed`);
     assert.ok(!bridge.includes(method), `retired direct-Drive dispatch for ${method} must stay removed`);
   }
-  assert.match(bridge, /downloadService = null, episodeService = null, deviceSyncService = null\)/);
+  assert.match(bridge, /downloadService = null, episodeService = null, deviceSyncService = null, setOnlineStreamContext = \(\) => \{\}\)/);
   assert.match(bridge, /const requireDeviceSync = \(\) =>/);
   assert.match(bridge, /async function chooseDeviceSyncFolder\(win, service\)/);
   assert.match(bridge, /if \(folderPickerOpen\) throw new Error\('A folder picker is already open\.'\)/);
   assert.match(main, /import \{ DeviceSyncService \} from '\.\/lib\/device-sync-service\.js'/);
   assert.match(main, /deviceSyncService = new DeviceSyncService\(\{ store \}\)/);
-  assert.match(main, /downloadService, episodeService, deviceSyncService\)/);
+  assert.match(main, /downloadService,\s+episodeService,\s+deviceSyncService,\s+\(context\) => \{ currentOnlineStreamContext/);
   assert.ok(!main.includes('GoogleDriveSyncService'), 'direct Drive service must stay removed');
   assert.ok(!main.includes('MIKOZORA_GOOGLE_CLIENT'), 'direct Drive client config must stay removed');
   assert.ok(!desktopWorkflow.includes('MIKOZORA_GOOGLE'), 'direct Drive packaging secrets must stay removed');

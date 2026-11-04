@@ -18,5 +18,5 @@ test('native backup file pickers are wired to the bridge', () => {
   // JS wrappers call the same methods and give the pickers the long timeout.
   assert.match(data, /bridgeCall\('saveBackupFile', name, text\)/);
   assert.match(data, /bridgeCall\('openBackupFile'\)/);
-  assert.match(data, /\['chooseDownloadFolder', 'chooseDeviceSyncFolder', 'saveBackupFile', 'openBackupFile'\]\.includes\(method\) \? 300000/);
+  assert.match(data, /\['chooseDownloadFolder', 'chooseDeviceSyncFolder', 'saveBackupFile', 'openBackupFile', 'saveTextFile', 'openTextFile'\]\.includes\(method\) \? 300000/);
 });

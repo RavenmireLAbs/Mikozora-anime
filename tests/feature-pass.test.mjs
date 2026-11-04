@@ -38,7 +38,7 @@ test('shared UI wires discovery, personal shelf, library tools and player upgrad
   assert.match(ui, /Jump to episode number/);
   assert.match(ui, /Previous video server/);
   assert.match(ui, /Next video server/);
-  assert.match(ui, /markWatched=\{markWatched\}\/>/);
+  assert.match(ui, /markWatched=\{markWatched\} onlinePrefs=\{onlinePlayback\}/);
   assert.match(ui, /window\.__mokuPlayerWatched=watchedHandler/);
 
   // Offline playback controls in the Windows/shared modal. Native Android
