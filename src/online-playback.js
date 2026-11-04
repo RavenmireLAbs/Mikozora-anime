@@ -7,8 +7,10 @@ import { titleKey } from './collections.js';
 export const ONLINE_PLAYBACK_KEY = 'moku.onlinePlayback.v1';
 export const ONLINE_POSITIONS_KEY = 'moku.onlinePositions.v1';
 export const ONLINE_QUALITY_CAPS = [0, 360, 480, 720, 1080, 1440, 2160];
+export const ONLINE_PLAYBACK_PREFERENCE_VERSION = 2;
 export const DEFAULT_ONLINE_PLAYBACK = Object.freeze({
-  directFirst: true,
+  preferenceVersion: ONLINE_PLAYBACK_PREFERENCE_VERSION,
+  directFirst: false,
   resume: true,
   autoPlayNext: true,
   qualityCap: 0,
@@ -34,8 +36,13 @@ function nearest(value, allowed, fallback) {
 
 export function normalizeOnlinePlayback(value) {
   const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  // Version 1 had no marker and was saved automatically with direct-first on,
+  // even when the user had never visited Settings. Move those stored values
+  // to the new off-by-default choice once; version 2 values are remembered.
+  const migrated = Number(input.preferenceVersion) >= ONLINE_PLAYBACK_PREFERENCE_VERSION;
   return {
-    directFirst: input.directFirst !== false,
+    preferenceVersion: ONLINE_PLAYBACK_PREFERENCE_VERSION,
+    directFirst: migrated ? input.directFirst === true : false,
     resume: input.resume !== false,
     autoPlayNext: input.autoPlayNext !== false,
     qualityCap: nearest(input.qualityCap, ONLINE_QUALITY_CAPS, DEFAULT_ONLINE_PLAYBACK.qualityCap),

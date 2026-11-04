@@ -1,13 +1,20 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; the app shows only that newest entry.
-export const APP_VERSION = '0.31.1';
+export const APP_VERSION = '0.31.2';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.31.1',
+    version: '0.31.2',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Direct streams are now opt-in', description: '“Try direct streams first” is now off by default, so episodes open in the server’s embedded player unless you turn that Online Player Pro setting on. Existing installs are moved to the new off setting once because the first Online Player Pro release saved its old on-by-default value automatically. If you turn direct streams back on after this update, Mikozora will remember your choice.' },
+    ],
+  },
+  {
+    version: '0.31.1',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Discovery shelves open properly again', description: 'Some AnimeSogo spotlight titles reached the new “Because you watched” row and mood shelves with only banner artwork and their genres stored as text. Their cards could show a blank cover, the shelves could collapse to the same single title, and opening one could leave a black screen. Mikozora now gives those titles a normal cover and genre list, merges the poster and genre details when the same show appears in more than one Home feed, and safely repairs older saved and progress copies so they open normally on Android and Windows.' },
     ],
