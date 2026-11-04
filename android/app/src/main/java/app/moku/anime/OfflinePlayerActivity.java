@@ -1,10 +1,15 @@
 package app.moku.anime;
 
 import android.app.Activity;
+import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
+import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
@@ -28,11 +33,14 @@ import androidx.media3.datasource.cache.CacheDataSource;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.offline.Download;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
+import androidx.media3.ui.CaptionStyleCompat;
 import androidx.media3.ui.PlayerView;
+import androidx.media3.ui.SubtitleView;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /** Plays a verified saved-folder file or a completed private cache, without streaming. */
@@ -41,6 +49,11 @@ public final class OfflinePlayerActivity extends Activity {
     private static final float[] SPEEDS={0.5f,0.75f,1f,1.25f,1.5f,2f};
     private ExoPlayer player;private String id="";private boolean usingPrivate;
     private int speedIndex=2;private Button speedButton;
+    private int seekSeconds=10;private int subtitleSize=18;private int sleepTimerMinutes=0;
+    private String subtitleColor="white";private String subtitleBackground="shadow";
+    private boolean autoPlayNext=true;private boolean openingNext=false;
+    private String[] nextDownloadIds=new String[0];private long sleepDeadlineElapsedMs=0;
+    private final Handler sleepHandler=new Handler(Looper.getMainLooper());private Runnable sleepRunnable;
     private int dp(float v){return (int)(getResources().getDisplayMetrics().density*v+.5f);}
     private void savePosition(){
         if(player!=null&&!id.isEmpty())getPreferences(MODE_PRIVATE).edit().putLong(id,player.getCurrentPosition()).apply();
@@ -71,6 +84,77 @@ public final class OfflinePlayerActivity extends Activity {
             speedButton.setContentDescription("Playback speed "+speedLabel(speed)+". Tap to change speed.");
         }
     }
+    private int allowedInt(int value,int fallback,int... allowed){
+        for(int candidate:allowed)if(candidate==value)return candidate;
+        return fallback;
+    }
+    private int nearestSpeedIndex(float requested){
+        int best=2;float bestDistance=Float.MAX_VALUE;
+        for(int i=0;i<SPEEDS.length;i++){
+            float distance=Math.abs(SPEEDS[i]-requested);
+            if(distance<bestDistance){best=i;bestDistance=distance;}
+        }
+        return best;
+    }
+    private int subtitleForegroundColor(){
+        if("yellow".equals(subtitleColor))return Color.rgb(255,228,92);
+        if("cyan".equals(subtitleColor))return Color.rgb(124,231,255);
+        if("green".equals(subtitleColor))return Color.rgb(168,240,160);
+        return Color.WHITE;
+    }
+    private int subtitleBackgroundColor(){
+        if("solid".equals(subtitleBackground))return Color.argb(235,0,0,0);
+        if("none".equals(subtitleBackground))return Color.TRANSPARENT;
+        return Color.argb(140,0,0,0);
+    }
+    private void applySubtitleStyle(PlayerView view){
+        SubtitleView subtitles=view.getSubtitleView();if(subtitles==null)return;
+        subtitles.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP,subtitleSize);
+        subtitles.setApplyEmbeddedStyles(false);
+        subtitles.setStyle(new CaptionStyleCompat(
+            subtitleForegroundColor(),subtitleBackgroundColor(),Color.TRANSPARENT,
+            CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW,Color.BLACK,null));
+    }
+    private void startSleepTimer(){
+        if(sleepDeadlineElapsedMs<=0){
+            if(sleepTimerMinutes<=0)return;
+            sleepDeadlineElapsedMs=SystemClock.elapsedRealtime()+sleepTimerMinutes*60000L;
+        }
+        long delay=sleepDeadlineElapsedMs-SystemClock.elapsedRealtime();
+        if(delay<=0){
+            if(player!=null){savePosition();player.pause();}
+            return;
+        }
+        sleepRunnable=()->{
+            if(player!=null){
+                savePosition();player.pause();
+                Toast.makeText(OfflinePlayerActivity.this,"Sleep timer paused playback",Toast.LENGTH_SHORT).show();
+            }
+        };
+        sleepHandler.postDelayed(sleepRunnable,delay);
+    }
+    private void openNextDownload(){
+        if(!autoPlayNext||openingNext||nextDownloadIds==null)return;
+        for(int i=0;i<nextDownloadIds.length;i++){
+            String nextId=nextDownloadIds[i];
+            if(nextId==null||!nextId.matches("[a-f0-9]{32}")||nextId.equals(id))continue;
+            openingNext=true;savePosition();
+            Intent next=new Intent(this,OfflinePlayerActivity.class);
+            next.putExtra("downloadId",nextId);
+            next.putExtra("playbackRate",SPEEDS[speedIndex]);
+            next.putExtra("seekSeconds",seekSeconds);
+            next.putExtra("subtitleSize",subtitleSize);
+            next.putExtra("subtitleColor",subtitleColor);
+            next.putExtra("subtitleBackground",subtitleBackground);
+            next.putExtra("sleepTimerMinutes",sleepTimerMinutes);
+            next.putExtra("sleepDeadlineElapsedMs",sleepDeadlineElapsedMs);
+            next.putExtra("autoPlayNext",autoPlayNext);
+            String[] remaining=i+1<nextDownloadIds.length
+                ?Arrays.copyOfRange(nextDownloadIds,i+1,nextDownloadIds.length):new String[0];
+            next.putExtra("nextDownloadIds",remaining);
+            startActivity(next);finish();return;
+        }
+    }
     private Button toolButton(String text,String description){
         Button button=new Button(this);
         button.setText(text);button.setAllCaps(false);button.setTextColor(Color.WHITE);button.setTextSize(11);
@@ -84,6 +168,19 @@ public final class OfflinePlayerActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         id=getIntent().getStringExtra("downloadId");
         if(id==null||!id.matches("[a-f0-9]{32}")){finish();return;}
+        Intent launch=getIntent();
+        speedIndex=nearestSpeedIndex(launch.getFloatExtra("playbackRate",1f));
+        seekSeconds=allowedInt(launch.getIntExtra("seekSeconds",10),10,5,10,15,30);
+        subtitleSize=allowedInt(launch.getIntExtra("subtitleSize",18),18,12,14,16,18,22,26,32);
+        String incomingColor=launch.getStringExtra("subtitleColor");
+        if(Arrays.asList("white","yellow","cyan","green").contains(incomingColor))subtitleColor=incomingColor;
+        String incomingBackground=launch.getStringExtra("subtitleBackground");
+        if(Arrays.asList("shadow","solid","none").contains(incomingBackground))subtitleBackground=incomingBackground;
+        sleepTimerMinutes=allowedInt(launch.getIntExtra("sleepTimerMinutes",0),0,0,5,10,15,30,45,60);
+        sleepDeadlineElapsedMs=Math.max(0,launch.getLongExtra("sleepDeadlineElapsedMs",0));
+        autoPlayNext=launch.getBooleanExtra("autoPlayNext",true);
+        String[] incomingNext=launch.getStringArrayExtra("nextDownloadIds");
+        nextDownloadIds=incomingNext==null?new String[0]:Arrays.copyOf(incomingNext,Math.min(50,incomingNext.length));
         PrivateAccess.Session session=PrivateAccess.begin(this,id);usingPrivate=session.privateCopy;
         JSONObject meta=session.meta;Download download=OfflineStore.getDownload(this,id);
         boolean folder=meta!=null&&"folder".equals(meta.optString("storageMode"))&&meta.optBoolean("exportVerified",false);
@@ -119,16 +216,22 @@ public final class OfflinePlayerActivity extends Activity {
                 data=new DefaultDataSource.Factory(this,cacheOnly);
             }
             player=new ExoPlayer.Builder(this).setMediaSourceFactory(new DefaultMediaSourceFactory(data))
-                .setSeekBackIncrementMs(10000).setSeekForwardIncrementMs(10000).build();
+                .setSeekBackIncrementMs(seekSeconds*1000L).setSeekForwardIncrementMs(seekSeconds*1000L).build();
+            player.setPlaybackParameters(new PlaybackParameters(SPEEDS[speedIndex]));
             player.setAudioAttributes(new AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(),true);
             if(preferredText.isEmpty()||"und".equals(preferredText))preferredText="indonesian".equals(meta.optString("language"))?"id":"en";
             player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
                 .setPreferredTextLanguage(preferredText).build());
-            player.addListener(new Player.Listener(){@Override public void onPlayerError(PlaybackException e){
-                Toast.makeText(OfflinePlayerActivity.this,folder?"Could not play the saved folder file. Check that it still exists and Mikozora can access the folder.":"Offline playback failed. Check device format support, or remove and download this episode again.",Toast.LENGTH_LONG).show();
-            }});
+            player.addListener(new Player.Listener(){
+                @Override public void onPlaybackStateChanged(int playbackState){
+                    if(playbackState==Player.STATE_ENDED)openNextDownload();
+                }
+                @Override public void onPlayerError(PlaybackException e){
+                    Toast.makeText(OfflinePlayerActivity.this,folder?"Could not play the saved folder file. Check that it still exists and Mikozora can access the folder.":"Offline playback failed. Check device format support, or remove and download this episode again.",Toast.LENGTH_LONG).show();
+                }
+            });
             FrameLayout root=new FrameLayout(this);root.setBackgroundColor(Color.BLACK);
-            PlayerView view=new PlayerView(this);view.setPlayer(player);view.setShowSubtitleButton(true);
+            PlayerView view=new PlayerView(this);view.setPlayer(player);view.setShowSubtitleButton(true);applySubtitleStyle(view);
             view.setShowPreviousButton(false);view.setShowNextButton(false);
             view.setShowRewindButton(true);view.setShowFastForwardButton(true);view.setControllerShowTimeoutMs(5000);
             view.setFullscreenButtonClickListener(isFullscreen->{
@@ -150,13 +253,13 @@ public final class OfflinePlayerActivity extends Activity {
             title.setTextColor(Color.WHITE);title.setTextSize(13);title.setMaxLines(1);titleRow.addView(title,new LinearLayout.LayoutParams(0,-2,1));
             header.addView(titleRow,new LinearLayout.LayoutParams(-1,dp(48)));
             LinearLayout tools=new LinearLayout(this);tools.setOrientation(LinearLayout.HORIZONTAL);tools.setGravity(Gravity.CENTER_VERTICAL);tools.setPadding(dp(48),dp(2),0,0);
-            Button backTen=toolButton("−10s","Back 10 seconds");backTen.setOnClickListener(v->{seekBy(-10000);view.showController();});
+            Button backTen=toolButton("−"+seekSeconds+"s","Back "+seekSeconds+" seconds");backTen.setOnClickListener(v->{seekBy(-seekSeconds*1000L);view.showController();});
             tools.addView(backTen,new LinearLayout.LayoutParams(0,dp(38),1));
             Button restartButton=toolButton("Restart","Restart from the beginning");restartButton.setOnClickListener(v->{restart();view.showController();});
             LinearLayout.LayoutParams restartParams=new LinearLayout.LayoutParams(0,dp(38),1);restartParams.leftMargin=dp(6);tools.addView(restartButton,restartParams);
-            speedButton=toolButton("Speed 1×","Playback speed 1×. Tap to change speed.");speedButton.setOnClickListener(v->{cycleSpeed();view.showController();});
+            speedButton=toolButton("Speed "+speedLabel(SPEEDS[speedIndex]),"Playback speed "+speedLabel(SPEEDS[speedIndex])+". Tap to change speed.");speedButton.setOnClickListener(v->{cycleSpeed();view.showController();});
             LinearLayout.LayoutParams speedParams=new LinearLayout.LayoutParams(0,dp(38),1);speedParams.leftMargin=dp(6);tools.addView(speedButton,speedParams);
-            Button forwardTen=toolButton("+10s","Forward 10 seconds");forwardTen.setOnClickListener(v->{seekBy(10000);view.showController();});
+            Button forwardTen=toolButton("+"+seekSeconds+"s","Forward "+seekSeconds+" seconds");forwardTen.setOnClickListener(v->{seekBy(seekSeconds*1000L);view.showController();});
             LinearLayout.LayoutParams forwardParams=new LinearLayout.LayoutParams(0,dp(38),1);forwardParams.leftMargin=dp(6);tools.addView(forwardTen,forwardParams);
             header.addView(tools,new LinearLayout.LayoutParams(-1,dp(42)));
             // Keep Mikozora's title/tools bar in step with Media3's controller:
@@ -166,7 +269,7 @@ public final class OfflinePlayerActivity extends Activity {
             root.addView(header,new FrameLayout.LayoutParams(-1,dp(102),Gravity.TOP));setContentView(root);
             player.setMediaItem(item);
             long position=getPreferences(MODE_PRIVATE).getLong(id,0);if(position>0)player.seekTo(position);
-            player.prepare();player.setPlayWhenReady(true);view.showController();
+            player.prepare();player.setPlayWhenReady(true);view.showController();startSleepTimer();
         }catch(Exception e){Toast.makeText(this,"Could not open the offline player",Toast.LENGTH_LONG).show();finish();}
     }
     @Override protected void onPause(){
@@ -174,6 +277,7 @@ public final class OfflinePlayerActivity extends Activity {
         super.onPause();
     }
     @Override protected void onDestroy(){
+        if(sleepRunnable!=null)sleepHandler.removeCallbacks(sleepRunnable);
         if(player!=null){player.release();player=null;}
         if(usingPrivate){PrivateAccess.end(id);usingPrivate=false;try{FolderCleanupWorker.schedule(this,id);}catch(Exception ignored){}}
         super.onDestroy();

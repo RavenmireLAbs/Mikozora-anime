@@ -82,6 +82,9 @@ export async function enqueueDownloads(episodes, language = 'english', server = 
   return JSON.parse(await bridgeCall('enqueueDownloads', JSON.stringify({ episodes, language, server, quality, subtitleMode, subtitleTracks })));
 }
 export async function removeDownload(id) { return bridgeCall('removeDownload', id); }
+export async function setDownloadQueueOrder(ids) {
+  return JSON.parse(await bridgeCall('setDownloadQueueOrder', JSON.stringify(Array.isArray(ids) ? ids : [])));
+}
 export async function getExportSettings() { return JSON.parse(await bridgeCall('exportSettings')); }
 export async function chooseDownloadFolder() { return JSON.parse(await bridgeCall('chooseDownloadFolder')); }
 export async function clearDownloadFolder() { return JSON.parse(await bridgeCall('clearDownloadFolder')); }
@@ -113,8 +116,13 @@ export function openExport(id) {
   if (!isAndroid() || typeof window.MokuBridge.openExport !== 'function') throw new Error('Open the exported file in the Android app.');
   window.MokuBridge.openExport(id);
 }
-export function openDownload(id) {
-  if (!isAndroid() || typeof window.MokuBridge.openDownload !== 'function') throw new Error('Offline playback is available in the Android app.');
+export function openDownload(id, options = null) {
+  if (!isAndroid()) throw new Error('Offline playback is available in the Android and Windows apps.');
+  if (typeof window.MokuBridge.openOfflinePlayer === 'function') {
+    window.MokuBridge.openOfflinePlayer(id, JSON.stringify(options && typeof options === 'object' ? options : {}));
+    return;
+  }
+  if (typeof window.MokuBridge.openDownload !== 'function') throw new Error('Offline playback is available in the Android and Windows apps.');
   window.MokuBridge.openDownload(id);
 }
 async function getText(url, cacheMs = 60000) {

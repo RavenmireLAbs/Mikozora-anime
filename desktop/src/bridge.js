@@ -158,6 +158,7 @@ export function registerBridge(ipcMain, getWindow, store, setPlayerReferer = () 
       }
       else if (method === 'enqueueDownloads') out = JSON.stringify(await requireDownloads().enqueue(String(args?.[0] ?? '')));
       else if (method === 'removeDownload') { await requireDownloads().remove(String(args?.[0] ?? '')); out = 'ok'; }
+      else if (method === 'setDownloadQueueOrder') out = JSON.stringify(await requireDownloads().setQueueOrder(String(args?.[0] ?? '')));
       else if (method === 'exportSettings') out = JSON.stringify(await requireDownloads().exportSettings());
       else if (method === 'chooseDownloadFolder') out = await chooseDownloadFolder(getWindow(), requireDownloads());
       else if (method === 'clearDownloadFolder') out = JSON.stringify(await requireDownloads().clearDownloadFolder());
@@ -190,7 +191,7 @@ export function registerBridge(ipcMain, getWindow, store, setPlayerReferer = () 
       const appearance = normalizeAppearance({ mode: args?.[0], accent: args?.[1] });
       store.set('appearance', appearance);
       getWindow()?.setBackgroundColor(backgroundFor(appearance));
-    } else if (method === 'openDownload') {
+    } else if (method === 'openDownload' || method === 'openOfflinePlayer') {
       const id = String(args?.[0] ?? '');
       (async () => {
         const contents = event.sender;

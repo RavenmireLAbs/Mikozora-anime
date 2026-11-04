@@ -4,9 +4,9 @@ import {
   Home, Compass, Bookmark, History, Layers3, Settings2, Search, ArrowRight,
   ArrowUpRight, ChevronLeft, ChevronRight, Play, Check, RefreshCw, X, Clock3,
   ExternalLink, Sparkles, SlidersHorizontal, Film, LoaderCircle, AlertCircle,
-  Trash2, RotateCcw, FolderHeart, CircleHelp, ShieldCheck, Plus, ListVideo, Download, HardDrive, ListChecks, CheckCircle2, Heart, FolderPlus, Pencil, Folder, Flame, Bell, Sun, Moon, EyeOff, Star, Maximize, Link2, Unlink
+  Trash2, RotateCcw, FolderHeart, CircleHelp, ShieldCheck, Plus, ListVideo, Download, HardDrive, ListChecks, CheckCircle2, Heart, FolderPlus, Pencil, Folder, Flame, Bell, Sun, Moon, EyeOff, Star, Maximize, Link2, Unlink, CalendarClock, ArrowUp, ArrowDown, Gauge
 } from 'lucide-react';
-import { SOURCES, getCatalog, getDetail, getFeatured, getTrending, getDiscoverAnime, getServers, imageUrl, isAndroid, clearNetworkCache, getDownloads, getDownloadOptions, enqueueDownloads, removeDownload, openDownload, getExportSettings, chooseDownloadFolder, clearDownloadFolder, exportDownload, openExport, hasEpisodeUpdates, syncEpisodeTitles, getEpisodeUpdates, checkEpisodes, setEpisodeAutomatic, setEpisodeAlerts, markEpisodeRead, fetchLatestRelease, exportBackupToFile, readBackupFromFile, isDesktopApp, hasNativeDownloads, setPlayerReferer, hasDeviceSync, getDeviceSyncSettings, chooseDeviceSyncFolder, clearDeviceSyncFolder, readDeviceSyncFolder, writeDeviceSyncFile } from './data';
+import { SOURCES, getCatalog, getDetail, getFeatured, getTrending, getDiscoverAnime, getServers, imageUrl, isAndroid, clearNetworkCache, getDownloads, getDownloadOptions, enqueueDownloads, removeDownload, setDownloadQueueOrder, openDownload, getExportSettings, chooseDownloadFolder, clearDownloadFolder, exportDownload, openExport, hasEpisodeUpdates, syncEpisodeTitles, getEpisodeUpdates, checkEpisodes, setEpisodeAutomatic, setEpisodeAlerts, markEpisodeRead, fetchLatestRelease, exportBackupToFile, readBackupFromFile, isDesktopApp, hasNativeDownloads, setPlayerReferer, hasDeviceSync, getDeviceSyncSettings, chooseDeviceSyncFolder, clearDeviceSyncFolder, readDeviceSyncFolder, writeDeviceSyncFile } from './data';
 import { buildPlaybackPlaylist, compactPlaybackPlaylist } from './playback';
 import { monitoredTitles, unreadByTitle } from './episode-updates';
 import { SMART_DOWNLOADS_KEY, readSmartDownloads, saveSmartDownloads, smartTitleSelection, smartDownloadsForSync, withDownloadPreset } from './smart-downloads';
@@ -22,6 +22,10 @@ import { markDeviceSyncPublished, prepareDeviceSync, publicDeviceSyncMeta, readD
 import { PERSONAL_STATUSES, readLibraryMeta, saveLibraryMeta, libraryMetaFor, setLibraryMeta as setLibraryMetaRecord, removeLibraryMeta, pruneLibraryMeta, personalStatusLabel, libraryProgressState, sortLibraryTitles, libraryStats } from './library-meta';
 import { buildTasteProfile, topTasteGenres, recommendTitles, sortBrowseTitles } from './discovery';
 import { chronologicalEpisodes, episodeNumberKey, findEpisodeByNumber, firstUnwatchedEpisode, episodesThrough, episodesInRange, wrappedIndex } from './episode-tools';
+import { OFFLINE_STORAGE_LIMITS_GB, OFFLINE_AUTO_DELETE_DAYS, readOfflineManager, saveOfflineManager, normalizeOfflineManager, downloadBytes, downloadStorageSummary, downloadCleanupCandidates, cleanupBytes, queueOrderIds, moveQueueOrder, sortManagerDownloads, watchedInfoFor, downloadTitleKey } from './offline-manager';
+import { OFFLINE_PLAYBACK_RATES, OFFLINE_SEEK_SECONDS, OFFLINE_SLEEP_MINUTES, OFFLINE_SUBTITLE_SIZES, OFFLINE_SUBTITLE_COLORS, OFFLINE_SUBTITLE_BACKGROUNDS, readOfflinePlayback, saveOfflinePlayback, normalizeOfflinePlayback, offlineSubtitleStyle, nextDownloadedEpisodes, offlinePlaybackPayload } from './offline-playback';
+import { WATCH_PLAN_MODES, readWatchPlanner, saveWatchPlanner, setWatchPlan, buildCatchUpQueue, plannerSummary, buildBingeSession, watchPlanLabel } from './watch-planner';
+import { computeWatchStats, buildWrapped, formatWatchDuration, monthLabel, statusBreakdown } from './watch-stats';
 import './style.css';
 import './theme-generated.css';
 import './appearance.css';
@@ -76,6 +80,7 @@ function SideNav({ page, go, unread = 0 }) {
     { id:'home', name:'Discover', icon:Home },
     { id:'browse', name:'Browse', icon:Compass },
     { id:'library', name:'Library', icon:Bookmark },
+    { id:'planner', name:'Planner', icon:CalendarClock },
     { id:'updates', name:'Updates', icon:Bell },
     { id:'history', name:'History', icon:History },
     { id:'downloads', name:'Downloads', icon:Download },
@@ -89,6 +94,7 @@ function SideNav({ page, go, unread = 0 }) {
     <div className="nav-label second">COLLECTION</div>
     <nav className="side-nav" aria-label="More navigation">
       <button onClick={() => go('sources')} className={'nav-item ' + (page==='sources' ? 'active' : '')}><Layers3 size={19}/><span>Sources</span><em>{Object.keys(SOURCES).length}</em></button>
+      <button onClick={() => go('stats')} className={'nav-item ' + (page==='stats' ? 'active' : '')}><Flame size={19}/><span>Watch stats</span></button>
       <button onClick={() => go('settings')} className={'nav-item ' + (page==='settings' ? 'active' : '')}><Settings2 size={19}/><span>Settings</span></button>
     </nav>
     <div className="side-note"><div className="side-note-icon"><Sparkles size={18}/></div><strong>A little escape.</strong><p>All your favorite worlds, right here.</p><button onClick={() => go('browse')}>Find your next watch <ArrowRight size={14}/></button></div>
@@ -101,7 +107,7 @@ function BottomNav({ page, go }) {
 }
 function TopBar({ page, go, submitSearch, refresh, unread = 0 }) {
   const [input, setInput] = useState('');
-  const labels = { home:'Discover', browse:'Browse', library:'Library', updates:'Updates', history:'History', downloads:'Downloads', sources:'Sources', settings:'Settings', detail:'Anime details' };
+  const labels = { home:'Discover', browse:'Browse', library:'Library', planner:'Planner', updates:'Updates', history:'History', downloads:'Downloads', sources:'Sources', stats:'Watch stats', settings:'Settings', detail:'Anime details' };
   function submit(e) { e.preventDefault(); submitSearch(input.trim()); }
   return <header className="topbar">
     <div className="mobile-brand"><Brand onClick={() => go('home')}/></div>
@@ -184,7 +190,7 @@ function TrendingSection({ rankings, loading, open, hideNsfw = false }) {
       </button>)}</div> : <div className="source-error"><AlertCircle size={17}/><span>The weekly ranking from {sourceName(source)} is unavailable. Try refreshing.</span></div>}
   </section>;
 }
-function HomePage({open, has, toggle, browse, recent, refreshKey, hideNsfw = false, continueItems = [], resumeNext, removeContinue, library = [], progress = [], libraryMeta = {}}) {
+function HomePage({open, has, toggle, browse, recent, refreshKey, hideNsfw = false, continueItems = [], resumeNext, removeContinue, library = [], progress = [], libraryMeta = {}, catchUpItems = [], catchUpSummary = null, openPlanner}) {
   const [state,setState] = useState({featured:[],sogo:[],xin:[],discover:[],trendSogo:[],trendXin:[],loadingSogo:true,loadingXin:true,loadingDiscover:true,loadingTrendSogo:true,loadingTrendXin:true});
   useEffect(()=>{ let alive=true; setState(x=>({...x,loadingSogo:true,loadingXin:true,loadingDiscover:true,loadingTrendSogo:true,loadingTrendXin:true}));
     getFeatured().then(value=>{if(alive)setState(x=>({...x,featured:value}))}).catch(()=>{if(alive)setState(x=>({...x,featured:[]}))});
@@ -198,6 +204,7 @@ function HomePage({open, has, toggle, browse, recent, refreshKey, hideNsfw = fal
   const shown = list => filterTitles(list || [], { hideNsfw });
   const shownRecent = (recent || []).filter(entry => !hideNsfw || !isNsfw(entry.item));
   const shownContinue = (continueItems || []).filter(entry => !hideNsfw || !isNsfw(entry.item));
+  const shownCatchUp = (catchUpItems || []).filter(entry => !hideNsfw || !isNsfw(entry.item));
   const recommendationProfile = useMemo(
     () => buildTasteProfile({ library, history: recent || [], progress, libraryMeta }),
     [library, recent, progress, libraryMeta],
@@ -216,6 +223,7 @@ function HomePage({open, has, toggle, browse, recent, refreshKey, hideNsfw = fal
     <div className="welcome-row"><div><div className="date-line"><span className="date-star">✦</span> {date} <span className="date-separator"/> A GOOD DAY FOR ANIME</div><h1>Your next story starts here<span>.</span></h1><p>Good to have you here. What are we watching today?</p></div><div className="source-count"><div className="source-count-icon"><Layers3 size={17}/></div><div><strong>{Object.keys(SOURCES).length} sources</strong><small>One cozy place</small></div><i/></div></div>
     <Hero featured={shown(state.featured)} fallback={shown(state.sogo)} open={x=>x?open(x):browse('all')} has={has} toggle={toggle}/>
     {shownContinue.length>0 ? <section className="content-section continue-section"><SectionHeading eyebrow="PICK UP WHERE YOU LEFT OFF" title="Continue watching" link="View history" action={()=>browse('history')}/><div className="continue-rail">{shownContinue.slice(0,8).map((entry)=><div className="continue-card" key={identity(entry.item)}><button className="continue-main" onClick={()=>resumeNext(entry)} aria-label={`Play episode ${entry.episode.number} of ${entry.item.title}`}><div className="continue-cover"><Cover item={entry.item}/></div><div className="continue-info"><span>NEXT · EPISODE {entry.episode.number}</span><strong>{entry.item.title}</strong><small>{sourceName(entry.item.source)} · {entry.watchedCount} of {entry.total} watched</small><span className="continue-progress"><i style={{width:`${Math.min(100,Math.round(entry.watchedCount/entry.total*100))}%`}}/></span></div><span className="continue-play"><Play size={14} fill="currentColor"/></span></button><button className="continue-remove" onClick={()=>removeContinue(entry.item)} aria-label={`Remove ${entry.item.title} from Continue watching`} title="Remove from Continue watching"><X size={13}/></button></div>)}</div></section> : shownRecent.length>0 && <section className="content-section continue-section"><SectionHeading eyebrow="PICK UP WHERE YOU LEFT OFF" title="Recently opened" link="View history" action={()=>browse('history')}/><div className="continue-rail">{shownRecent.slice(0,4).map((entry)=><button className="continue-card" key={`${identity(entry.item)}|${entry.episode.number}`} onClick={()=>open(entry.item)}><div className="continue-cover"><Cover item={entry.item}/></div><div className="continue-info"><span>EPISODE {entry.episode.number}</span><strong>{entry.item.title}</strong><small>{sourceName(entry.item.source)} · {prettyTime(entry.time)}</small></div><span className="continue-play"><Play size={14} fill="currentColor"/></span></button>)}</div></section>}
+    {shownCatchUp.length>0&&<section className="content-section catchup-home-section"><SectionHeading eyebrow="YOUR NEXT SITTING" title="Catch up, your way" link="Open planner" action={openPlanner}/><p className="catchup-home-copy">{catchUpSummary?.episodesBehind||0} episodes are waiting across {catchUpSummary?.titlesBehind||shownCatchUp.length} started {(catchUpSummary?.titlesBehind||shownCatchUp.length)===1?'series':'series'}{catchUpSummary?.nearlyFinished?` · ${catchUpSummary.nearlyFinished} nearly finished`:''}.</p><div className="continue-rail">{shownCatchUp.slice(0,4).map(entry=><div className="continue-card catchup-home-card" key={entry.key||identity(entry.item)}><button className="continue-main" onClick={()=>resumeNext(entry)} aria-label={`Play episode ${entry.episode.number} of ${entry.item.title}`}><div className="continue-cover"><Cover item={entry.item}/></div><div className="continue-info"><span>{entry.plan?`${watchPlanLabel(entry.plan.mode).toUpperCase()} · `:''}NEXT · EPISODE {entry.episode.number}</span><strong>{entry.item.title}</strong><small>{entry.behindCount} behind · {entry.watchedCount} of {entry.total} watched</small><span className="continue-progress"><i style={{width:`${Math.min(100,Math.round((entry.percent||0)*100))}%`}}/></span></div><span className="continue-play"><Play size={14} fill="currentColor"/></span></button><button className="catchup-series-link" onClick={()=>open(entry.item)}>Series</button></div>)}</div></section>}
     {(recommendationLoading||recommendations.length>0)&&<section className="content-section recommendation-section"><SectionHeading eyebrow={recommendationProfile.strength?'MADE FROM YOUR WATCHING':'FRESH FROM YOUR SOURCES'} title={recommendationProfile.strength?'Made for your taste':'Fresh picks for you'} action={()=>browse('all')} link="Browse all"/>{tasteGenres.length>0&&<div className="taste-genre-row" aria-label="Your top watched genres"><span>Often in your space</span>{tasteGenres.map(genre=><b key={genre}>{genre}</b>)}</div>}{recommendationLoading?<SkeletonRail/>:<Rail items={recommendations} open={open} has={has} toggle={toggle} libraryMeta={libraryMeta}/>}</section>}
     <TrendingSection rankings={{sogo:state.trendSogo,xin:state.trendXin}} loading={{sogo:state.loadingTrendSogo,xin:state.loadingTrendXin}} open={open} hideNsfw={hideNsfw}/>
     <section className="content-section"><SectionHeading eyebrow="FRESH FROM THE SOURCE" title="Recently updated" action={()=>browse('sogo')} link="Explore AnimeSogo"/>{state.loadingSogo?<SkeletonRail/>:shown(state.sogo).length?<Rail items={shown(state.sogo).slice(0,14)} open={open} has={has} toggle={toggle}/>:(state.sogo.length?<div className="source-error"><EyeOff size={17}/><span>These titles are hidden while NSFW content is turned off in Settings.</span></div>:(state.discover.length?<div className="source-error"><EyeOff size={17}/><span>These titles are hidden while NSFW content is turned off in Settings.</span></div>:<ErrorNote source="sogo" onRetry={()=>browse('sogo')}/>))}</section>
@@ -557,7 +565,7 @@ function DetailPage({item, openEpisode, has, toggle, organize, back, history, re
     </div>
   </div>;
 }
-function LibraryPage({items,open,has,toggle,browse,collections,activeCollection,setActiveCollection,onCreate,onRename,onDelete,onMembers,onFavourite,unreadTitles,progressByTitle,hideNsfw = false,smartCollections = [],onSmartCollection,libraryMeta = {},onRemoveTitles,onAddTitlesToCollection}) {
+function LibraryPage({items,open,has,toggle,browse,collections,activeCollection,setActiveCollection,onCreate,onRename,onDelete,onMembers,onFavourite,unreadTitles,progressByTitle,hideNsfw = false,smartCollections = [],onSmartCollection,libraryMeta = {},onRemoveTitles,onAddTitlesToCollection,openPlanner,openStats}) {
   const [filter,setFilter]=useState('all');
   const [search,setSearch]=useState('');
   const [sort,setSort]=useState('saved');
@@ -609,6 +617,7 @@ function LibraryPage({items,open,has,toggle,browse,collections,activeCollection,
       <div><strong>{stats.rated}</strong><span>rated by you</span></div>
       <div><strong>{stats.withNotes}</strong><span>with notes</span></div>
     </section>}
+    {catalog.length>0&&<div className="library-insight-actions"><button className="btn secondary" onClick={openPlanner}><CalendarClock size={15}/> Catch-Up Planner</button><button className="btn secondary" onClick={openStats}><Flame size={15}/> Watch Stats &amp; Wrapped</button></div>}
     <div className="collections-heading"><div><span className="eyebrow">MADE BY YOU</span><h2>Your collections</h2></div><button className="btn secondary new-collection" onClick={onCreate}><Plus size={16}/> New collection</button></div>
     <div className="collection-tabs" role="tablist" aria-label="Library collections">
       <button role="tab" aria-selected={activeCollection==='all'} className={'collection-tab '+(activeCollection==='all'?'selected':'')} onClick={()=>setActiveCollection('all')}><Bookmark size={15}/> <span>All titles</span><b>{catalog.length}</b></button>
@@ -757,16 +766,78 @@ function DownloadModal({request,close,submit}) {
       <div className="download-dialog-actions"><button className="btn secondary" onClick={close}>Cancel</button><button className="btn primary" disabled={!hasNativeDownloads()||working||subtitleInvalid} onClick={confirm}>{working?<LoaderCircle size={16} className="spin"/>:<Download size={16}/>} Add to queue</button></div>
     </div></div></div>;
 }
-function DownloadsPage({items,loading,remove,retry,change,browse,folder,saveCopy,openSettings,playOffline}) {
+function DownloadsPage({items,loading,remove,retry,change,browse,folder,saveCopy,openSettings,playOffline,watchedById={},managerPrefs,changeManagerPrefs=()=>{},cleanupCandidates=[],runCleanup=()=>{},removeMany=()=>{},moveQueue=()=>{}}) {
   const statusText={queued:'Waiting for network or a queue slot',resolving:'Finding a supported mirror',downloading:'Downloading',completed:'Ready to watch offline',failed:'Download failed',paused:'Waiting to resume',removing:'Removing'};
+  const prefs=normalizeOfflineManager(managerPrefs);
+  const [managerSearch,setManagerSearch]=useState('');
+  const [managerStatus,setManagerStatus]=useState('all');
+  const [managerSort,setManagerSort]=useState('queue');
+  const [groupBySeries,setGroupBySeries]=useState(false);
+  const [selectedDownloads,setSelectedDownloads]=useState([]);
+  const summary=downloadStorageSummary(items,watchedById);
+  const cleanupSize=cleanupBytes(cleanupCandidates);
+  const effectiveQueueOrder=queueOrderIds(items,prefs);
+  const queuePositions=new Map(effectiveQueueOrder.map((id,index)=>[id,index+1]));
+  const searchTerm=managerSearch.trim().toLocaleLowerCase();
+  const visibleItems=sortManagerDownloads((items||[]).filter(d=>{
+    if(managerStatus!=='all'&&d.status!==managerStatus)return false;
+    if(searchTerm&&!`${d.item?.title||''} ${d.episode?.number||''} ${sourceName(d.item?.source)}`.toLocaleLowerCase().includes(searchTerm))return false;
+    return true;
+  }),{sort:groupBySeries?'series':managerSort,queueOrder:effectiveQueueOrder});
+  const selectedRecords=(items||[]).filter(d=>selectedDownloads.includes(d.id));
+  const selectedBytes=selectedRecords.reduce((sum,d)=>sum+downloadBytes(d),0);
+  const watchedCompleted=(items||[]).filter(d=>d.status==='completed'&&watchedInfoFor(watchedById,d).watched);
+  const failedDownloads=(items||[]).filter(d=>d.status==='failed');
+  const maxSeriesBytes=Math.max(1,...summary.bySeries.map(entry=>entry.bytes||0));
+  const maxSourceBytes=Math.max(1,...summary.bySource.map(entry=>entry.bytes||0));
+  useEffect(()=>{setSelectedDownloads(previous=>previous.filter(id=>(items||[]).some(d=>d.id===id)));},[items]);
+  const toggleDownloadSelection=id=>setSelectedDownloads(previous=>previous.includes(id)?previous.filter(x=>x!==id):[...previous,id]);
+  const sizeLabel=value=>bytesLabel(value)||'0 KB';
   return <div className="content page-content"><div className="page-heading"><div><div className="eyebrow">A LITTLE SOMETHING FOR LATER</div><h1>Ready when you are<span>.</span></h1><p>Your offline episodes and download queue, saved on this device.</p></div><div className="heading-art"><HardDrive size={32}/><span>✦</span></div></div>
     {!hasNativeDownloads()?<Empty icon={Download} title="Take your stories offline" body={isDesktopApp()?"Downloads are unavailable in this Windows build. Episodes still stream in the built-in player.":"Open Mikozora on Android to download individual episodes or select a batch. The browser preview cannot store episodes."} action={()=>browse('all')} actionLabel="Browse titles"/>:
       loading&&!items.length?<div className="episode-loading"><LoaderCircle size={18} className="spin"/> Loading downloads...</div>:
-      items.length?<div className="downloads-list">{items.map(d=>{
+      items.length?<><section className="offline-manager-panel" aria-label="Offline download manager">
+        <div className="manager-panel-heading"><div><span className="eyebrow">OFFLINE MANAGER 2.0</span><h2>Storage &amp; cleanup</h2><p>See what is using space, tidy watched episodes, and put the queue in the order you want.</p></div><div className="manager-heading-icon"><HardDrive size={22}/></div></div>
+        <div className="manager-stat-grid">
+          <div><strong>{sizeLabel(summary.totalBytes)}</strong><span>all downloads</span><small>{summary.totalRecords} {summary.totalRecords===1?'episode':'episodes'}</small></div>
+          <div><strong>{summary.completedCount}</strong><span>ready offline</span><small>{sizeLabel(summary.completedBytes)}</small></div>
+          <div><strong>{cleanupCandidates.length}</strong><span>safe to clean</span><small>{sizeLabel(cleanupSize)} watched</small></div>
+          <div><strong>{summary.activeCount+summary.queuedCount}</strong><span>active or queued</span><small>{summary.failedCount} failed · {summary.folderCopies} folder {summary.folderCopies===1?'copy':'copies'}</small></div>
+        </div>
+        <div className="manager-breakdowns">
+          <div className="manager-breakdown"><h3>Storage by series</h3>{summary.bySeries.slice(0,6).map(entry=><div className="manager-bar-row" key={entry.key}><div className="manager-bar-copy"><strong>{entry.title}</strong><span>{entry.completedCount}/{entry.count} ready{entry.watchedCount?` · ${entry.watchedCount} watched`:''}</span></div><div className="manager-bar" aria-hidden="true"><i style={{width:`${Math.max(2,Math.round((entry.bytes||0)/maxSeriesBytes*100))}%`}}/></div><b>{sizeLabel(entry.bytes)}</b></div>)}</div>
+          <div className="manager-breakdown"><h3>Storage by source</h3>{summary.bySource.slice(0,6).map(entry=><div className="manager-bar-row" key={entry.source}><div className="manager-bar-copy"><strong>{sourceName(entry.source)}</strong><span>{entry.completedCount}/{entry.count} ready</span></div><div className="manager-bar" aria-hidden="true"><i style={{width:`${Math.max(2,Math.round((entry.bytes||0)/maxSourceBytes*100))}%`}}/></div><b>{sizeLabel(entry.bytes)}</b></div>)}</div>
+        </div>
+        <div className="manager-rules">
+          <label>OFFLINE STORAGE LIMIT<select aria-label="Offline storage limit" value={prefs.storageLimitGb} onChange={event=>changeManagerPrefs({storageLimitGb:Number(event.target.value)})}>{OFFLINE_STORAGE_LIMITS_GB.map(value=><option key={value} value={value}>{value?`${value} GB`:'No limit'}</option>)}</select></label>
+          <label>DELETE WATCHED AFTER<select aria-label="Delete watched downloads after" value={prefs.autoDeleteWatchedDays} onChange={event=>changeManagerPrefs({autoDeleteWatchedDays:Number(event.target.value)})}>{OFFLINE_AUTO_DELETE_DAYS.map(value=><option key={value} value={value}>{value?(value===1?'1 day':`${value} days`):'Off'}</option>)}</select></label>
+          <div className="manager-auto-row"><div><strong>Automatic cleanup</strong><span>When Downloads opens</span></div><button type="button" aria-label="Automatic watched-download cleanup" aria-pressed={prefs.autoCleanup} onClick={()=>changeManagerPrefs({autoCleanup:!prefs.autoCleanup})}>{prefs.autoCleanup?'On':'Off'}</button></div>
+          <button type="button" className="btn primary manager-clean-button" disabled={!cleanupCandidates.length} onClick={()=>runCleanup(false)}><Trash2 size={15}/> Clean watched downloads{cleanupCandidates.length?` · ${sizeLabel(cleanupSize)}`:''}</button>
+        </div>
+        <p className="manager-note">Cleanup only removes watched, completed Mikozora copies that match your rules. Verified folder-only files are left alone, because removing their Mikozora record would not delete the file in your folder.</p>
+      </section>
+      <section className="manager-toolbar" aria-label="Download list tools">
+        <label className="manager-search"><Search size={16}/><input aria-label="Search downloads" value={managerSearch} onChange={event=>setManagerSearch(event.target.value)} placeholder="Search downloads"/></label>
+        <label className="manager-field"><span>Status</span><select aria-label="Filter downloads by status" value={managerStatus} onChange={event=>setManagerStatus(event.target.value)}><option value="all">All statuses</option><option value="downloading">Downloading</option><option value="resolving">Resolving</option><option value="queued">Queued</option><option value="paused">Paused</option><option value="completed">Ready offline</option><option value="failed">Failed</option></select></label>
+        <label className="manager-field"><span>Sort</span><select aria-label="Sort downloads" value={managerSort} onChange={event=>setManagerSort(event.target.value)}><option value="queue">Queue order</option><option value="size-desc">Largest first</option><option value="size-asc">Smallest first</option><option value="series">Series &amp; episode</option><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select></label>
+        <button type="button" className={'btn secondary manager-group-toggle '+(groupBySeries?'is-saved':'')} aria-pressed={groupBySeries} onClick={()=>setGroupBySeries(value=>!value)}><ListChecks size={15}/> Group by series</button>
+        <div className="manager-bulk-actions"><strong>{selectedRecords.length} selected{selectedRecords.length?` · ${sizeLabel(selectedBytes)}`:''}</strong><button type="button" className="text-link" disabled={!visibleItems.length} onClick={()=>setSelectedDownloads(visibleItems.map(d=>d.id))}>Select shown</button><button type="button" className="text-link" disabled={!watchedCompleted.length} onClick={()=>setSelectedDownloads(watchedCompleted.map(d=>d.id))}>Select watched</button><button type="button" className="text-link muted" disabled={!selectedRecords.length} onClick={()=>setSelectedDownloads([])}>Clear</button><button type="button" className="text-link danger-link" disabled={!selectedRecords.length} onClick={()=>{removeMany(selectedRecords);setSelectedDownloads([]);}}>Remove selected</button><button type="button" className="text-link danger-link" disabled={!failedDownloads.length} onClick={()=>removeMany(failedDownloads)}>Remove failed</button></div>
+        <span className="manager-visible-count">{visibleItems.length} SHOWN</span>
+      </section>
+      {!visibleItems.length&&<p className="manager-no-results">No downloads match this search or status. Your files have not changed.</p>}
+      <div className="downloads-list">{visibleItems.map((d,visibleIndex)=>{
         const progress=typeof d.progress==='number'?Math.max(0,Math.min(100,d.progress)):null;
         const exporting=d.exportStatus==='queued'||d.exportStatus==='exporting'||d.exportStatus==='verifying';
         const savedFolder=[d.exportFolder,d.exportSeriesFolder].filter(Boolean).join(' / ');
-        return <article className="download-card" key={d.id}><div className="download-card-art"><Cover item={d.item||{}}/></div><div className="download-card-main"><div className="download-card-top"><SourcePill source={d.item?.source} compact/><span className={'download-status '+(d.status||'queued')}><i/>{statusText[d.status]||'Preparing'}</span></div><h3>{d.item?.title||'Episode'}</h3><p>Episode {d.episode?.number} {d.serverLabel?`· ${d.serverLabel}`:d.host?`· ${d.host}`:''} {d.qualityLabel?`· ${d.qualityLabel}`:''} {d.bytes?`· ${bytesLabel(d.bytes)}`:''}</p>
+        const watched=watchedInfoFor(watchedById,d);
+        const queuePosition=queuePositions.get(d.id)||0;
+        const canMoveQueue=['queued','paused'].includes(d.status);
+        const isSelected=selectedDownloads.includes(d.id);
+        const groupKey=downloadTitleKey(d)||d.id;
+        const previousGroupKey=visibleIndex?(downloadTitleKey(visibleItems[visibleIndex-1])||visibleItems[visibleIndex-1].id):'';
+        const showGroup=groupBySeries&&groupKey!==previousGroupKey;
+        const group=summary.bySeries.find(entry=>entry.key===groupKey);
+        return <React.Fragment key={d.id}>{showGroup&&<div className="download-group-heading"><div><span className="eyebrow">SERIES</span><h3>{group?.title||d.item?.title||'Downloaded episode'}</h3></div><span>{group?`${group.completedCount}/${group.count} ready · ${sizeLabel(group.bytes)}`:''}</span></div>}<article className="download-card"><div className="download-card-art"><Cover item={d.item||{}}/></div><div className="download-card-main"><div className="download-card-top"><SourcePill source={d.item?.source} compact/><span className={'download-status '+(d.status||'queued')}><i/>{statusText[d.status]||'Preparing'}</span>{watched.watched&&<span className="download-watched-badge"><Check size={12}/> Watched</span>}{d.storageMode==='folder'&&d.exportVerified&&<span className="download-folder-badge"><FolderHeart size={12}/> Folder copy</span>}<label className="download-select"><input type="checkbox" checked={isSelected} onChange={()=>toggleDownloadSelection(d.id)} aria-label={`Select episode ${d.episode?.number||''} of ${d.item?.title||'download'}`}/><span>Select</span></label></div><h3>{d.item?.title||'Episode'}</h3><p>Episode {d.episode?.number} {d.serverLabel?`· ${d.serverLabel}`:d.host?`· ${d.host}`:''} {d.qualityLabel?`· ${d.qualityLabel}`:''} {d.bytes?`· ${bytesLabel(d.bytes)}`:''}</p>
           {d.status==='downloading'&&<div className="download-progress"><div><span style={{width:progress==null?'38%':`${progress}%`}} className={progress==null?'indeterminate':''}/></div><small>{progress==null?'In progress':`${progress}%`}</small></div>}
           <p className="subtitle-status"><Check size={13}/> {d.subtitleDescription||'Preparing subtitles'}</p>{d.autoDownload&&<p className="export-status"><Sparkles size={13}/> Smart download{d.smartWifiOnly&&!isDesktopApp()?' · Wi‑Fi only':''}</p>}{d.status==='failed'&&<p className="download-error"><AlertCircle size={14}/> {d.error||'This host did not provide a downloadable stream.'}</p>}
           {d.exportStatus==='queued'&&<p className="export-status"><Clock3 size={13}/> Playable copy queued{d.exportNextFolder?` · ${d.exportNextFolder}`:''}</p>}
@@ -776,10 +847,133 @@ function DownloadsPage({items,loading,remove,retry,change,browse,folder,saveCopy
           {d.cleanupStatus==='pending'&&<p className="export-status"><LoaderCircle size={13} className="spin"/> Freeing private app storage…</p>}
           {(d.cleanupStatus==='waiting'||d.cleanupStatus==='retained')&&<p className="download-error"><AlertCircle size={14}/> {d.cleanupMessage||'The private copy is being kept for safety.'}</p>}
           {d.exportStatus==='failed'&&<p className="download-error"><AlertCircle size={14}/> Folder copy failed: {d.exportError||'Try again.'}</p>}
-          <div className="download-card-actions">{d.status==='completed'&&<><button className="btn primary" onClick={()=>playOffline?playOffline(d):openDownload(d.id)}><Play size={14} fill="currentColor"/> Play offline</button>{d.exportUri&&<button className="text-link" onClick={()=>openExport(d.id)}><ExternalLink size={14}/> Open file</button>}{folder?.granted?<button className="text-link" disabled={exporting} onClick={()=>saveCopy(d)}><FolderHeart size={14}/> {exporting?'Saving…':d.exportUri?'Save another copy':'Save to folder'}</button>:<button className="text-link" onClick={openSettings}><FolderHeart size={14}/> Choose folder</button>}</>}{d.status==='failed'&&<><button className="btn secondary" onClick={()=>retry(d)}><RotateCcw size={14}/> Retry</button><button className="text-link" onClick={()=>change(d)}><SlidersHorizontal size={14}/> Change server</button></>}<button className="text-link muted" onClick={()=>remove(d)}><Trash2 size={14}/> Remove</button></div>
-        </div></article>;
-      })}</div>:<Empty icon={Download} title="Your offline shelf is empty" body="Open a series, then download one episode or select a batch to watch later." action={()=>browse('all')} actionLabel="Find a series"/>}
+          {queuePosition>0&&<div className="download-queue-tools"><span>Queue #{queuePosition}</span>{canMoveQueue?<><button type="button" disabled={queuePosition<=1} onClick={()=>moveQueue(d,-1)} aria-label={`Move episode ${d.episode?.number||''} earlier in the download queue`}><ArrowUp size={13}/> Earlier</button><button type="button" disabled={queuePosition>=effectiveQueueOrder.length} onClick={()=>moveQueue(d,1)} aria-label={`Move episode ${d.episode?.number||''} later in the download queue`}><ArrowDown size={13}/> Later</button><button type="button" disabled={queuePosition<=1} onClick={()=>moveQueue(d,'front')}>Move to front</button></>:<small>{d.status==='downloading'||d.status==='resolving'?'Already started':'Waiting its turn'}</small>}</div>}
+          <div className="download-card-actions">{d.status==='completed'&&<><button className="btn primary" onClick={()=>playOffline?.(d)}><Play size={14} fill="currentColor"/> Play offline</button>{d.exportUri&&<button className="text-link" onClick={()=>openExport(d.id)}><ExternalLink size={14}/> Open file</button>}{folder?.granted?<button className="text-link" disabled={exporting} onClick={()=>saveCopy(d)}><FolderHeart size={14}/> {exporting?'Saving…':d.exportUri?'Save another copy':'Save to folder'}</button>:<button className="text-link" onClick={openSettings}><FolderHeart size={14}/> Choose folder</button>}</>}{d.status==='failed'&&<><button className="btn secondary" onClick={()=>retry(d)}><RotateCcw size={14}/> Retry</button><button className="text-link" onClick={()=>change(d)}><SlidersHorizontal size={14}/> Change server</button></>}<button className="text-link muted" onClick={()=>remove(d)}><Trash2 size={14}/> Remove</button></div>
+        </div></article></React.Fragment>;
+      })}</div></>:<Empty icon={Download} title="Your offline shelf is empty" body="Open a series, then download one episode or select a batch to watch later." action={()=>browse('all')} actionLabel="Find a series"/>}
     <p className="privacy-footnote"><ShieldCheck size={15}/> Mikozora uses private space during downloading and conversion. After a verified folder save, it removes the private copy; folder files stay if you remove an episode or uninstall Mikozora.</p>
+  </div>;
+}
+function PlannerPage({progress=[],history=[],libraryMeta={},plans={},relatedKeysByTitle={},open,resumeNext,queueEpisodes,changePlan,browse}) {
+  const [sort,setSort]=useState('smart');
+  const [episodeGoal,setEpisodeGoal]=useState(6);
+  const queue=useMemo(()=>buildCatchUpQueue({progress,history,libraryMeta,plans,relatedKeysByTitle,sort,limit:50}),[progress,history,libraryMeta,plans,relatedKeysByTitle,sort]);
+  const summary=useMemo(()=>plannerSummary(queue),[queue]);
+  const session=useMemo(()=>buildBingeSession(queue,{episodeGoal}),[queue,episodeGoal]);
+  const sessionGroups=useMemo(()=>{
+    const groups=[];const byKey=new Map();
+    for(const entry of session){
+      if(!byKey.has(entry.key)){const group={key:entry.key,item:entry.item,episodes:[]};byKey.set(entry.key,group);groups.push(group);}
+      byKey.get(entry.key).episodes.push(entry.episode);
+    }
+    return groups;
+  },[session]);
+  return <div className="content page-content planner-page">
+    <div className="page-heading"><div><div className="eyebrow">CATCH-UP &amp; BINGE PLANNER</div><h1>Your next sitting<span>.</span></h1><p>Series you have started, how far behind they are, and a practical order for tonight or the weekend.</p></div><div className="heading-art"><CalendarClock size={32}/><span>✦</span></div></div>
+    <section className="planner-summary" aria-label="Catch-up overview">
+      <div><strong>{summary.titlesBehind}</strong><span>series waiting</span></div>
+      <div><strong>{summary.episodesBehind}</strong><span>episodes behind</span></div>
+      <div><strong>{summary.plannedTonight}</strong><span>for tonight</span></div>
+      <div><strong>{summary.plannedWeekend}</strong><span>for the weekend</span></div>
+      <div><strong>{summary.nearlyFinished}</strong><span>nearly finished</span></div>
+    </section>
+    <section className="planner-controls" aria-label="Planner controls">
+      <label><span>QUEUE ORDER</span><select aria-label="Catch-up queue order" value={sort} onChange={event=>setSort(event.target.value)}><option value="smart">Smart mix</option><option value="planned">Planned first</option><option value="finish">Finish soonest</option><option value="behind">Most behind</option><option value="recent">Recently watched</option></select></label>
+      <label><span>SESSION GOAL</span><select aria-label="Binge session episode goal" value={episodeGoal} onChange={event=>setEpisodeGoal(Number(event.target.value))}>{[3,6,9,12,18,24].map(value=><option key={value} value={value}>{value} episodes</option>)}</select></label>
+      <p>Plans and catch-up order stay with your local library data. Episode counts come from the snapshots Mikozora already keeps when you watch or open a series.</p>
+    </section>
+    {session.length>0&&<section className="binge-session" aria-label="Suggested binge session">
+      <div className="binge-session-heading"><div><span className="eyebrow">READY-MADE BINGE ORDER</span><h2>{session.length} episode{session.length===1?'':'s'} for this sitting</h2><p>Built from your queue and the episodes-per-sitting choices below.</p></div><button className="btn primary" onClick={()=>resumeNext(session[0])}><Play size={15} fill="currentColor"/> Start session</button></div>
+      <div className="binge-session-list">{sessionGroups.map((group,index)=><div className="binge-session-row" key={group.key}><span className="binge-session-index">{index+1}</span><div className="binge-session-copy"><button onClick={()=>open(group.item)}>{group.item.title}</button><span>Episode{group.episodes.length===1?'':'s'} {group.episodes.map(episode=>episode.number).join(', ')}</span></div><button className="text-link" onClick={()=>queueEpisodes(group.item,group.episodes)}><Download size={14}/> Download these</button></div>)}</div>
+    </section>}
+    {queue.length?<div className="planner-list">{queue.map(entry=>{
+      const downloadCount=Math.min(3,entry.behindCount);
+      return <article className="planner-card" key={entry.key}>
+        <button className="planner-cover" onClick={()=>open(entry.item)} aria-label={`Open ${entry.item.title}`}><Cover item={entry.item}/></button>
+        <div className="planner-card-main">
+          <div className="planner-card-top"><SourcePill source={entry.item.source} compact/><span className="planner-behind">{entry.behindCount} behind</span>{entry.plan&&<span className="planner-plan-badge"><CalendarClock size={12}/> {watchPlanLabel(entry.plan.mode)}</span>}</div>
+          <h3><button onClick={()=>open(entry.item)}>{entry.item.title}</button></h3>
+          <p>Next: Episode {entry.episode.number}{entry.episode.title?` · ${entry.episode.title}`:''} · {entry.watchedCount} of {entry.total} watched{entry.updatedAt?` · last watched ${prettyTime(entry.updatedAt)}`:''}</p>
+          <span className="planner-progress" aria-hidden="true"><i style={{width:`${Math.min(100,Math.round((entry.percent||0)*100))}%`}}/></span>
+          <div className="planner-plan-controls">
+            <label><span>PLAN</span><select aria-label={`Plan for ${entry.item.title}`} value={entry.plan?.mode||''} onChange={event=>changePlan(entry.item,{mode:event.target.value})}><option value="">Not planned</option>{WATCH_PLAN_MODES.map(mode=><option key={mode.id} value={mode.id}>{mode.label}</option>)}</select></label>
+            {entry.plan&&<label><span>PER SITTING</span><select aria-label={`Episodes per sitting for ${entry.item.title}`} value={entry.plan.episodesPerSession||3} onChange={event=>changePlan(entry.item,{episodesPerSession:Number(event.target.value)})}>{[1,2,3,4,5,8,10].map(value=><option key={value} value={value}>{value} episode{value===1?'':'s'}</option>)}</select></label>}
+          </div>
+          <div className="planner-actions"><button className="btn primary" onClick={()=>resumeNext(entry)}><Play size={14} fill="currentColor"/> Play next</button><button className="btn secondary" onClick={()=>queueEpisodes(entry.item,entry.upNextEpisodes.slice(0,downloadCount))}><Download size={14}/> Download next {downloadCount}</button><button className="text-link" onClick={()=>open(entry.item)}>Open series <ArrowRight size={14}/></button></div>
+        </div>
+      </article>;
+    })}</div>:<Empty icon={CalendarClock} title="Nothing waiting right now" body="When you start a series and newer unwatched episodes are in its snapshot, Mikozora will line them up here. Opening a series refreshes its episode snapshot." action={()=>browse('all')} actionLabel="Find a series"/>}
+    <p className="privacy-footnote"><ShieldCheck size={15}/> The planner uses this device’s saved progress snapshots and history. It does not invent airing dates, and a series may need opening once to refresh its episode list.</p>
+  </div>;
+}
+function StatsPage({history=[],progress=[],library=[],libraryMeta={},relatedKeysByTitle={},open,browse,notify}) {
+  const stats=useMemo(()=>computeWatchStats({history,progress,library,libraryMeta,relatedKeysByTitle}),[history,progress,library,libraryMeta,relatedKeysByTitle]);
+  const [selectedMonth,setSelectedMonth]=useState('');
+  const activeMonth=stats.availableMonths.includes(selectedMonth)?selectedMonth:(stats.availableMonths[0]||'');
+  const wrapped=useMemo(()=>buildWrapped({history,month:activeMonth}),[history,activeMonth]);
+  const statuses=statusBreakdown(stats);
+  const maxWeekly=Math.max(1,...stats.weekly.map(bucket=>bucket.count||0));
+  const maxMonthly=Math.max(1,...stats.monthly.map(bucket=>bucket.count||0));
+  const maxGenre=Math.max(1,...stats.topGenres.map(entry=>entry.count||0));
+  const maxSource=Math.max(1,...stats.topSources.map(entry=>entry.count||0));
+  const maxSeries=Math.max(1,...stats.topSeries.map(entry=>entry.count||0));
+  const completionPercent=Math.round((stats.progress.completionRate||0)*100);
+  const busiestLabel=wrapped.busiestDay?new Date(`${wrapped.busiestDay.day}T12:00:00`).toLocaleDateString(undefined,{month:'short',day:'numeric'}):'—';
+  const hasData=stats.historyEpisodes>0||stats.progress.titlesStarted>0;
+  const copyWrapped=async()=>{
+    const lines=[
+      `My Mikozora ${wrapped.label} recap`,
+      `${wrapped.episodes} episodes opened · about ${formatWatchDuration(wrapped.estimatedMinutes)} of watch time`,
+      wrapped.topSeries[0]?`Most watched: ${wrapped.topSeries[0].label} (${wrapped.topSeries[0].count})`:null,
+      wrapped.topGenres[0]?`Favourite genre: ${wrapped.topGenres[0].label}`:null,
+      wrapped.topSources[0]?`Favourite source: ${sourceName(wrapped.topSources[0].id)}`:null,
+      wrapped.newSeries.length?`New series started: ${wrapped.newSeries.length}`:null,
+    ].filter(Boolean).join('\n');
+    try{await navigator.clipboard.writeText(lines);notify?.('Monthly recap copied');}
+    catch{notify?.('Could not copy the recap on this device');}
+  };
+  return <div className="content page-content stats-page">
+    <div className="page-heading"><div><div className="eyebrow">WATCH STATS &amp; WRAPPED</div><h1>Your watching story<span>.</span></h1><p>Streaks, favourites, completions, and a monthly recap—built locally from your Mikozora history.</p></div><div className="heading-art"><Flame size={32}/><span>✦</span></div></div>
+    {!hasData?<Empty icon={Flame} title="Your stats will grow here" body="Open a few episodes and Mikozora will start building streaks, favourite genres and monthly recaps from this device’s history." action={()=>browse('all')} actionLabel="Explore anime"/>:<>
+      <section className="stats-overview" aria-label="Watching overview">
+        <div><strong>{stats.currentStreak}</strong><span>current streak</span><small>days</small></div>
+        <div><strong>{stats.longestStreak}</strong><span>longest streak</span><small>days</small></div>
+        <div><strong>{stats.activeDays}</strong><span>active days</span><small>{stats.historyEpisodes} episodes recorded</small></div>
+        <div><strong>{stats.last7Days}</strong><span>last 7 days</span><small>{stats.last30Days} in 30 days</small></div>
+        <div><strong>{formatWatchDuration(stats.estimatedMinutes)}</strong><span>estimated time</span><small>recorded history</small></div>
+        <div><strong>{completionPercent}%</strong><span>completion</span><small>{stats.progress.titlesCompleted} series finished</small></div>
+      </section>
+      <section className="wrapped-panel" aria-label="Monthly wrapped recap">
+        <div className="wrapped-heading"><div><span className="eyebrow">MONTHLY WRAPPED</span><h2>{wrapped.label}</h2><p>{wrapped.episodes} episodes across {wrapped.activeDays} active {wrapped.activeDays===1?'day':'days'} · about {formatWatchDuration(wrapped.estimatedMinutes)}</p></div><label className="wrapped-month"><span>MONTH</span><select aria-label="Wrapped month" value={activeMonth} onChange={event=>setSelectedMonth(event.target.value)}>{stats.availableMonths.map(month=><option key={month} value={month}>{monthLabel(month)}</option>)}</select></label></div>
+        <div className="wrapped-facts">
+          <div><span>Most watched</span><strong>{wrapped.topSeries[0]?.label||'—'}</strong><small>{wrapped.topSeries[0]?`${wrapped.topSeries[0].count} episodes`:''}</small></div>
+          <div><span>Favourite genre</span><strong>{wrapped.topGenres[0]?.label||'—'}</strong><small>{wrapped.topGenres[0]?`${wrapped.topGenres[0].count} episodes`:''}</small></div>
+          <div><span>Favourite source</span><strong>{wrapped.topSources[0]?sourceName(wrapped.topSources[0].id):'—'}</strong><small>{wrapped.topSources[0]?`${wrapped.topSources[0].count} episodes`:''}</small></div>
+          <div><span>Busiest day</span><strong>{busiestLabel}</strong><small>{wrapped.busiestDay?`${wrapped.busiestDay.count} episodes`:''}</small></div>
+          <div><span>New series</span><strong>{wrapped.newSeries.length}</strong><small>started this month</small></div>
+          <div><span>Vs last month</span><strong>{wrapped.episodeChange>0?`+${wrapped.episodeChange}`:wrapped.episodeChange}</strong><small>episodes</small></div>
+        </div>
+        <div className="wrapped-actions"><button className="btn primary" onClick={copyWrapped}><Sparkles size={15}/> Copy monthly recap</button><span>Based only on the history still stored on this device.</span></div>
+      </section>
+      <div className="stats-columns">
+        <section className="stats-panel"><span className="eyebrow">EPISODES PER WEEK</span><h2>Last 8 weeks</h2><div className="stats-bars">{stats.weekly.map(bucket=><div className="stats-bar-row" key={bucket.key}><span>{bucket.label}</span><div><i style={{width:`${Math.round((bucket.count||0)/maxWeekly*100)}%`}}/></div><b>{bucket.count}</b></div>)}</div></section>
+        <section className="stats-panel"><span className="eyebrow">EPISODES PER MONTH</span><h2>Last 6 months</h2><div className="stats-bars">{stats.monthly.map(bucket=><div className="stats-bar-row" key={bucket.key}><span>{bucket.label}</span><div><i style={{width:`${Math.round((bucket.count||0)/maxMonthly*100)}%`}}/></div><b>{bucket.count}</b></div>)}</div></section>
+      </div>
+      <div className="stats-columns three">
+        <section className="stats-panel"><span className="eyebrow">FAVOURITE GENRES</span><h2>What you return to</h2>{stats.topGenres.length?<div className="stats-bars">{stats.topGenres.map(entry=><div className="stats-bar-row" key={entry.id}><span>{entry.label}</span><div><i style={{width:`${Math.round((entry.count||0)/maxGenre*100)}%`}}/></div><b>{entry.count}</b></div>)}</div>:<p className="stats-empty">Genres appear when history entries include them.</p>}</section>
+        <section className="stats-panel"><span className="eyebrow">FAVOURITE SOURCES</span><h2>Where you watch</h2>{stats.topSources.length?<div className="stats-bars">{stats.topSources.map(entry=><div className="stats-bar-row" key={entry.id}><span>{sourceName(entry.id)}</span><div><i style={{width:`${Math.round((entry.count||0)/maxSource*100)}%`}}/></div><b>{entry.count}</b></div>)}</div>:<p className="stats-empty">No source history yet.</p>}</section>
+        <section className="stats-panel"><span className="eyebrow">TOP SERIES</span><h2>Most opened</h2>{stats.topSeries.length?<div className="stats-top-series">{stats.topSeries.map(entry=><button key={entry.id} onClick={()=>entry.item&&open(entry.item)}><span>{entry.label}</span><div><i style={{width:`${Math.round((entry.count||0)/maxSeries*100)}%`}}/></div><b>{entry.count}</b></button>)}</div>:<p className="stats-empty">No series history yet.</p>}</section>
+      </div>
+      <section className="stats-panel completion-panel"><span className="eyebrow">COMPLETION &amp; YOUR SHELF</span><h2>Progress at a glance</h2><div className="completion-grid">
+        <div><strong>{stats.progress.titlesStarted}</strong><span>series started</span></div>
+        <div><strong>{stats.progress.titlesInProgress}</strong><span>in progress</span></div>
+        <div><strong>{stats.progress.titlesCompleted}</strong><span>finished</span></div>
+        <div><strong>{stats.progress.watchedEpisodes}</strong><span>watched in progress records</span></div>
+        <div><strong>{stats.shelf.averageRating?stats.shelf.averageRating.toFixed(1):'—'}</strong><span>average personal rating</span></div>
+        <div><strong>{stats.shelf.withNotes}</strong><span>with notes</span></div>
+      </div>{statuses.length>0&&<div className="stats-statuses">{statuses.map(status=><span key={status.id}>{status.label}: <b>{status.count}</b></span>)}</div>}</section>
+    </>}
+    <p className="privacy-footnote"><ShieldCheck size={15}/> {stats.historyLimitNote} Watch time is estimated at 24 minutes per episode unless a stored record includes a duration.</p>
   </div>;
 }
 function HistoryPage({items,resume,open,clear,browse}) {
@@ -844,13 +1038,14 @@ function DeviceSyncSettings({available=false,folder={},meta={},status={},choose=
     </div>
   </div>;
 }
-function SettingsPage({library,history,clearLibrary,clearHistory,openLicenses,openReleaseNotes,folder,chooseFolder,usePrivate,updates,updatesAvailable,changeAutomatic,changeAlerts,notificationPermission,appearance,changeAppearance,contentPrefs,changeContentPrefs,appUpdate,pendingUpdate,updateStatus,checkUpdate,changeAutoCheck,downloadUpdate,exportBackup,importBackup,smartDownloads,changeSmartDownloads,deviceSync}) {
+function SettingsPage({library,history,clearLibrary,clearHistory,openLicenses,openReleaseNotes,folder,chooseFolder,usePrivate,updates,updatesAvailable,changeAutomatic,changeAlerts,notificationPermission,appearance,changeAppearance,contentPrefs,changeContentPrefs,appUpdate,pendingUpdate,updateStatus,checkUpdate,changeAutoCheck,downloadUpdate,exportBackup,importBackup,smartDownloads,changeSmartDownloads,deviceSync,offlinePlayback,changeOfflinePlayback=()=>{},openDownloads}) {
   const current=!hasNativeDownloads()?(isDesktopApp()?'Unavailable in this Windows build':'Available in the Android app'):!folder?.configured?'Mikozora only · no external folder selected':folder.granted?folder.name||'Selected folder':'Folder access lost · choose it again';
   const notificationText=!updatesAvailable?'Available in the Android app':updates.notificationStatus==='allowed'?(isDesktopApp()?'Allowed in Windows':'Allowed in Android'):updates.notificationStatus==='permission'?'Android notification permission is needed':updates.notificationStatus==='channel-blocked'?'New episode channel is blocked in Android':(isDesktopApp()?'Notifications are blocked in Windows':'Notifications are blocked in Android');
   const updateText=pendingUpdate?`Mikozora ${pendingUpdate.version} is ready — you’re on ${APP_VERSION}.`:updateStatus.phase==='checking'?'Checking GitHub for a newer version…':updateStatus.phase==='error'?(updateStatus.message||'Could not check just now. Try again in a moment.'):appUpdate.lastCheck?`You’re up to date · Checked ${prettyTime(appUpdate.lastCheck)}`:`You’re on Mikozora ${APP_VERSION} · Not checked yet`;
   const smart=smartDownloads||{enabled:false,wifiOnly:true,maxUnwatchedPerSeries:3,notifyWhenReady:true,titleKeys:[],collectionIds:[],presets:{}};
   const smartAvailable=updatesAvailable&&hasNativeDownloads();
   const smartSelectionText=`${smart.titleKeys.length} ${smart.titleKeys.length===1?'series':'series'} · ${smart.collectionIds.length} ${smart.collectionIds.length===1?'collection':'collections'} selected`;
+  const playback=normalizeOfflinePlayback(offlinePlayback);
   return <div className="content page-content"><div className="page-heading"><div><div className="eyebrow">MAKE YOURSELF AT HOME</div><h1>Your space, your way<span>.</span></h1><p>A simple little place for your anime.</p></div><div className="heading-art"><Settings2 size={32}/><span>✦</span></div></div>
     <AppearanceSettings appearance={appearance} changeAppearance={changeAppearance}/>
     <div className="settings-group content-settings"><div className="settings-title">CONTENT <span>AGE RATINGS &amp; NSFW</span></div><div className="setting-row"><div className="setting-icon"><EyeOff size={19}/></div><div><strong>Hide NSFW content</strong><p>{contentPrefs.hideNsfw?'On · Adult-marked titles are hidden':'Off · Adult-marked titles can appear'}</p></div><button aria-label="Hide NSFW content" aria-pressed={!!contentPrefs.hideNsfw} onClick={()=>changeContentPrefs({hideNsfw:!contentPrefs.hideNsfw})}>{contentPrefs.hideNsfw?'On':'Off'}</button></div>
@@ -867,6 +1062,17 @@ function SettingsPage({library,history,clearLibrary,clearHistory,openLicenses,op
     </div>
     <div className="settings-group folder-settings"><div className="settings-title">DOWNLOAD LOCATION <span>EXTERNAL PLAYER</span></div><div className="setting-row"><div className="setting-icon"><FolderHeart size={19}/></div><div><strong>Playable copies</strong><p className="folder-name">{current}</p></div><button onClick={chooseFolder} disabled={!hasNativeDownloads()}>{folder?.configured?'Change':'Choose folder'}</button></div>
       <div className="folder-explainer"><p>New playable MP4 copies are organized into a folder for each anime or donghua. Existing downloads can be saved from Downloads; earlier exported files stay where they are.</p><p>After Mikozora verifies the saved video and subtitle files, it removes its private copy to free space. Mikozora then plays the file from your folder. If verification fails or subtitles cannot be safely copied, the private copy stays. Downloading and conversion still need extra storage temporarily.</p>{folder?.configured&&<button className="text-link" onClick={usePrivate}>Stop saving folder copies</button>}</div>
+    </div>
+    <div className="settings-group offline-playback-settings"><div className="settings-title">OFFLINE PLAYBACK <span>ANDROID &amp; WINDOWS</span></div>
+      <div className="setting-row"><div className="setting-icon"><Gauge size={19}/></div><div><strong>Remembered speed</strong><p>Saved episodes open at this playback speed.</p></div><select className="smart-select" aria-label="Remembered offline playback speed" value={playback.playbackRate} onChange={event=>changeOfflinePlayback({playbackRate:Number(event.target.value)})}>{OFFLINE_PLAYBACK_RATES.map(rate=><option key={rate} value={rate}>{rate}×</option>)}</select></div>
+      <div className="setting-row"><div className="setting-icon"><Clock3 size={19}/></div><div><strong>Seek buttons</strong><p>How far the back and forward buttons move in the offline player. On Windows, the arrow keys use it too.</p></div><select className="smart-select" aria-label="Offline seek length" value={playback.seekSeconds} onChange={event=>changeOfflinePlayback({seekSeconds:Number(event.target.value)})}>{OFFLINE_SEEK_SECONDS.map(seconds=><option key={seconds} value={seconds}>±{seconds} seconds</option>)}</select></div>
+      <div className="setting-row"><div className="setting-icon"><Film size={19}/></div><div><strong>Subtitle size</strong><p>Text size for separate subtitle files saved with downloads.</p></div><select className="smart-select" aria-label="Offline subtitle size" value={playback.subtitleSize} onChange={event=>changeOfflinePlayback({subtitleSize:Number(event.target.value)})}>{OFFLINE_SUBTITLE_SIZES.map(size=><option key={size} value={size}>{size}px</option>)}</select></div>
+      <div className="setting-row"><div className="setting-icon"><Sparkles size={19}/></div><div><strong>Subtitle color</strong><p>Choose the text color used by the offline players.</p></div><select className="smart-select" aria-label="Offline subtitle color" value={playback.subtitleColor} onChange={event=>changeOfflinePlayback({subtitleColor:event.target.value})}>{OFFLINE_SUBTITLE_COLORS.map(color=><option key={color.id} value={color.id}>{color.label}</option>)}</select></div>
+      <div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div><strong>Subtitle background</strong><p>Keep captions readable over bright scenes, or turn the background off.</p></div><select className="smart-select" aria-label="Offline subtitle background" value={playback.subtitleBackground} onChange={event=>changeOfflinePlayback({subtitleBackground:event.target.value})}>{OFFLINE_SUBTITLE_BACKGROUNDS.map(background=><option key={background.id} value={background.id}>{background.label}</option>)}</select></div>
+      <div className="setting-row"><div className="setting-icon"><Moon size={19}/></div><div><strong>Sleep timer</strong><p>Pause a downloaded episode after this long, starting when the offline player opens.</p></div><select className="smart-select" aria-label="Offline sleep timer" value={playback.sleepTimerMinutes} onChange={event=>changeOfflinePlayback({sleepTimerMinutes:Number(event.target.value)})}>{OFFLINE_SLEEP_MINUTES.map(minutes=><option key={minutes} value={minutes}>{minutes?`${minutes} minutes`:'Off'}</option>)}</select></div>
+      <div className="setting-row"><div className="setting-icon"><Play size={19}/></div><div><strong>Auto-play next download</strong><p>Continue with the next completed episode from the same series when one is already saved.</p></div><button aria-label="Auto-play next downloaded episode" aria-pressed={playback.autoPlayNext} onClick={()=>changeOfflinePlayback({autoPlayNext:!playback.autoPlayNext})}>{playback.autoPlayNext?'On':'Off'}</button></div>
+      <div className="setting-row"><div className="setting-icon"><HardDrive size={19}/></div><div><strong>Offline Manager</strong><p>Storage by series and source, watched cleanup, bulk actions, and queue order.</p></div><button onClick={openDownloads}>Open</button></div>
+      <div className="folder-explainer"><p>Mikozora opens saved episodes with these choices on Android and Windows. Changing speed inside the Windows player updates the remembered speed; Android carries a speed change through an auto-play chain. Burned-in subtitles are part of the video and cannot be restyled.</p></div>
     </div>
     <DeviceSyncSettings {...deviceSync}/>
     <div className="settings-group"><div className="settings-title">YOUR DATA <span>ON THIS DEVICE</span></div><div className="setting-row"><div className="setting-icon"><Bookmark size={19}/></div><div><strong>Saved library</strong><p>{library.length} {library.length===1?'title':'titles'} saved locally</p></div><button onClick={clearLibrary} disabled={!library.length}>Clear</button></div><div className="setting-row"><div className="setting-icon"><History size={19}/></div><div><strong>Watch history</strong><p>{history.length} recently opened {history.length===1?'episode':'episodes'}</p></div><button onClick={clearHistory} disabled={!history.length}>Clear</button></div><div className="setting-row"><div className="setting-icon"><HardDrive size={19}/></div><div><strong>Back up your data</strong><p>Save your library, collections, personal ratings, notes and shelf statuses, history, watch progress, linked source versions and settings to a file you keep. Downloaded videos are not included.</p></div><button onClick={exportBackup}>Export</button></div><div className="setting-row"><div className="setting-icon"><RotateCcw size={19}/></div><div><strong>Restore a backup</strong><p>Replace this device's library, collections, personal shelf, history, progress, linked source versions and settings with a backup file.</p></div><button onClick={importBackup}>Import</button></div></div><div className="settings-group"><div className="settings-title">ABOUT <span>MIKOZORA {APP_VERSION}</span></div><div className="setting-row"><div className="setting-icon"><Download size={19}/></div><div><strong>App updates</strong><p>{updateText}</p></div>{pendingUpdate?<button onClick={downloadUpdate}>Download</button>:<button onClick={()=>checkUpdate(true)} disabled={updateStatus.phase==='checking'}>{updateStatus.phase==='checking'?'Checking…':updateStatus.phase==='error'?'Try again':'Check'}</button>}</div><div className="setting-row"><div className="setting-icon"><RefreshCw size={19}/></div><div><strong>Check automatically</strong><p>Check GitHub when Mikozora starts, when you return to it, and periodically while it stays open.</p></div><button aria-label="Automatic update checks" aria-pressed={!!appUpdate.autoCheck} onClick={()=>changeAutoCheck(!appUpdate.autoCheck)}>{appUpdate.autoCheck?'On':'Off'}</button></div><div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div><strong>Private by default</strong><p>Your library, collections and history stay on this device. No account is required.</p></div></div><div className="setting-row"><div className="setting-icon"><Film size={19}/></div><div><strong>Player availability</strong><p>Video hosts may restrict embedding or be unavailable. Try another server or open the source page.</p></div></div><div className="setting-row"><div className="setting-icon"><Sparkles size={19}/></div><div><strong>What’s new</strong><p>See the latest changes to Mikozora.</p></div><button onClick={openReleaseNotes}>View</button></div><div className="setting-row"><div className="setting-icon"><CircleHelp size={19}/></div><div><strong>Open source licenses</strong><p>Credits and licenses for Mikozora and its dependencies.</p></div><button onClick={openLicenses}>View</button></div></div></div>;
@@ -949,12 +1155,18 @@ function PlayerModal({player,close,onEpisode,watched,markWatched}) {
     <p className="player-disclaimer">Video is provided by the selected third-party server. If it doesn’t load here, try another server or open the original site. Playback speed and seeking inside an embedded episode stay with that server’s player; Mikozora’s controls handle episodes, servers and watched marks.</p>
   </div></div>;
 }
-function OfflinePlayerModal({entry,close}) {
-  const videoRef=useRef(null); const wrapRef=useRef(null); const saveTick=useRef(0); const [failed,setFailed]=useState(false); const [playbackRate,setPlaybackRate]=useState(1);
-  const download=entry.download||{};
+function OfflinePlayerModal({entry,close,prefs,changePrefs=()=>{},downloads=[],playOffline,notify}) {
+  const cleanPrefs=normalizeOfflinePlayback(prefs);
+  const videoRef=useRef(null); const wrapRef=useRef(null); const saveTick=useRef(0); const endedRef=useRef(false);
+  const [failed,setFailed]=useState(false); const [playbackRate,setPlaybackRate]=useState(cleanPrefs.playbackRate);
+  const [sleepEndsAt,setSleepEndsAt]=useState(0); const [sleepRemainingSeconds,setSleepRemainingSeconds]=useState(0);
+  const download=entry.download||downloads.find(d=>d.id===entry.id)||{};
+  const nextDownloads=useMemo(()=>nextDownloadedEpisodes(downloads,download,20),[downloads,download.id,download.episode?.url]);
+  const nextDownload=nextDownloads[0]||null;
   const tracks=download.storageMode==='folder'?(Array.isArray(download.exportTracks)?download.exportTracks:[]):(Array.isArray(download.tracks)?download.tracks:[]);
   const token=encodeURIComponent(entry.token||'');
   const positionKey='moku.offlinePositions.v1';
+  const sleepKey='moku.offlineSleepDeadline.v1';
   const savePosition=()=>{
     const video=videoRef.current;if(!video||!Number.isFinite(video.duration)||!video.duration)return;
     try{
@@ -963,11 +1175,13 @@ function OfflinePlayerModal({entry,close}) {
       localStorage.setItem(positionKey,JSON.stringify(all));
     }catch{/* position memory is best-effort */}
   };
-  const closePlayer=()=>{savePosition();close();};
+  const clearSleepDeadline=()=>{try{sessionStorage.removeItem(sleepKey);}catch{/* best effort */}};
+  const closePlayer=()=>{savePosition();clearSleepDeadline();close();};
   const applyPlaybackRate=value=>{
-    const next=Number(value)||1;
+    const next=normalizeOfflinePlayback({...cleanPrefs,playbackRate:value}).playbackRate;
     setPlaybackRate(next);
     if(videoRef.current)videoRef.current.playbackRate=next;
+    changePrefs({playbackRate:next});
   };
   const seekBy=seconds=>{
     const video=videoRef.current;if(!video)return;
@@ -988,17 +1202,66 @@ function OfflinePlayerModal({entry,close}) {
     }catch{/* the video element's own fullscreen control remains available */}
   };
   const cyclePlaybackRate=delta=>{
-    const rates=[0.5,0.75,1,1.25,1.5,2];
-    const index=Math.max(0,rates.indexOf(playbackRate));
-    applyPlaybackRate(rates[wrappedIndex(index,delta,rates.length)]);
+    const index=Math.max(0,OFFLINE_PLAYBACK_RATES.indexOf(playbackRate));
+    applyPlaybackRate(OFFLINE_PLAYBACK_RATES[wrappedIndex(index,delta,OFFLINE_PLAYBACK_RATES.length)]);
   };
+  const cancelSleepTimer=()=>{
+    clearSleepDeadline();
+    setSleepEndsAt(0);
+    setSleepRemainingSeconds(0);
+    notify?.('Sleep timer off for this episode');
+  };
+  const handleEnded=()=>{
+    savePosition();
+    if(endedRef.current)return;
+    endedRef.current=true;
+    if(cleanPrefs.autoPlayNext&&nextDownload){
+      notify?.(`Next offline episode ${nextDownload.episode?.number||''}`);
+      playOffline?.(nextDownload);
+    }
+  };
+  const playNextDownload=()=>{
+    if(!nextDownload||endedRef.current)return;
+    endedRef.current=true;
+    savePosition();
+    playOffline?.(nextDownload);
+  };
+  useEffect(()=>{endedRef.current=false;setFailed(false);},[entry.id]);
+  useEffect(()=>{
+    if(cleanPrefs.sleepTimerMinutes<=0){setSleepEndsAt(0);setSleepRemainingSeconds(0);return;}
+    let deadline=0;
+    try{deadline=Number(sessionStorage.getItem(sleepKey))||0;}catch{/* start a fresh timer */}
+    if(deadline<=Date.now()){
+      deadline=Date.now()+cleanPrefs.sleepTimerMinutes*60000;
+      try{sessionStorage.setItem(sleepKey,String(deadline));}catch{/* this session only */}
+    }
+    setSleepEndsAt(deadline);
+    setSleepRemainingSeconds(Math.max(0,Math.ceil((deadline-Date.now())/1000)));
+  },[entry.id,cleanPrefs.sleepTimerMinutes]);
+  useEffect(()=>{
+    if(!sleepEndsAt)return;
+    const tick=()=>{
+      const remaining=Math.ceil((sleepEndsAt-Date.now())/1000);
+      setSleepRemainingSeconds(Math.max(0,remaining));
+      if(remaining<=0){
+        const video=videoRef.current;
+        if(video){savePosition();video.pause();}
+        clearSleepDeadline();
+        setSleepEndsAt(0);
+        notify?.('Sleep timer paused playback');
+      }
+    };
+    tick();
+    const timer=setInterval(tick,1000);
+    return()=>clearInterval(timer);
+  },[sleepEndsAt,entry.id]);
   useEffect(()=>{
     const key=e=>{
       const active=document.activeElement;
       if(active&&(active.tagName==='INPUT'||active.tagName==='TEXTAREA'||active.tagName==='SELECT'||active.isContentEditable))return;
       if(e.key==='Escape'&&!document.fullscreenElement)closePlayer();
-      else if(e.key==='ArrowLeft'){e.preventDefault();seekBy(-10);}
-      else if(e.key==='ArrowRight'){e.preventDefault();seekBy(10);}
+      else if(e.key==='ArrowLeft'){e.preventDefault();seekBy(-cleanPrefs.seekSeconds);}
+      else if(e.key==='ArrowRight'){e.preventDefault();seekBy(cleanPrefs.seekSeconds);}
       else if(e.key==='Home'){e.preventDefault();restart();}
       else if(e.key.toLowerCase()==='f'){e.preventDefault();void toggleFullscreen();}
       else if(e.key==='['){e.preventDefault();cyclePlaybackRate(-1);}
@@ -1006,7 +1269,7 @@ function OfflinePlayerModal({entry,close}) {
     };
     window.addEventListener('keydown',key);
     return()=>window.removeEventListener('keydown',key);
-  },[entry.id,playbackRate]);
+  },[entry.id,playbackRate,cleanPrefs.seekSeconds]);
   const restorePosition=()=>{
     const video=videoRef.current;if(!video||!Number.isFinite(video.duration))return;
     video.playbackRate=playbackRate;
@@ -1019,20 +1282,23 @@ function OfflinePlayerModal({entry,close}) {
   const rememberPosition=()=>{
     const now=Date.now();if(now-saveTick.current<5000)return;saveTick.current=now;savePosition();
   };
+  const sleepLabel=sleepEndsAt?`${Math.floor(sleepRemainingSeconds/60)}:${String(sleepRemainingSeconds%60).padStart(2,'0')}`:'';
   return <div className="modal-backdrop" role="presentation" onMouseDown={closePlayer}><div className="player-modal offline-player-modal" role="dialog" aria-modal="true" aria-label="Offline episode player" onMouseDown={e=>e.stopPropagation()}>
     <div className="player-header"><div><span className="eyebrow">OFFLINE · SAVED ON THIS PC</span><h2>{download.item?.title||'Downloaded episode'}</h2><p>Episode {download.episode?.number||''}{download.item?.source?` · ${sourceName(download.item.source)}`:''}</p></div><button className="icon-btn" onClick={closePlayer} aria-label="Close offline player"><X size={20}/></button></div>
-    <div className="offline-video-wrap" ref={wrapRef}><video ref={videoRef} controls autoPlay playsInline preload="metadata" onLoadedMetadata={restorePosition} onTimeUpdate={rememberPosition} onPause={savePosition} onEnded={savePosition} onError={()=>setFailed(true)}>
+    <div className="offline-video-wrap" ref={wrapRef} style={offlineSubtitleStyle(cleanPrefs)}><video ref={videoRef} controls autoPlay playsInline preload="metadata" onLoadedMetadata={restorePosition} onTimeUpdate={rememberPosition} onPause={savePosition} onEnded={handleEnded} onError={()=>setFailed(true)}>
       <source src={`mikozora://app/api/download/${entry.id}/video?token=${token}`} type="video/mp4"/>
       {tracks.map((track,index)=><track key={`${track.file||track.path||index}-${index}`} kind="subtitles" src={`mikozora://app/api/download/${entry.id}/subtitle/${index}?token=${token}`} srcLang={track.language||'und'} label={track.label||`Subtitles ${index+1}`} default={!!track.preferred||index===0}/>)}
     </video></div>
     <div className="offline-controls" aria-label="Offline playback tools">
-      <button type="button" onClick={()=>seekBy(-10)} aria-label="Back 10 seconds">−10s</button>
+      <button type="button" onClick={()=>seekBy(-cleanPrefs.seekSeconds)} aria-label={`Back ${cleanPrefs.seekSeconds} seconds`}>−{cleanPrefs.seekSeconds}s</button>
       <button type="button" onClick={restart}><RotateCcw size={14}/> Restart</button>
-      <label>SPEED<select aria-label="Offline playback speed" value={playbackRate} onChange={event=>applyPlaybackRate(event.target.value)}>{[0.5,0.75,1,1.25,1.5,2].map(rate=><option key={rate} value={rate}>{rate}×</option>)}</select></label>
-      <button type="button" onClick={()=>seekBy(10)} aria-label="Forward 10 seconds">+10s</button>
+      <label>SPEED<select aria-label="Offline playback speed" value={playbackRate} onChange={event=>applyPlaybackRate(event.target.value)}>{OFFLINE_PLAYBACK_RATES.map(rate=><option key={rate} value={rate}>{rate}×</option>)}</select></label>
+      <button type="button" onClick={()=>seekBy(cleanPrefs.seekSeconds)} aria-label={`Forward ${cleanPrefs.seekSeconds} seconds`}>+{cleanPrefs.seekSeconds}s</button>
+      {nextDownload&&<button type="button" onClick={playNextDownload}><Play size={14} fill="currentColor"/> Next EP {nextDownload.episode?.number||''}</button>}
+      {sleepEndsAt>0&&<button type="button" onClick={cancelSleepTimer} aria-label="Cancel sleep timer"><Moon size={14}/> Sleep {sleepLabel} · Cancel</button>}
       <button type="button" onClick={toggleFullscreen}><Maximize size={14}/> Fullscreen</button>
     </div>
-    {failed?<p className="offline-player-note offline-player-error"><AlertCircle size={14}/> Could not play this saved file. Check that it still exists, or remove and download the episode again.</p>:<p className="offline-player-note"><Check size={14}/> Playing only from this computer. Your place is remembered on this device. Shortcuts: ←/→ seek 10 seconds · [ / ] speed · F fullscreen.</p>}
+    {failed?<p className="offline-player-note offline-player-error"><AlertCircle size={14}/> Could not play this saved file. Check that it still exists, or remove and download the episode again.</p>:<p className="offline-player-note"><Check size={14}/> Playing only from this computer. Your place is remembered on this device. Shortcuts: ←/→ seek {cleanPrefs.seekSeconds} seconds · [ / ] speed · F fullscreen.{sleepEndsAt?` Sleep timer pauses in ${sleepLabel}.`:''}{nextDownload&&cleanPrefs.autoPlayNext?` Next downloaded episode ${nextDownload.episode?.number||''} will play automatically.`:''}</p>}
   </div></div>;
 }
 function LicenseModal({close}) {
@@ -1168,6 +1434,16 @@ function App() {
   const [sourceMatches,setSourceMatchesState]=useState(()=>{try{return readSourceMatches(window.localStorage);}catch{return normalizeSourceMatches(null);}});
   useEffect(()=>{try{saveSourceMatches(window.localStorage,sourceMatches);}catch{/* storage can be disabled */}},[sourceMatches]);
   const sourceRelatedKeys=useMemo(()=>relatedKeysByTitle(sourceMatches),[sourceMatches]);
+  const [offlineManager,setOfflineManagerState]=useState(()=>{try{return readOfflineManager(window.localStorage);}catch{return normalizeOfflineManager(null);}});
+  useEffect(()=>{try{saveOfflineManager(window.localStorage,offlineManager);}catch{/* storage can be disabled */}},[offlineManager]);
+  const [offlinePlayback,setOfflinePlaybackState]=useState(()=>{try{return readOfflinePlayback(window.localStorage);}catch{return normalizeOfflinePlayback(null);}});
+  useEffect(()=>{try{saveOfflinePlayback(window.localStorage,offlinePlayback);}catch{/* storage can be disabled */}},[offlinePlayback]);
+  const [watchPlanner,setWatchPlannerState]=useState(()=>{try{return readWatchPlanner(window.localStorage);}catch{return {};}});
+  useEffect(()=>{try{saveWatchPlanner(window.localStorage,watchPlanner);}catch{/* storage can be disabled */}},[watchPlanner]);
+  const autoCleanupAttempted=useRef('');
+  const changeOfflineManager=patch=>setOfflineManagerState(previous=>normalizeOfflineManager({...previous,...patch}));
+  const changeOfflinePlayback=patch=>setOfflinePlaybackState(previous=>normalizeOfflinePlayback({...previous,...patch}));
+  const changeWatchPlan=(item,patch)=>setWatchPlannerState(previous=>setWatchPlan(previous,item,patch));
   useEffect(()=>{
     setLibraryMetaState(previous=>{
       const next=pruneLibraryMeta(previous,new Set(library.map(identity)));
@@ -1697,11 +1973,18 @@ function App() {
   const refresh=()=>{clearNetworkCache();setRefreshKey(x=>x+1);setToast('Refreshing your sources');};
   const remember=(item,episode)=>setHistory(prev=>[{item:{source:item.source,url:item.url,title:item.title,image:item.image,type:item.type,badge:item.badge,status:item.status,genres:item.genres,aired:item.aired,year:item.year,rating:item.rating,nsfw:item.nsfw},episode:{number:episode.number,url:episode.url,title:episode.title},time:Date.now()},...prev.filter(x=>!(identity(x.item)===identity(item)&&String(x.episode.number)===String(episode.number)))].slice(0,100));
   const playOffline=download=>{
+    if(!download?.id)return;
     if(download?.item&&download?.episode?.url){
       remember(download.item,download.episode);
       setStoredProgress(prev=>recordWatch(prev,download.item,download.episode,[],Date.now()));
     }
-    openDownload(download.id);
+    const availableDownloads=downloadsRef.current.some(record=>record.id===download.id)
+      ? downloadsRef.current
+      : [download,...downloadsRef.current];
+    const nextDownloads=offlinePlayback.autoPlayNext
+      ? nextDownloadedEpisodes(availableDownloads,download,50)
+      : nextDownloadedEpisodes(availableDownloads,download,1);
+    openDownload(download.id,offlinePlaybackPayload(offlinePlayback,nextDownloads));
   };
   const play=async(item,episode,options={})=>{
     const request=++playbackRequest.current;
@@ -1750,6 +2033,55 @@ function App() {
     }
   };
   playRef.current=play;
+  const watchedDownloadInfo=useMemo(()=>{
+    const directByTitle=new Map();
+    const addDirect=(key,url)=>{
+      if(!key||!url)return;
+      if(!directByTitle.has(key))directByTitle.set(key,new Set());
+      directByTitle.get(key).add(url);
+    };
+    for(const entry of progress)for(const url of entry.watched||[])addDirect(entry.key,url);
+    const latestByUrl=new Map();
+    const latestByNumber=new Map();
+    for(const entry of history){
+      if(!entry?.item||!entry?.episode?.url)continue;
+      const key=identity(entry.item);
+      const time=Number(entry.time)||0;
+      addDirect(key,entry.episode.url);
+      const urlKey=`${key}\n${entry.episode.url}`;
+      latestByUrl.set(urlKey,Math.max(latestByUrl.get(urlKey)||0,time));
+      const number=episodeNumberKey(entry.episode);
+      if(number){
+        const numberKey=`${key}\n${number}`;
+        latestByNumber.set(numberKey,Math.max(latestByNumber.get(numberKey)||0,time));
+      }
+    }
+    const updatedByKey=new Map(progress.map(entry=>[entry.key,entry.updatedAt||0]));
+    const numbersByComponent=new Map();
+    const out={};
+    for(const download of downloads){
+      if(!download?.id||!download?.item||!download?.episode?.url)continue;
+      const ownKey=identity(download.item);
+      let related=linkedTitleKeys(sourceMatches,download.item);
+      if(!Array.isArray(related)||!related.length)related=[ownKey];
+      if(!related.includes(ownKey))related=[ownKey,...related];
+      const component=[...related].sort().join('\n');
+      if(!numbersByComponent.has(component))numbersByComponent.set(component,watchedEpisodeNumbers(progress,history,related));
+      const numbers=numbersByComponent.get(component);
+      const number=episodeNumberKey(download.episode);
+      const watched=!!(directByTitle.get(ownKey)?.has(download.episode.url)||(number&&numbers.has(number)));
+      let watchedAt=latestByUrl.get(`${ownKey}\n${download.episode.url}`)||0;
+      if(watched)for(const key of related){
+        if(number)watchedAt=Math.max(watchedAt,latestByNumber.get(`${key}\n${number}`)||0);
+        watchedAt=Math.max(watchedAt,updatedByKey.get(key)||0);
+      }
+      out[download.id]={watched,watchedAt};
+    }
+    return out;
+  },[downloads,progress,history,sourceMatches]);
+  const offlineCleanupCandidates=useMemo(()=>downloadCleanupCandidates(downloads,offlineManager,watchedDownloadInfo),[downloads,offlineManager,watchedDownloadInfo]);
+  const catchUpQueue=useMemo(()=>buildCatchUpQueue({progress,history,libraryMeta,plans:watchPlanner,relatedKeysByTitle:sourceRelatedKeys,sort:'smart',limit:50}),[progress,history,libraryMeta,watchPlanner,sourceRelatedKeys]);
+  const catchUpSummary=useMemo(()=>plannerSummary(catchUpQueue),[catchUpQueue]);
   const continueItems=useMemo(()=>continueWatching(progress,history,12,sourceRelatedKeys),[progress,history,sourceRelatedKeys]);
   const libraryProgress=useMemo(()=>progressByTitle(progress,history,sourceRelatedKeys),[progress,history,sourceRelatedKeys]);
   const resumeNext=entry=>play(entry.item,entry.episode,{playlist:entry.episodes});
@@ -1824,6 +2156,60 @@ function App() {
     try{await removeDownload(d.id);setDownloads(await getDownloads());setToast('Download removed');}
     catch(e){setToast(e.message||'Could not remove this download');}
   };
+  const performBulkRemove=async records=>{
+    const unique=[...new Map((Array.isArray(records)?records:[]).filter(d=>d?.id).map(d=>[d.id,d])).values()];
+    let removed=0;
+    let lastError='';
+    for(const d of unique){
+      try{await removeDownload(d.id);removed++;}
+      catch(e){lastError=e.message||'Could not remove a download';}
+    }
+    try{setDownloads(await getDownloads());}catch{/* the Downloads page will refresh again shortly */}
+    return {removed,failed:unique.length-removed,lastError,total:unique.length};
+  };
+  const removeDownloadsBulk=async records=>{
+    const unique=[...new Map((Array.isArray(records)?records:[]).filter(d=>d?.id).map(d=>[d.id,d])).values()];
+    if(!unique.length)return;
+    const size=bytesLabel(unique.reduce((sum,d)=>sum+downloadBytes(d),0));
+    if(!window.confirm(`Remove ${unique.length} ${unique.length===1?'download':'downloads'} from Mikozora${size?` (${size})`:''}?\n\nAny playable copies in your chosen folder will remain.`))return;
+    const result=await performBulkRemove(unique);
+    setToast(result.failed?`Removed ${result.removed}; ${result.failed} could not be removed${result.lastError?`: ${result.lastError}`:''}`:`Removed ${result.removed} ${result.removed===1?'download':'downloads'}`);
+  };
+  const cleanupWatchedDownloads=async(automatic=false)=>{
+    const candidates=downloadCleanupCandidates(downloadsRef.current,offlineManager,watchedDownloadInfo);
+    const records=candidates.map(candidate=>candidate.record);
+    if(!records.length){
+      if(!automatic)setToast('No watched downloads match your cleanup rules');
+      return;
+    }
+    const size=bytesLabel(cleanupBytes(candidates));
+    if(!automatic&&!window.confirm(`Remove ${records.length} watched ${records.length===1?'download':'downloads'}${size?` (${size})`:''}?\n\nOnly completed Mikozora copies that match your storage rules are included. Verified folder-only files stay where they are.`))return;
+    const result=await performBulkRemove(records);
+    if(result.removed)setToast(`${automatic?'Offline cleanup removed':'Cleaned'} ${result.removed} watched ${result.removed===1?'download':'downloads'}${size?` · ${size}`:''}`);
+    else if(!automatic||result.failed)setToast(result.lastError||'Could not clean watched downloads');
+  };
+  const moveDownloadQueue=async(d,move)=>{
+    const current=queueOrderIds(downloadsRef.current,offlineManager);
+    const next=moveQueueOrder(current,d.id,move);
+    if(next.join(',')===current.join(','))return;
+    changeOfflineManager({queueOrder:next});
+    try{
+      const result=await setDownloadQueueOrder(next);
+      if(Array.isArray(result?.queueOrder)&&result.queueOrder.length)changeOfflineManager({queueOrder:result.queueOrder});
+      try{setDownloads(await getDownloads());}catch{/* polling will refresh the list */}
+      setToast('Download queue updated');
+    }catch(e){
+      setToast(e.message||'Queue order saved here, but the native download queue could not be updated');
+    }
+  };
+  useEffect(()=>{
+    if(route.page!=='downloads'||downloadsLoading||!offlineManager.autoCleanup||offlinePlayer)return;
+    if(!offlineCleanupCandidates.length)return;
+    const signature=[offlineManager.storageLimitGb,offlineManager.autoDeleteWatchedDays,...offlineCleanupCandidates.map(candidate=>candidate.record.id)].join('|');
+    if(autoCleanupAttempted.current===signature)return;
+    autoCleanupAttempted.current=signature;
+    void cleanupWatchedDownloads(true);
+  },[route.page,downloadsLoading,offlineManager,offlineCleanupCandidates,offlinePlayer]);
   const retryDownload=async d=>{
     try{await enqueueDownloads([{item:d.item,episode:d.episode}],d.language||'english',d.serverChoice||'auto',d.qualityChoice||'best',d.subtitleMode||'auto',Array.isArray(d.subtitleSelection)?d.subtitleSelection:[]);setDownloads(await getDownloads());setToast('Added back to the queue');}
     catch(e){setToast(e.message||'Could not retry this download');}
@@ -1845,16 +2231,18 @@ function App() {
   if(experience) return <WelcomeScreen mode={experience.mode} manual={!!experience.manual} onContinue={finishExperience}/>;
   const common={open,has,toggle,browse};
   return <div className="app-shell"><SideNav page={route.page} go={go} unread={updates.unreadCount}/><div className="main-shell"><TopBar page={route.page} go={go} submitSearch={submitSearch} refresh={refresh} unread={updates.unreadCount}/>{pendingUpdate&&<UpdateBanner info={pendingUpdate} download={downloadAppUpdate} dismiss={dismissAppUpdate}/>}<main key={route.page==='detail'?identity(route.item):route.page}>
-    {route.page==='home'&&<HomePage {...common} recent={history} refreshKey={refreshKey} hideNsfw={hideNsfw} continueItems={continueItems} resumeNext={resumeNext} removeContinue={removeContinue} library={library} progress={progress} libraryMeta={libraryMeta}/>}
+    {route.page==='home'&&<HomePage {...common} recent={history} refreshKey={refreshKey} hideNsfw={hideNsfw} continueItems={continueItems} resumeNext={resumeNext} removeContinue={removeContinue} library={library} progress={progress} libraryMeta={libraryMeta} catchUpItems={catchUpQueue} catchUpSummary={catchUpSummary} openPlanner={()=>go('planner')}/>}
     {route.page==='browse'&&<BrowsePage {...common} query={query} setQuery={setQuery} source={browseSource} setSource={setBrowseSource} refreshKey={refreshKey} hideNsfw={hideNsfw} openSettings={()=>go('settings')} library={library} history={history} progress={progress} libraryMeta={libraryMeta} sourceMatches={sourceMatches}/>}
     {route.page==='detail'&&<DetailPage item={route.item} openEpisode={play} has={has} toggle={toggle} organize={item=>setCollectionDialog({kind:'title',item})} back={back} history={history} refreshKey={refreshKey} queueEpisodes={queueEpisodes} downloads={downloads} showDownloads={()=>go('downloads')} notify={setToast} hideNsfw={hideNsfw} openSettings={()=>go('settings')} watched={watchedUrlSet(progress,history,route.item)} onEpisodesReady={syncProgress} markWatched={markWatched} smartSelection={smartTitleSelection(smartDownloads,identity(route.item),collections)} smartEnabled={smartDownloads.enabled} toggleSmartDownload={toggleSmartTitle} libraryMeta={libraryMeta} updateLibraryMeta={updateLibraryMeta} openItem={open} linkedItems={linkedTitleItems(sourceMatches,route.item,knownSourceItems)} linkedKeys={linkedTitleKeys(sourceMatches,route.item)} watchedNumbers={watchedEpisodeNumbers(progress,history,linkedTitleKeys(sourceMatches,route.item))} onLinkSource={linkSourceVersion} onUnlinkSource={unlinkSourceVersion}/>}
-    {route.page==='library'&&<LibraryPage {...common} items={library} collections={collections} activeCollection={activeCollection} setActiveCollection={setActiveCollection} onCreate={()=>setCollectionDialog({kind:'new'})} onRename={id=>setCollectionDialog({kind:'rename',id})} onDelete={removeCollection} onMembers={id=>setCollectionDialog({kind:'members',id})} onFavourite={favourite} unreadTitles={unreadTitles} progressByTitle={libraryProgress} hideNsfw={hideNsfw} smartCollections={smartDownloads.collectionIds} onSmartCollection={toggleSmartCollection} libraryMeta={libraryMeta} onRemoveTitles={removeLibraryTitles} onAddTitlesToCollection={addTitlesToCollection}/>}
+    {route.page==='library'&&<LibraryPage {...common} items={library} collections={collections} activeCollection={activeCollection} setActiveCollection={setActiveCollection} onCreate={()=>setCollectionDialog({kind:'new'})} onRename={id=>setCollectionDialog({kind:'rename',id})} onDelete={removeCollection} onMembers={id=>setCollectionDialog({kind:'members',id})} onFavourite={favourite} unreadTitles={unreadTitles} progressByTitle={libraryProgress} hideNsfw={hideNsfw} smartCollections={smartDownloads.collectionIds} onSmartCollection={toggleSmartCollection} libraryMeta={libraryMeta} onRemoveTitles={removeLibraryTitles} onAddTitlesToCollection={addTitlesToCollection} openPlanner={()=>go('planner')} openStats={()=>go('stats')}/>}
+    {route.page==='planner'&&<PlannerPage progress={progress} history={history} libraryMeta={libraryMeta} plans={watchPlanner} relatedKeysByTitle={sourceRelatedKeys} open={open} resumeNext={resumeNext} queueEpisodes={queueEpisodes} changePlan={changeWatchPlan} browse={browse}/>}
+    {route.page==='stats'&&<StatsPage history={history} progress={progress} library={library} libraryMeta={libraryMeta} relatedKeysByTitle={sourceRelatedKeys} open={open} browse={browse} notify={setToast}/>}
     {route.page==='updates'&&<UpdatesPage state={updates} available={updatesAvailable} syncError={updatesSyncError} actionError={updatesActionError} check={checkNow} readAll={readAllUpdates} openUpdate={viewUpdate} openLibrary={()=>go('library')} openSettings={()=>go('settings')}/>}
-    {route.page==='downloads'&&<DownloadsPage items={downloads} loading={downloadsLoading} remove={deleteDownload} retry={retryDownload} change={d=>setDownloadModal({item:d.item,episodes:[d.episode],language:d.language||'english',serverChoice:d.serverChoice||'auto',subtitleMode:d.subtitleMode||'auto',subtitleSelection:Array.isArray(d.subtitleSelection)?d.subtitleSelection:[]})} browse={browse} folder={folder} saveCopy={saveCopy} openSettings={()=>go('settings')} playOffline={playOffline}/>}
+    {route.page==='downloads'&&<DownloadsPage items={downloads} loading={downloadsLoading} remove={deleteDownload} retry={retryDownload} change={d=>setDownloadModal({item:d.item,episodes:[d.episode],language:d.language||'english',serverChoice:d.serverChoice||'auto',subtitleMode:d.subtitleMode||'auto',subtitleSelection:Array.isArray(d.subtitleSelection)?d.subtitleSelection:[]})} browse={browse} folder={folder} saveCopy={saveCopy} openSettings={()=>go('settings')} playOffline={playOffline} watchedById={watchedDownloadInfo} managerPrefs={offlineManager} changeManagerPrefs={changeOfflineManager} cleanupCandidates={offlineCleanupCandidates} runCleanup={cleanupWatchedDownloads} removeMany={removeDownloadsBulk} moveQueue={moveDownloadQueue}/>}
     {route.page==='history'&&<HistoryPage items={history.filter(entry=>!hideNsfw||!isNsfw(entry.item))} resume={resume} open={open} clear={clearHistory} browse={browse}/>}
     {route.page==='sources'&&<SourcesPage browse={browse}/>}
-    {route.page==='settings'&&<SettingsPage library={library} history={history} clearLibrary={clearLibrary} clearHistory={clearHistory} openLicenses={()=>setLicenses(true)} openReleaseNotes={()=>setExperience({mode:'update',manual:true})} folder={folder} chooseFolder={chooseFolder} usePrivate={usePrivate} updates={updates} updatesAvailable={updatesAvailable} changeAutomatic={changeAutomatic} changeAlerts={changeAlerts} notificationPermission={notificationPermission} appearance={appearance} changeAppearance={changeAppearance} contentPrefs={contentPrefs} changeContentPrefs={changeContentPrefs} appUpdate={appUpdate} pendingUpdate={pendingUpdate} updateStatus={updateStatus} checkUpdate={checkAppUpdate} changeAutoCheck={changeAutoCheck} downloadUpdate={downloadAppUpdate} exportBackup={exportBackup} importBackup={importBackup} smartDownloads={smartDownloads} changeSmartDownloads={changeSmartDownloads} deviceSync={{available:deviceSyncAvailable,folder:deviceSyncFolder,meta:deviceSyncMeta,status:deviceSyncStatus,choose:chooseSyncFolder,disconnect:disconnectSyncFolder,syncNow:syncDevicesNow,changeAuto:changeDeviceSyncAuto}}/>}
-  </main></div><BottomNav page={route.page} go={go}/>{collectionDialog?.kind==='new'&&<CollectionNameDialog close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='rename'&&<CollectionNameDialog editing value={collections.find(c=>c.id===collectionDialog.id)?.name||''} close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='title'&&<TitleCollectionsDialog item={collectionDialog.item} collections={collections} close={()=>setCollectionDialog(null)} submit={selected=>saveTitleCollectionChoices(collectionDialog.item,selected)}/>}{collectionDialog?.kind==='members'&&collections.find(c=>c.id===collectionDialog.id)&&<CollectionMembersDialog collection={collections.find(c=>c.id===collectionDialog.id)} items={hideNsfw?library.filter(item=>!isNsfw(item)):library} close={()=>setCollectionDialog(null)} submit={keys=>saveCollectionMembers(collectionDialog.id,keys)}/>} {offlinePlayer&&<OfflinePlayerModal entry={offlinePlayer} close={()=>setOfflinePlayer(null)}/>}{player&&<PlayerModal key={player.episode.url} player={player} close={()=>setPlayer(null)} onEpisode={episode=>play(player.item,episode,{playlist:player.episodes})} watched={watchedUrlSetForEpisodes(progress,history,player.item,player.episodes||[],linkedTitleKeys(sourceMatches,player.item))} markWatched={markWatched}/>}{licenses&&<LicenseModal close={()=>setLicenses(false)}/>}{downloadModal&&<DownloadModal request={downloadModal} close={()=>setDownloadModal(null)} submit={submitDownload}/>}{busy&&<div className="busy-overlay"><div><LoaderCircle size={20} className="spin"/><span>{busy}</span></div></div>}{toast&&<div className="toast"><Check size={16}/>{toast}</div>}</div>;
+    {route.page==='settings'&&<SettingsPage library={library} history={history} clearLibrary={clearLibrary} clearHistory={clearHistory} openLicenses={()=>setLicenses(true)} openReleaseNotes={()=>setExperience({mode:'update',manual:true})} folder={folder} chooseFolder={chooseFolder} usePrivate={usePrivate} updates={updates} updatesAvailable={updatesAvailable} changeAutomatic={changeAutomatic} changeAlerts={changeAlerts} notificationPermission={notificationPermission} appearance={appearance} changeAppearance={changeAppearance} contentPrefs={contentPrefs} changeContentPrefs={changeContentPrefs} appUpdate={appUpdate} pendingUpdate={pendingUpdate} updateStatus={updateStatus} checkUpdate={checkAppUpdate} changeAutoCheck={changeAutoCheck} downloadUpdate={downloadAppUpdate} exportBackup={exportBackup} importBackup={importBackup} smartDownloads={smartDownloads} changeSmartDownloads={changeSmartDownloads} deviceSync={{available:deviceSyncAvailable,folder:deviceSyncFolder,meta:deviceSyncMeta,status:deviceSyncStatus,choose:chooseSyncFolder,disconnect:disconnectSyncFolder,syncNow:syncDevicesNow,changeAuto:changeDeviceSyncAuto}} offlinePlayback={offlinePlayback} changeOfflinePlayback={changeOfflinePlayback} openDownloads={()=>go('downloads')}/>}
+  </main></div><BottomNav page={route.page} go={go}/>{collectionDialog?.kind==='new'&&<CollectionNameDialog close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='rename'&&<CollectionNameDialog editing value={collections.find(c=>c.id===collectionDialog.id)?.name||''} close={()=>setCollectionDialog(null)} submit={saveCollectionName}/>}{collectionDialog?.kind==='title'&&<TitleCollectionsDialog item={collectionDialog.item} collections={collections} close={()=>setCollectionDialog(null)} submit={selected=>saveTitleCollectionChoices(collectionDialog.item,selected)}/>}{collectionDialog?.kind==='members'&&collections.find(c=>c.id===collectionDialog.id)&&<CollectionMembersDialog collection={collections.find(c=>c.id===collectionDialog.id)} items={hideNsfw?library.filter(item=>!isNsfw(item)):library} close={()=>setCollectionDialog(null)} submit={keys=>saveCollectionMembers(collectionDialog.id,keys)}/>} {offlinePlayer&&<OfflinePlayerModal key={offlinePlayer.id} entry={offlinePlayer} close={()=>setOfflinePlayer(null)} prefs={offlinePlayback} changePrefs={changeOfflinePlayback} downloads={downloads} playOffline={playOffline} notify={setToast}/>}{player&&<PlayerModal key={player.episode.url} player={player} close={()=>setPlayer(null)} onEpisode={episode=>play(player.item,episode,{playlist:player.episodes})} watched={watchedUrlSetForEpisodes(progress,history,player.item,player.episodes||[],linkedTitleKeys(sourceMatches,player.item))} markWatched={markWatched}/>}{licenses&&<LicenseModal close={()=>setLicenses(false)}/>}{downloadModal&&<DownloadModal request={downloadModal} close={()=>setDownloadModal(null)} submit={submitDownload}/>}{busy&&<div className="busy-overlay"><div><LoaderCircle size={20} className="spin"/><span>{busy}</span></div></div>}{toast&&<div className="toast"><Check size={16}/>{toast}</div>}</div>;
 }
 
 createRoot(document.getElementById('root')).render(<App/>);

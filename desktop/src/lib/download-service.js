@@ -26,6 +26,37 @@ import { episodeFileBase, seriesFolderName } from './folder-names.js';
 
 const ID_PATTERN = /^[a-f0-9]{32}$/;
 const ACTIVE_EXPORT = new Set(['queued', 'exporting', 'verifying']);
+const QUEUE_ORDER_STATUSES = new Set(['queued', 'resolving', 'downloading', 'paused']);
+
+function queueOrderValue(record) {
+  const value = Number(record?.queueOrder);
+  return Number.isFinite(value) && value >= 0 ? value : Number.POSITIVE_INFINITY;
+}
+
+function compareQueueRecords(a, b) {
+  return queueOrderValue(a) - queueOrderValue(b)
+    || (Number(a?.added) || 0) - (Number(b?.added) || 0)
+    || String(a?.id || '').localeCompare(String(b?.id || ''));
+}
+
+function cleanQueueOrderIds(raw) {
+  let value = raw;
+  if (typeof raw === 'string') {
+    if (raw.length > 20000) throw new Error('Download queue order is too large');
+    try { value = JSON.parse(raw || '[]'); }
+    catch { throw new Error('Invalid download queue order'); }
+  }
+  if (!Array.isArray(value) || value.length > 500) throw new Error('Invalid download queue order');
+  const seen = new Set();
+  const out = [];
+  for (const id of value) {
+    const clean = String(id || '');
+    if (!ID_PATTERN.test(clean) || seen.has(clean)) continue;
+    seen.add(clean);
+    out.push(clean);
+  }
+  return out;
+}
 
 export function downloadIdFor(source, episodeUrl) {
   return createHash('sha256').update(`${source}|${episodeUrl}`, 'utf8').digest('hex').slice(0, 32);
@@ -319,6 +350,42 @@ export class DownloadService {
     return record ? this.publicRecord(record) : null;
   }
 
+  nextQueueOrder() {
+    let next = 0;
+    for (const record of this.records.values()) {
+      const value = queueOrderValue(record);
+      if (Number.isFinite(value)) next = Math.max(next, value + 1);
+    }
+    return next;
+  }
+
+  async setQueueOrder(rawIds) {
+    await this.ready;
+    const requested = cleanQueueOrderIds(rawIds);
+    const eligible = [...this.records.values()].filter((record) => QUEUE_ORDER_STATUSES.has(record.status));
+    const byId = new Map(eligible.map((record) => [record.id, record]));
+    const ordered = [];
+    for (const id of requested) {
+      const record = byId.get(id);
+      if (record) {
+        ordered.push(record);
+        byId.delete(id);
+      }
+    }
+    ordered.push(...[...byId.values()].sort(compareQueueRecords));
+
+    let changed = false;
+    ordered.forEach((record, index) => {
+      if (record.queueOrder !== index) {
+        record.queueOrder = index;
+        changed = true;
+      }
+    });
+    if (changed) await this.markDirty('now');
+    this.scheduleDownloads();
+    return { ok: true, updated: ordered.length, queueOrder: ordered.map((record) => record.id) };
+  }
+
   async claimReadyNotification(id) {
     await this.ready;
     const record = this.records.get(String(id || ''));
@@ -387,6 +454,7 @@ export class DownloadService {
 
     let added = 0;
     let skipped = 0;
+    let nextQueueOrder = this.nextQueueOrder();
     for (const pair of episodes) {
       const { item, episode, source } = this.cleanSelectionPair(pair, server);
       const id = downloadIdFor(source, episode.url);
@@ -410,6 +478,7 @@ export class DownloadService {
         preferredSubtitleLanguage: subtitleSelection.tracks[0]?.language || '',
         ...smart,
         status: 'queued',
+        queueOrder: nextQueueOrder++,
         error: '',
         subtitleDescription: 'Preparing subtitles',
         added: this.now(),
@@ -460,7 +529,7 @@ export class DownloadService {
   scheduleDownloads() {
     const queued = [...this.records.values()]
       .filter((record) => record.status === 'queued' && !this.activeDownloads.has(record.id))
-      .sort((a, b) => (Number(a.added) || 0) - (Number(b.added) || 0));
+      .sort(compareQueueRecords);
     for (const record of queued) {
       if (this.activeDownloads.size >= this.maxConcurrentDownloads) break;
       const controller = new AbortController();
