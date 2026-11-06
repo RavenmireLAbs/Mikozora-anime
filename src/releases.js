@@ -1,13 +1,21 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; the app shows only that newest entry.
-export const APP_VERSION = '0.33.0';
+export const APP_VERSION = '0.34.0';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.33.0',
+    version: '0.34.0',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Volume slider memory', description: 'Your last-used volume is now remembered automatically. Adjust the volume slider or tap mute in the direct online player or offline player, and Mikozora saves that level for next time. Any episode you open—streaming or offline—starts at the volume you left it at instead of always defaulting to full volume. A new Remembered volume setting in Online Player Pro lets you set a default volume from 0 to 100 percent.' },
+      { title: 'No more accidental APK clobbering', description: 'The Android build workflow no longer overwrites the latest GitHub Release every time code is merged to main. Releases are now published only when you push a version tag (for example v0.34.0), so routine merges and dependency bumps no longer rebuild and replace the current release APK.' },
+    ],
+  },
+  {
+    version: '0.33.0',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Downloads keep going in the background', description: 'Add episodes to the queue, close Mikozora, and the downloads and folder copies keep running. Android now keeps a persistent download service alive during active transfers, requests a battery-optimization exemption so the system does not stop long downloads to save power, and automatically resumes any interrupted download or folder copy the next time the app runs—including a periodic safety net that restarts the queue even if the process was killed. A new Background downloads setting in Settings lets you turn this off, and the Downloads page shows when the queue is still running in the background. The Windows app already keeps downloads running while it is open or resting in the system tray.' },
     ],
