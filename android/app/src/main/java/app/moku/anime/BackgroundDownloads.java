@@ -69,7 +69,7 @@ final class BackgroundDownloads {
         }catch(Exception ignored) { }
     }
 
-    static JSONObject status(Context c) {
+    static JSONObject status(Context c) throws Exception {
         return new JSONObject()
             .put("enabled",enabled(c))
             .put("batteryOptimization",batteryStatus(c));
