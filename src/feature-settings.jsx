@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   AlertCircle, Bell, Check, Clock3, Download, Film, Gauge, Moon, Play,
-  RotateCcw, Search, ShieldCheck, Sparkles,
+  RotateCcw, Search, ShieldCheck, Sparkles, Volume2,
 } from 'lucide-react';
 import { SOURCES, getCatalog } from './data.js';
 import {
@@ -118,6 +118,11 @@ export function OnlinePlayerSettings({
     >
       {OFFLINE_PLAYBACK_RATES.map(rate => <option key={rate} value={rate}>{rate}×</option>)}
     </SelectRow>
+    <div className="setting-row">
+      <div className="setting-icon"><Volume2 size={19} /></div>
+      <div><strong>Remembered volume</strong><p>Used by Mikozora's direct online and offline players.</p></div>
+      <input className="smart-select volume-range" type="range" min="0" max="1" step="0.05" value={player.volume} onChange={event => changeOfflinePlayback({ volume: Number(event.target.value) })} aria-label="Remembered player volume" />
+    </div>
     <SelectRow
       icon={Clock3}
       title="Seek buttons"
