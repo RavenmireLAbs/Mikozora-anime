@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
+import { Volume2, VolumeX } from 'lucide-react';
 import { onlineSubtitleUrl } from './data.js';
 import { formatPlaybackClock, normalizeOnlinePlayback, qualityCapLabel } from './online-playback.js';
 import {
@@ -27,6 +28,7 @@ export function DirectOnlinePlayer({
   onlinePrefs,
   playbackPrefs,
   onPlaybackRateChange = () => {},
+  onVolumeChange = () => {},
   onPosition = () => {},
   onEnded = () => {},
   onFallback = () => {},
@@ -46,6 +48,8 @@ export function DirectOnlinePlayer({
   const [failed, setFailed] = useState('');
   const [retryNonce, setRetryNonce] = useState(0);
   const [playbackRate, setPlaybackRate] = useState(cleanPrefs.playbackRate);
+  const [volume, setVolume] = useState(cleanPrefs.volume);
+  const [muted, setMuted] = useState(false);
   const [sleepEndsAt, setSleepEndsAt] = useState(0);
   const [sleepRemaining, setSleepRemaining] = useState(0);
 
@@ -61,6 +65,11 @@ export function DirectOnlinePlayer({
     setPlaybackRate(cleanPrefs.playbackRate);
     if (videoRef.current) videoRef.current.playbackRate = cleanPrefs.playbackRate;
   }, [cleanPrefs.playbackRate]);
+
+  useEffect(() => {
+    setVolume(cleanPrefs.volume);
+    if (videoRef.current) videoRef.current.volume = cleanPrefs.volume;
+  }, [cleanPrefs.volume]);
 
   const savePosition = (ended = false) => {
     const video = videoRef.current;
@@ -115,6 +124,7 @@ export function DirectOnlinePlayer({
         try { video.currentTime = start; } catch { /* the stream may still be seeking */ }
       }
       video.playbackRate = cleanPrefs.playbackRate;
+      video.volume = cleanPrefs.volume;
       selectSubtitles();
     };
     const onLoaded = () => {
@@ -265,6 +275,32 @@ export function DirectOnlinePlayer({
     savePosition(false);
   };
 
+  const applyVolume = value => {
+    const next = Math.max(0, Math.min(1, Number(value) || 0));
+    setVolume(next);
+    if (videoRef.current) {
+      videoRef.current.volume = next;
+      if (next > 0 && videoRef.current.muted) {
+        videoRef.current.muted = false;
+        setMuted(false);
+      }
+    }
+    onVolumeChange?.(next);
+  };
+
+  const toggleMute = () => {
+    if (videoRef.current) {
+      videoRef.current.muted = !videoRef.current.muted;
+      setMuted(videoRef.current.muted);
+      if (!videoRef.current.muted && videoRef.current.volume === 0) {
+        videoRef.current.volume = cleanPrefs.volume;
+        setVolume(cleanPrefs.volume);
+      }
+    } else {
+      setMuted(previous => !previous);
+    }
+  };
+
   const toggleFullscreen = async () => {
     try {
       if (document.fullscreenElement) await document.exitFullscreen();
@@ -334,6 +370,13 @@ export function DirectOnlinePlayer({
           const rate = videoRef.current?.playbackRate;
           if (rate && Math.abs(rate - playbackRate) > 0.001) setPlaybackRate(rate);
         }}
+        onVolumeChange={() => {
+          const v = videoRef.current?.volume;
+          if (v !== undefined && Math.abs(v - volume) > 0.001) {
+            setVolume(v);
+            onVolumeChange?.(v);
+          }
+        }}
         onEnded={handleEnded}
       >
         {tracks.map(track => <track
@@ -359,6 +402,12 @@ export function DirectOnlinePlayer({
       <label className="direct-speed"><span>SPEED</span><select aria-label="Direct playback speed" value={playbackRate} onChange={event => applyRate(event.target.value)}>
         {OFFLINE_PLAYBACK_RATES.map(rate => <option key={rate} value={rate}>{rate}×</option>)}
       </select></label>
+      <div className="direct-volume">
+        <button type="button" onClick={toggleMute} aria-label={muted ? 'Unmute' : 'Mute'} className="btn secondary volume-toggle">
+          {muted || volume === 0 ? <VolumeX size={14} /> : <Volume2 size={14} />}
+        </button>
+        <input type="range" min="0" max="1" step="0.05" value={volume} onChange={event => applyVolume(event.target.value)} aria-label="Volume" />
+      </div>
       <button className="btn secondary" type="button" onClick={() => seekBy(seekSeconds)} aria-label={`Forward ${seekSeconds} seconds`}>+{seekSeconds}s</button>
       <button className="btn secondary" type="button" onClick={pictureInPicture}>Picture-in-picture</button>
       <button className="btn secondary" type="button" onClick={toggleFullscreen}>Fullscreen</button>

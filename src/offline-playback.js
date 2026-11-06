@@ -30,6 +30,7 @@ export const DEFAULT_OFFLINE_PLAYBACK = Object.freeze({
   subtitleBackground: 'shadow',
   sleepTimerMinutes: 0,
   autoPlayNext: true,
+  volume: 1,
 });
 
 function nearest(value, allowed, fallback) {
@@ -45,6 +46,12 @@ function nearest(value, allowed, fallback) {
     }
   }
   return best;
+}
+
+function clamp01(value, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(0, Math.min(1, number));
 }
 
 function allowedId(value, options, fallback) {
@@ -69,6 +76,7 @@ export function normalizeOfflinePlayback(value) {
       DEFAULT_OFFLINE_PLAYBACK.sleepTimerMinutes,
     ),
     autoPlayNext: input.autoPlayNext !== false,
+    volume: clamp01(input.volume, DEFAULT_OFFLINE_PLAYBACK.volume),
   };
 }
 

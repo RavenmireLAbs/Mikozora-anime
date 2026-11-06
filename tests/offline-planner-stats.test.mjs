@@ -195,6 +195,7 @@ test('Offline Playback Pro normalizes shared preferences and finds the next save
     subtitleBackground: 'solid',
     sleepTimerMinutes: 40,
     autoPlayNext: false,
+    volume: 0.6,
   });
   assert.deepEqual(prefs, {
     playbackRate: 1.5,
@@ -204,6 +205,7 @@ test('Offline Playback Pro normalizes shared preferences and finds the next save
     subtitleBackground: 'solid',
     sleepTimerMinutes: 45,
     autoPlayNext: false,
+    volume: 0.6,
   });
   assert.deepEqual(offlineSubtitleStyle({ ...prefs, subtitleColor: 'yellow', subtitleBackground: 'none' }), {
     '--offline-subtitle-color': '#ffe45c',

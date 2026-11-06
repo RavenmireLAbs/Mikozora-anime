@@ -569,6 +569,12 @@ button.search-chip:hover,.search-chip.saved>button:first-child:hover{color:var(-
 .direct-player-toolbar .btn{min-height:36px;padding:8px 10px;font-size:10px}
 .direct-speed{display:flex;flex-direction:column;gap:5px;color:#8c9c88;font-size:8px;font-weight:800;letter-spacing:1px}
 .direct-speed select{min-height:36px;border:1px solid #39463a;border-radius:8px;background:#1c241d;color:#e0e9de;padding:0 25px 0 9px;font-size:11px;font-weight:700;letter-spacing:0}
+.direct-volume{display:flex;align-items:center;gap:6px}
+.direct-volume .volume-toggle{min-height:36px;padding:8px;justify-content:center}
+.direct-volume input[type="range"]{width:70px;accent-color:var(--accent);cursor:pointer}
+.offline-controls .direct-volume{display:inline-flex}
+.offline-controls .direct-volume input[type="range"]{width:60px}
+.volume-range{width:120px;accent-color:var(--accent);cursor:pointer}
 .direct-sleep{display:inline-flex;align-items:center;gap:7px;min-height:36px;color:#a2b09e;font-size:10px;font-weight:700}
 .direct-player-meta{margin:0;padding:10px 16px 15px;background:#182019;color:#879286;font-size:10px;line-height:1.55}
 .direct-player-meta strong{color:#caeda7}
