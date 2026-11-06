@@ -89,6 +89,18 @@ export async function getExportSettings() { return JSON.parse(await bridgeCall('
 export async function chooseDownloadFolder() { return JSON.parse(await bridgeCall('chooseDownloadFolder')); }
 export async function clearDownloadFolder() { return JSON.parse(await bridgeCall('clearDownloadFolder')); }
 export async function exportDownload(id) { return JSON.parse(await bridgeCall('exportDownload', id)); }
+// Background downloads: keep the download queue (and folder copies) running after
+// the app is closed. Android resumes via a periodic recovery worker and requests a
+// battery-optimization exemption; the Windows app stays open so it always continues.
+export function hasBackgroundDownloads() {
+  return typeof window !== 'undefined'
+    && !!window.MokuBridge
+    && typeof window.MokuBridge.backgroundStatus === 'function'
+    && typeof window.MokuBridge.setBackgroundDownloads === 'function';
+}
+export async function getBackgroundStatus() { return JSON.parse(await bridgeCall('backgroundStatus')); }
+export async function setBackgroundDownloads(enabled) { return JSON.parse(await bridgeCall('setBackgroundDownloads', enabled ? 'true' : 'false')); }
+export async function requestBackgroundExemption() { return JSON.parse(await bridgeCall('requestBackgroundExemption')); }
 // Backup file pickers (Settings): resolves {saved:true}, {canceled:true} or
 // {text} from the native side; see backup.js for the file format itself.
 export async function exportBackupToFile(name, text) { return JSON.parse(await bridgeCall('saveBackupFile', name, text)); }

@@ -1,13 +1,20 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; the app shows only that newest entry.
-export const APP_VERSION = '0.32.0';
+export const APP_VERSION = '0.33.0';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.32.0',
+    version: '0.33.0',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Downloads keep going in the background', description: 'Add episodes to the queue, close Mikozora, and the downloads and folder copies keep running. Android now keeps a persistent download service alive during active transfers, requests a battery-optimization exemption so the system does not stop long downloads to save power, and automatically resumes any interrupted download or folder copy the next time the app runs—including a periodic safety net that restarts the queue even if the process was killed. A new Background downloads setting in Settings lets you turn this off, and the Downloads page shows when the queue is still running in the background. The Windows app already keeps downloads running while it is open or resting in the system tray.' },
+    ],
+  },
+  {
+    version: '0.32.0',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Franchise Chains put a whole story in order', description: 'Open the new Franchise Chains page from the side navigation, Library or Command Centre to connect seasons, parts, movies and specials into a viewing order you confirm. Mikozora can suggest chains from titles it already knows on this device, suggest a missing later entry for an existing chain, or let you build and reorder one by hand. Suggestions always open for review first. A chain is separate from same-show source versions: different seasons and listings keep their own identities, and watched episodes are never copied from one entry into another.' },
       { title: 'Marathon Mode knows what comes next', description: 'Each chain shows completed entries, watched and remaining known episodes, the current entry and the exact next episode when Mikozora has that episode list saved. Finish one season and Marathon Mode hands you to the next entry instead of leaving you to hunt for it. Build a 3–24 episode marathon session in chain order, play it from the next episode, or send the next few episodes—or a whole session group—through the usual download choices. Home and the Planner also surface active marathons and season handoffs.' },

@@ -14,5 +14,12 @@ public final class MokuApplication extends Application implements Configuration.
         super.onCreate();
         // Media3's manager is tied to the main application looper.
         OfflineStore.manager(this);
+        // Resume any downloads or folder copies interrupted by a process restart,
+        // and keep the periodic recovery job alive while work is pending. This runs
+        // off the main thread because it reads persisted state and enqueues workers.
+        new Thread(() -> {
+            try { OfflineStore.recover(this,true); }catch(Exception ignored) { }
+            try { BackgroundDownloads.refresh(this); }catch(Exception ignored) { }
+        },"moku-startup-recovery").start();
     }
 }

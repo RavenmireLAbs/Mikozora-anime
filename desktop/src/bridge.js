@@ -238,6 +238,9 @@ export function registerBridge(ipcMain, getWindow, store, setPlayerReferer = () 
       else if (method === 'chooseDownloadFolder') out = await chooseDownloadFolder(getWindow(), requireDownloads());
       else if (method === 'clearDownloadFolder') out = JSON.stringify(await requireDownloads().clearDownloadFolder());
       else if (method === 'exportDownload') out = JSON.stringify(await requireDownloads().queueExport(String(args?.[0] ?? '')));
+      else if (method === 'backgroundStatus') out = '{"enabled":true,"batteryOptimization":"not-applicable","pending":false}';
+      else if (method === 'setBackgroundDownloads') out = '{"enabled":true,"batteryOptimization":"not-applicable","pending":false}';
+      else if (method === 'requestBackgroundExemption') out = '{"enabled":true,"batteryOptimization":"not-applicable","pending":false}';
       else if (method === 'syncEpisodeTitles') out = await episodeCall((svc) => svc.syncTitles(String(args?.[0] ?? ''), !!args?.[1]));
       else if (method === 'episodeUpdates') out = await episodeCall((svc) => svc.updates());
       else if (method === 'checkEpisodes') out = await episodeCall((svc) => svc.checkNow());

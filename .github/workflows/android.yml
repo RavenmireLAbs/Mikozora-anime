@@ -136,6 +136,8 @@ jobs:
           echo "Using a throwaway key only to verify the release-signing wiring; the uploaded non-release artifact remains a debug build."
       - run: npm ci
       - run: npm test
+      - name: Verify offline recovery decisions
+        run: ./scripts/test-recovery.sh
       - run: npm run prepare:android
       - name: Build permanently signed release APK
         if: steps.release.outputs.publish == 'true' && github.event_name != 'pull_request'

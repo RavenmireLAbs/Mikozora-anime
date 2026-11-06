@@ -83,6 +83,7 @@ html[data-themed] .smart-select{background:var(--moku-bg-1c241d,#1c241d);border:
 html[data-themed] .smart-download-settings .setting-row>button[aria-pressed=true]{color:var(--moku-text-caeda7,#caeda7);border-color:var(--moku-border-4d6442,#4d6442);background:var(--moku-bg-273724,#273724)}
 html[data-themed] .smart-explainer strong{color:var(--moku-text-dcebd5,#dcebd5)}
 html[data-themed] .remembered-choice-note{color:var(--moku-text-a9c49b,#a9c49b)}
+html[data-themed] .background-download-settings .setting-row>button[aria-pressed=true]{color:var(--moku-text-caeda7,#caeda7);border-color:var(--moku-border-4d6442,#4d6442);background:var(--moku-bg-273724,#273724)}
 html[data-themed] .card-personal{color:var(--moku-text-a2b09e,#a2b09e)}
 html[data-themed] .card-reason{color:var(--moku-text-91a98b,#91a98b)}
 html[data-themed] .card-sources{color:var(--moku-text-798777,#798777)}
