@@ -84,6 +84,7 @@ final class OfflineStore {
                     completionEvents.execute(() -> {
                         OfflineStore.update(app,id,"status","completed");
                         DownloadWorker.notifyReady(app,id);
+                        BackgroundDownloads.refresh(app);
                     });
                 }
             });
@@ -338,6 +339,123 @@ final class OfflineStore {
         }
         return new JSONArray(all);
     }
+    /**
+     * Resume interrupted downloads and folder copies after the process restarts.
+     * Called from MokuApplication.onCreate (startup=true) and the periodic recovery
+     * worker (startup=false). Startup resets in-flight phases so a download that was
+     * mid-resolve or mid-transfer when the process died is re-driven from the queue;
+     * the periodic pass only re-enqueues already-queued items so it never cancels a
+     * worker that is actively handling a download.
+     */
+    static JSONObject recover(Context c,boolean startup) {
+        int downloads=0,exports=0,cleanups=0;
+        List<String> requeueDownloads=new ArrayList<>();
+        List<String> requeueExports=new ArrayList<>();
+        List<String> rescheduleCleanups=new ArrayList<>();
+        synchronized(LOCK) {
+            List<JSONObject> records=new ArrayList<>();
+            for(Map.Entry<String,?> e:prefs(c).getAll().entrySet()) {
+                try {
+                    JSONObject meta=new JSONObject(String.valueOf(e.getValue()));
+                    if(meta.optString("id").matches("[a-f0-9]{32}"))records.add(meta);
+                }catch(Exception ignored) { }
+            }
+            SharedPreferences.Editor editor=prefs(c).edit();
+            boolean changed=false;
+            for(JSONObject meta:records) {
+                String id=meta.optString("id");
+                String storageMode=meta.optString("storageMode");
+                boolean exportVerified=meta.optBoolean("exportVerified",false);
+                Download d=getDownload(c,id);
+                String mediaState=stateOf(d);
+                String storedStatus=meta.optString("status");
+                String exportStatus=meta.optString("exportStatus");
+                String cleanupStatus=meta.optString("cleanupStatus");
+                boolean modified=false;
+                if(startup&&RecoveryPlan.shouldResetDownload(storedStatus)) {
+                    meta.put("status","queued");modified=true;
+                }
+                if(RecoveryPlan.shouldRequeueDownload(meta.optString("status"),mediaState,storageMode,exportVerified)
+                    &&"queued".equals(meta.optString("status")))requeueDownloads.add(id);
+                if(startup&&RecoveryPlan.shouldResetExport(exportStatus)) {
+                    meta.put("exportStatus","queued");modified=true;
+                }
+                if(RecoveryPlan.shouldRescheduleCleanup(meta.optString("exportStatus"),cleanupStatus))rescheduleCleanups.add(id);
+                else if(RecoveryPlan.shouldRequeueExport(meta.optString("exportStatus"))
+                    &&"queued".equals(meta.optString("exportStatus")))requeueExports.add(id);
+                if(modified) {
+                    changed=true;
+                    editor.putString(id,meta.toString());
+                }
+            }
+            if(changed&&!editor.commit())throw new IOException("Could not save recovery state.");
+        }
+        for(String id:requeueDownloads) {
+            try { enqueueDownloadWork(c,id);downloads++; }catch(Exception ignored) { }
+        }
+        for(String id:requeueExports) {
+            try { requeueExportWork(c,id);exports++; }catch(Exception ignored) { }
+        }
+        for(String id:rescheduleCleanups) {
+            try { FolderCleanupWorker.schedule(c,id);cleanups++; }catch(Exception ignored) { }
+        }
+        return new JSONObject().put("recovered",downloads+exports+cleanups)
+            .put("downloads",downloads).put("exports",exports).put("cleanups",cleanups);
+    }
+    /** True when there is any non-terminal download or export that may need resuming. */
+    static boolean hasPendingRecovery(Context c) {
+        synchronized(LOCK) {
+            for(Map.Entry<String,?> e:prefs(c).getAll().entrySet()) {
+                try {
+                    JSONObject meta=new JSONObject(String.valueOf(e.getValue()));
+                    if(!meta.optString("id").matches("[a-f0-9]{32}"))continue;
+                    String storageMode=meta.optString("storageMode");
+                    boolean exportVerified=meta.optBoolean("exportVerified",false);
+                    Download d=getDownload(c,meta.optString("id"));
+                    String mediaState=stateOf(d);
+                    if(RecoveryPlan.shouldRequeueDownload(meta.optString("status"),mediaState,storageMode,exportVerified))return true;
+                    if(RecoveryPlan.shouldRequeueExport(meta.optString("exportStatus")))return true;
+                    if(RecoveryPlan.shouldRescheduleCleanup(meta.optString("exportStatus"),meta.optString("cleanupStatus")))return true;
+                }catch(Exception ignored) { }
+            }
+        }
+        return false;
+    }
+    /** (Re)create the DownloadWorker for a queued download, mirroring the enqueue path. */
+    private static void enqueueDownloadWork(Context c,String id) throws Exception {
+        JSONObject meta=get(c,id);if(meta==null)return;
+        OneTimeWorkRequest work=new OneTimeWorkRequest.Builder(DownloadWorker.class)
+            .setInputData(new Data.Builder().putString("id",id).build())
+            .setConstraints(new Constraints.Builder().setRequiredNetworkType(
+                meta.optBoolean("autoDownload",false)&&meta.optBoolean("smartWifiOnly",false)
+                    ?NetworkType.UNMETERED:NetworkType.CONNECTED).build())
+            .setBackoffCriteria(BackoffPolicy.LINEAR,10,TimeUnit.SECONDS)
+            .addTag("moku-offline").build();
+        meta.put("workId",work.getId().toString());put(c,meta);
+        WorkManager.getInstance(c).enqueueUniqueWork("moku-"+id,ExistingWorkPolicy.REPLACE,work);
+    }
+    /** Re-enqueue an interrupted ExportWorker with the same job so a newer save is not started. */
+    private static void requeueExportWork(Context c,String id) throws Exception {
+        JSONObject meta=get(c,id);if(meta==null)return;
+        Download d=getDownload(c,id);
+        boolean fromFolder="folder".equals(meta.optString("storageMode"))&&!meta.optString("exportUri").isEmpty();
+        if(!fromFolder&&(d==null||d.state!=Download.STATE_COMPLETED))return;
+        String tree=ExportStore.folderUri(c);
+        if(tree.isEmpty()||!ExportStore.hasPermission(c,Uri.parse(tree)))return;
+        String job=meta.optString("exportJob");
+        if(job.isEmpty()) {
+            job="recovery-"+UUID.randomUUID().toString();
+            if(!change(c,id,data->data.put("exportJob",job)))return;
+        }
+        String name=ExportStore.folderName(c);
+        OneTimeWorkRequest work=new OneTimeWorkRequest.Builder(ExportWorker.class)
+            .setInputData(new Data.Builder().putString("id",id).putString("tree",tree)
+                .putString("folderName",name).putString("job",job).build())
+            .addTag("moku-export").build();
+        if(!change(c,id,data->{if(!job.equals(data.optString("exportJob")))throw new IOException("A newer save replaced this copy.");
+            data.put("exportStatus","queued");data.put("exportError","");data.put("exportNextFolder",name);}))return;
+        WorkManager.getInstance(c).enqueueUniqueWork(ExportStore.workName(id),ExistingWorkPolicy.REPLACE,work);
+    }
     static JSONObject enqueue(Context c,String payload) throws Exception {
         return enqueue(c,payload,false,false,false);
     }
@@ -384,6 +502,8 @@ final class OfflineStore {
             WorkManager.getInstance(c).enqueueUniqueWork("moku-"+id,ExistingWorkPolicy.REPLACE,work);
             added++;
         }
+        // Keep the periodic recovery alive while the queue is non-empty.
+        BackgroundDownloads.refresh(c);
         return new JSONObject().put("added",added).put("skipped",skipped);
     }
     static void remove(Context c,String id) throws Exception {

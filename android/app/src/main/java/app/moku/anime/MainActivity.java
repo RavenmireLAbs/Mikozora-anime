@@ -524,6 +524,29 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
             requests.execute(()->{try{sendChunks(id,ExportStore.settings(MainActivity.this).toString(),null);}
                 catch(Exception e){sendChunks(id,"","Could not read the download folder.");}});
         }
+        @JavascriptInterface public void backgroundStatus(String id) {
+            if(id==null||!id.matches("[0-9]{1,12}"))return;
+            requests.execute(()->{try{
+                JSONObject status=BackgroundDownloads.status(MainActivity.this);
+                status.put("pending",OfflineStore.hasPendingRecovery(MainActivity.this));
+                sendChunks(id,status.toString(),null);
+            }catch(Exception e){sendChunks(id,"","Could not read background download status.");}});
+        }
+        @JavascriptInterface public void setBackgroundDownloads(String id,String payload) {
+            if(id==null||!id.matches("[0-9]{1,12}"))return;
+            requests.execute(()->{try{
+                boolean enabled=!"false".equalsIgnoreCase(payload);
+                BackgroundDownloads.setEnabled(MainActivity.this,enabled);
+                BackgroundDownloads.refresh(MainActivity.this);
+                sendChunks(id,BackgroundDownloads.status(MainActivity.this).toString(),null);
+            }catch(Exception e){sendChunks(id,"","Could not update background downloads.");}});
+        }
+        @JavascriptInterface public void requestBackgroundExemption(String id) {
+            if(id==null||!id.matches("[0-9]{1,12}"))return;
+            runOnUiThread(()->{try{BackgroundDownloads.requestExemption(MainActivity.this);
+                sendChunks(id,BackgroundDownloads.status(MainActivity.this).toString(),null);
+            }catch(Exception e){sendChunks(id,"","Could not request background access.");}});
+        }
         @JavascriptInterface public void chooseDownloadFolder(String id) {
             if(id==null||!id.matches("[0-9]{1,12}"))return;
             runOnUiThread(()->{
