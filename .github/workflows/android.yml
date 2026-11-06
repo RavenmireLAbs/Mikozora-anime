@@ -46,9 +46,6 @@ jobs:
           elif [[ "$MANUAL_PUBLISH" == "true" && "$GITHUB_REF" == "refs/heads/main" ]]; then
             publish=true
             replace=true
-          elif [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == "refs/heads/main" ]]; then
-            publish=true
-            replace=true
           fi
 
           if [[ "$tag" != "v${version}" ]]; then
