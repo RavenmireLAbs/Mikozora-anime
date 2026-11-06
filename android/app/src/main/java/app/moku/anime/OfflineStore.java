@@ -347,7 +347,7 @@ final class OfflineStore {
      * the periodic pass only re-enqueues already-queued items so it never cancels a
      * worker that is actively handling a download.
      */
-    static JSONObject recover(Context c,boolean startup) {
+    static JSONObject recover(Context c,boolean startup) throws Exception {
         int downloads=0,exports=0,cleanups=0;
         List<String> requeueDownloads=new ArrayList<>();
         List<String> requeueExports=new ArrayList<>();
@@ -444,15 +444,17 @@ final class OfflineStore {
         if(tree.isEmpty()||!ExportStore.hasPermission(c,Uri.parse(tree)))return;
         String job=meta.optString("exportJob");
         if(job.isEmpty()) {
-            job="recovery-"+UUID.randomUUID().toString();
-            if(!change(c,id,data->data.put("exportJob",job)))return;
+            String generated="recovery-"+UUID.randomUUID().toString();
+            if(!change(c,id,data->data.put("exportJob",generated)))return;
+            job=generated;
         }
+        final String exportJob=job;
         String name=ExportStore.folderName(c);
         OneTimeWorkRequest work=new OneTimeWorkRequest.Builder(ExportWorker.class)
             .setInputData(new Data.Builder().putString("id",id).putString("tree",tree)
-                .putString("folderName",name).putString("job",job).build())
+                .putString("folderName",name).putString("job",exportJob).build())
             .addTag("moku-export").build();
-        if(!change(c,id,data->{if(!job.equals(data.optString("exportJob")))throw new IOException("A newer save replaced this copy.");
+        if(!change(c,id,data->{if(!exportJob.equals(data.optString("exportJob")))throw new IOException("A newer save replaced this copy.");
             data.put("exportStatus","queued");data.put("exportError","");data.put("exportNextFolder",name);}))return;
         WorkManager.getInstance(c).enqueueUniqueWork(ExportStore.workName(id),ExistingWorkPolicy.REPLACE,work);
     }
