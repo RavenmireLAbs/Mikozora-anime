@@ -47,9 +47,8 @@ jobs:
             publish=true
             replace=true
           elif [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == "refs/heads/main" ]]; then
-            if ! gh release view "$tag" >/dev/null 2>&1; then
-              publish=true
-            fi
+            publish=true
+            replace=true
           fi
 
           if [[ "$tag" != "v${version}" ]]; then
