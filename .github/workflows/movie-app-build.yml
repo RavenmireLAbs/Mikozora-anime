@@ -56,7 +56,7 @@ jobs:
         run: |
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           chmod +x gradlew
-          ./gradlew assembleDebug --info > gradle-build.log 2>&1 || true
+          ./gradlew assembleDebug > gradle-build.log 2>&1 || true
 
       - name: Show gradle log
         working-directory: movie-app/android
@@ -64,6 +64,13 @@ jobs:
           echo "===== GRADLE BUILD LOG (last 200 lines) ====="
           tail -200 gradle-build.log
           echo "===== END LOG ====="
+
+      - name: Check APK exists
+        run: |
+          APK="movie-app/android/app/build/outputs/apk/debug/app-debug.apk"
+          echo "Looking for APK at: $APK"
+          ls -la "$APK" 2>&1 || echo "APK NOT FOUND at expected path"
+          find movie-app/android/app/build -name "*.apk" 2>&1 || echo "No APK found in build directory"
 
       - name: Upload log artifact
         if: always()
@@ -78,3 +85,4 @@ jobs:
         with:
           name: MovieHub-debug-apk
           path: movie-app/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
