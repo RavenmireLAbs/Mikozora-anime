@@ -56,9 +56,25 @@ jobs:
         run: |
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           chmod +x gradlew
-          ./gradlew assembleDebug --info 2>&1
+          ./gradlew assembleDebug --info > gradle-build.log 2>&1 || true
 
-      - uses: actions/upload-artifact@v4
+      - name: Show gradle log
+        working-directory: movie-app/android
+        run: |
+          echo "===== GRADLE BUILD LOG (last 200 lines) ====="
+          tail -200 gradle-build.log
+          echo "===== END LOG ====="
+
+      - name: Upload log artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-build-log
+          path: movie-app/android/gradle-build.log
+
+      - name: Upload APK
+        if: success()
+        uses: actions/upload-artifact@v4
         with:
           name: MovieHub-debug-apk
           path: movie-app/android/app/build/outputs/apk/debug/app-debug.apk
