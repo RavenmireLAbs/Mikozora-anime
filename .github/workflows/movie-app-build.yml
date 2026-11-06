@@ -1,6 +1,8 @@
 name: MovieApp Build
 
 on:
+  push:
+    branches: [arena/aa387824-moku-anime]
   workflow_dispatch:
 
 permissions:
