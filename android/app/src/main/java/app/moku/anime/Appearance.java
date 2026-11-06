@@ -51,7 +51,7 @@ final class Appearance {
     }
     static Palette read(Context context){
         SharedPreferences p=context.getSharedPreferences(PREFS,Context.MODE_PRIVATE);
-        String mode="dark",accent="green";
+        String mode="light",accent="green";
         try{mode=p.getString(MODE,"dark");}catch(ClassCastException ignored){}
         try{accent=p.getString(ACCENT,"green");}catch(ClassCastException ignored){}
         return palette(mode,accent);

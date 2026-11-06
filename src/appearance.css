@@ -1,6 +1,19 @@
 /* Appearance controls use the same palette as the rest of Mikozora. */
 html.appearance-changing *,html.appearance-changing *::before,html.appearance-changing *::after{transition:none!important}
 html[data-themed] .topbar{background:var(--bg)}
+/* Light-mode polish: soft shadows give surfaces real elevation against the bright bg. */
+html[data-mode="light"] .card-cover,
+html[data-mode="light"] .continue-card,
+html[data-mode="light"] .anime-card .card-cover,
+html[data-mode="light"] .collection-choice,
+html[data-mode="light"] .download-card,
+html[data-mode="light"] .setting-row>button{box-shadow:0 1px 3px rgba(20,30,20,.08),0 1px 2px rgba(20,30,20,.04)}
+html[data-mode="light"] .card-rail::-webkit-scrollbar-thumb,
+html[data-mode="light"] .trending-rail::-webkit-scrollbar-thumb,
+html[data-mode="light"] .collection-tabs::-webkit-scrollbar-thumb{background:#c8d2c7}
+html[data-mode="light"] .nav-item:hover,
+html[data-mode="light"] .icon-btn:hover{background:#eef1ec}
+html[data-mode="light"] .nav-item.active{background:#e8f0dc}
 /* Raise the smallest chrome labels enough to remain legible in either mode. */
 html[data-mode] .breadcrumbs,html[data-mode] .nav-label,html[data-mode] .side-footer,html[data-mode] .settings-title span{color:var(--moku-text-899989,#899989)}
 /* Detail titles must begin below the dark artwork in light mode, even when long. */

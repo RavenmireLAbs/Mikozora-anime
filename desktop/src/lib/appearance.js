@@ -10,7 +10,7 @@ const BACKGROUNDS = {
 };
 
 // Matches DEFAULT_APPEARANCE in src/appearance.js.
-export const DEFAULT_APPEARANCE = Object.freeze({ mode: 'dark', accent: 'blue' });
+export const DEFAULT_APPEARANCE = Object.freeze({ mode: 'light', accent: 'green' });
 
 export function normalizeAppearance(value) {
   return {
