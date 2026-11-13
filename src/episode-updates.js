@@ -24,7 +24,7 @@ function watchedByTitle(progressEntries, historyEntries) {
 // Smart Downloads reuses that follow rule: selecting a standalone series
 // saves/follows it through Favourites in the UI, while a selected collection
 // contributes all of its member titles.
-export function monitoredTitles(library, collections, smartSettings = null, progressEntries = [], historyEntries = [], radarStore = null) {
+export function monitoredTitles(library, collections, smartSettings = null, progressEntries = [], historyEntries = [], radarStore = null, now = Date.now()) {
   const radar = radarStore ? normalizeReleaseRadar(radarStore) : null;
   const included = new Set((Array.isArray(collections) ? collections : []).flatMap((c) => Array.isArray(c?.items) ? c.items : []));
   const smart = smartSettings ? normalizeSmartDownloads(smartSettings) : null;
@@ -47,7 +47,7 @@ export function monitoredTitles(library, collections, smartSettings = null, prog
     seen.add(id);
     const summary = { source: item.source, url: item.url, title: item.title, image: item.image || '', type: item.type || '', badge: item.badge || '', status: item.status || '' };
     if (radar) {
-      Object.assign(summary, releaseRadarMonitorFields(radar, item));
+      Object.assign(summary, releaseRadarMonitorFields(radar, item, now));
     }
     if (smart) {
       const selected = smart.titleKeys.includes(id) || smartCollectionKeys.has(id);
