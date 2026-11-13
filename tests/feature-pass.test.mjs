@@ -109,3 +109,13 @@ test('0.29 UI wires grouped Universal Search and confirmation-gated Source Match
   assert.match(css, /\.source-version-row\{flex-direction:column/);
   assert.match(css, /\.source-version-actions \.btn\{flex:1\}/);
 });
+
+test('spotlight long titles get compact responsive spacing while short titles keep the default style', async () => {
+  const ui = await readFile('src/main.jsx', 'utf8');
+  const css = await readFile('src/style.css', 'utf8');
+  assert.match(ui, /const longTitle = \(item\?\.title\?\.length \|\| 0\) > 34/);
+  assert.match(ui, /'hero-content' \+ \(longTitle \? ' hero-content-long' : ''\)/);
+  assert.match(css, /\.hero-content-long h2\{font-size:clamp\(21px,2vw,25px\);line-height:1\.1/);
+  assert.match(css, /\.hero-content-long p\{margin:8px 0 12px\}/);
+  assert.match(css, /@media\(max-width:760px\)\{[\s\S]*?\.hero-content-long h2\{font-size:clamp\(18px,5vw,21px\)\}/);
+});

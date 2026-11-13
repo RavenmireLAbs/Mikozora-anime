@@ -922,3 +922,18 @@ button.search-chip:hover,.search-chip.saved>button:first-child:hover{color:var(-
   color:var(--accent);
   flex-shrink:0;
 }
+
+/* Compact only long spotlight titles so the metadata and actions remain inside the fixed hero. */
+.hero-content.hero-content-long{max-width:58%}
+.hero-content-long .hero-label{margin-bottom:12px}
+.hero-content-long .hero-kicker{margin-bottom:6px}
+.hero-content-long h2{font-size:clamp(21px,2vw,25px);line-height:1.1;letter-spacing:-.75px;overflow-wrap:anywhere}
+.hero-content-long .hero-meta{margin-top:8px}
+.hero-content-long p{margin:8px 0 12px}
+@media(max-width:760px){
+  .hero-content.hero-content-long{max-width:78%}
+  .hero-content-long .hero-label{margin-bottom:11px}
+  .hero-content-long h2{font-size:clamp(18px,5vw,21px)}
+  .hero-content-long p{margin:7px 0 10px}
+}
+@media(max-width:390px){.hero-content.hero-content-long{max-width:84%}}
