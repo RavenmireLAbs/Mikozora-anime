@@ -181,6 +181,7 @@ test('Release Radar separates device-alert suppression from inbox visibility and
     [],
     [],
     radar,
+    now,
   );
   assert.equal(monitored[0].alertMode, 'inbox');
   assert.equal(monitored[0].alertsMutedUntil, now + 7 * 86400000);

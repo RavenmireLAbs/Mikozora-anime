@@ -349,6 +349,39 @@ export async function getTrending(source) {
   }
   throw new Error('Unknown source');
 }
+// AnimeXin's homepage has a weekly schedule: day headings (Mon–Sun) followed by
+// the series airing on that day. Return today's airing titles as cards.
+const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+export async function getAiringToday() {
+  const document = doc(await getText(`${SOURCES.xin.base}/`));
+  const today = DAY_NAMES[new Date().getDay()];
+  const all = [...document.querySelectorAll('h2,h3,h4,h5,h6,strong,b,span,div')];
+  let start = -1;
+  for (let i = 0; i < all.length; i++) {
+    if (text(all[i]).toLowerCase() === today.toLowerCase()) { start = i; break; }
+  }
+  if (start < 0) return [];
+  const items = [];
+  for (let i = start + 1; i < all.length; i++) {
+    const el = all[i];
+    const tag = el.tagName.toLowerCase();
+    if ((tag === 'h2' || tag === 'h3' || tag === 'h4' || tag === 'h5' || tag === 'h6' || tag === 'strong' || tag === 'b')
+      && DAY_NAMES.some(day => text(el).toLowerCase() === day.toLowerCase())
+      && text(el).toLowerCase() !== today.toLowerCase()) break;
+    if (text(el).toLowerCase() === 'random') break;
+    const links = el.tagName.toLowerCase() === 'a' ? [el] : [...el.querySelectorAll('a[href]')];
+    for (const a of links) {
+      const href = attr(a, 'href');
+      if (!href || !href.startsWith('/') && !href.includes('animexin.dev')) continue;
+      const url = normXin(href);
+      if (!url) continue;
+      const title = attr(a, 'title') || text(a);
+      if (!title) continue;
+      items.push(enrichCard({ source: 'xin', url, title, image: '', type: 'Donghua', badge: 'SUB', status: '' }, el));
+    }
+  }
+  return distinct(items).slice(0, 12);
+}
 export async function getDiscoverAnime() {
   const document = doc(await getText(`${SOURCES.sogo.base}/filter?sort=most-viewed&page=1`));
   return parseSogoCards(document);
