@@ -378,6 +378,10 @@ html[data-themed] .marathon-planner-card{border:1px solid var(--moku-border-3946
 html[data-themed] .marathon-planner-card>div>span{color:var(--moku-text-caeda7,#caeda7)}
 html[data-themed] .marathon-planner-card h3 button{color:var(--moku-text-edf2e9,#edf2e9)}
 html[data-themed] .marathon-planner-card p{color:var(--moku-text-879286,#879286)}
+html[data-themed] .search-suggestions .eyebrow{color:var(--moku-text-a5c797,#a5c797)}
+html[data-themed] .suggestion-chip{border:1px solid var(--moku-border-334036,#334036);background:var(--moku-bg-1a201b,#1a201b);color:var(--moku-text-e0e9de,#e0e9de)}
+html[data-themed] .suggestion-chip:hover{background:var(--moku-bg-233025,#233025)}
+html[data-themed] .suggestion-cover{background:var(--moku-bg-252d27,#252d27)}
 
 html[data-themed]{background:var(--bg)}
 /* Hero and detail art stay dark, with independently readable text and controls. */
