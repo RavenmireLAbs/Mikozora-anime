@@ -923,9 +923,17 @@ button.search-chip:hover,.search-chip.saved>button:first-child:hover{color:var(-
   flex-shrink:0;
 }
 
-/* Keep the spotlight artwork visible and recover with its poster if the banner host fails. */
-.hero-art{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center right;z-index:0}
-.hero:after{z-index:1;background:linear-gradient(90deg,#171d19 0%,rgba(22,29,25,.96) 25%,rgba(22,29,25,.76) 47%,rgba(22,29,25,.08) 100%),linear-gradient(0deg,rgba(18,25,21,.35),transparent 70%)}
-.hero-noise{z-index:1}
-.hero-content,.hero-index{z-index:2}
-@media(max-width:760px){.hero-art{object-position:64% center}}
+/* Compact only long spotlight titles so the metadata and actions remain inside the fixed hero. */
+.hero-content.hero-content-long{max-width:58%}
+.hero-content-long .hero-label{margin-bottom:12px}
+.hero-content-long .hero-kicker{margin-bottom:6px}
+.hero-content-long h2{font-size:clamp(21px,2vw,25px);line-height:1.1;letter-spacing:-.75px;overflow-wrap:anywhere}
+.hero-content-long .hero-meta{margin-top:8px}
+.hero-content-long p{margin:8px 0 12px}
+@media(max-width:760px){
+  .hero-content.hero-content-long{max-width:78%}
+  .hero-content-long .hero-label{margin-bottom:11px}
+  .hero-content-long h2{font-size:clamp(18px,5vw,21px)}
+  .hero-content-long p{margin:7px 0 10px}
+}
+@media(max-width:390px){.hero-content.hero-content-long{max-width:84%}}

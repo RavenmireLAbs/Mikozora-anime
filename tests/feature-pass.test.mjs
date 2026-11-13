@@ -110,11 +110,12 @@ test('0.29 UI wires grouped Universal Search and confirmation-gated Source Match
   assert.match(css, /\.source-version-actions \.btn\{flex:1\}/);
 });
 
-test('spotlight hero retries with the title poster when its banner image fails', async () => {
+test('spotlight long titles get compact responsive spacing while short titles keep the default style', async () => {
   const ui = await readFile('src/main.jsx', 'utf8');
   const css = await readFile('src/style.css', 'utf8');
-  assert.match(ui, /const heroArtwork = \[\.\.\.new Set\(\[item\?\.banner,item\?\.image\]/);
-  assert.match(ui, /onError=\{\(\)=>setHeroArtworkIndex\(index=>index\+1\)\}/);
-  assert.match(ui, /className="hero-art" src=\{imageUrl\(heroArtwork\[heroArtworkIndex\]\)\}/);
-  assert.match(css, /\.hero-art\{position:absolute/);
+  assert.match(ui, /const longTitle = \(item\?\.title\?\.length \|\| 0\) > 34/);
+  assert.match(ui, /'hero-content' \+ \(longTitle \? ' hero-content-long' : ''\)/);
+  assert.match(css, /\.hero-content-long h2\{font-size:clamp\(21px,2vw,25px\);line-height:1\.1/);
+  assert.match(css, /\.hero-content-long p\{margin:8px 0 12px\}/);
+  assert.match(css, /@media\(max-width:760px\)\{[\s\S]*?\.hero-content-long h2\{font-size:clamp\(18px,5vw,21px\)\}/);
 });
