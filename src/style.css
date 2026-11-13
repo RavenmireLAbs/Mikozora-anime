@@ -818,3 +818,10 @@ button.search-chip:hover,.search-chip.saved>button:first-child:hover{color:var(-
   .marathon-session-row{align-items:flex-start}
   .marathon-session-row>.text-link{margin-left:auto}
 }
+.search-suggestions{margin-top:20px;display:flex;flex-direction:column;align-items:center;gap:12px}
+.search-suggestions .eyebrow{font-size:8px;font-weight:800;letter-spacing:1.5px;color:#a5c797}
+.suggestion-chips{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.suggestion-chip{display:flex;align-items:center;gap:8px;padding:7px 11px;border:1px solid #334036;border-radius:8px;background:#1a201b;color:#e0e9de;font-size:11px;font-weight:600;cursor:pointer}
+.suggestion-chip:hover{border-color:var(--accent);background:#233025}
+.suggestion-cover{width:28px;height:40px;border-radius:4px;overflow:hidden;flex:none;background:#252d27}
+.suggestion-cover img{width:100%;height:100%;object-fit:cover;display:block}
