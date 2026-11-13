@@ -1,13 +1,20 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; the app shows only that newest entry.
-export const APP_VERSION = '0.36.3';
+export const APP_VERSION = '0.36.4';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.36.3',
+    version: '0.36.4',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Posters for every airing-today title', description: 'Airing Today now reads lazy-loaded artwork and, when a poster is not on the schedule or listing, retrieves it from the series page so fewer donghua cards appear blank.' },
+    ],
+  },
+  {
+    version: '0.36.3',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Airing-today posters now appear', description: 'The donghua schedule now matches today’s titles with artwork from AnimeXin’s weekly and latest-title cards, so the Airing Today rail shows posters instead of empty placeholders.' },
     ],

@@ -300,7 +300,7 @@ function parseSogoCards(document) {
 function parseXinCards(document) {
   return distinct([...document.querySelectorAll('.postbody .listupd article.bs')].map(item => {
     const a = item.querySelector('a[href]'), image = item.querySelector('img');
-    return enrichCard({ source: 'xin', url: normXin(attr(a, 'href')), title: attr(a, 'title') || text(item.querySelector('.tt h2')) || text(item.querySelector('.tt')), image: absolute(attr(image, 'data-src') || attr(image, 'src'), SOURCES.xin.base), type: text(item.querySelector('.typez')) || 'Donghua', badge: text(item.querySelector('.sb')) || 'SUB', status: text(item.querySelector('.epx')) }, item);
+    return enrichCard({ source: 'xin', url: normXin(attr(a, 'href')), title: attr(a, 'title') || text(item.querySelector('.tt h2')) || text(item.querySelector('.tt')), image: xinArtworkIn(item), type: text(item.querySelector('.typez')) || 'Donghua', badge: text(item.querySelector('.sb')) || 'SUB', status: text(item.querySelector('.epx')) }, item);
   }));
 }
 function parseXinWeeklyCards(document) {
@@ -308,7 +308,7 @@ function parseXinWeeklyCards(document) {
     const link = item.querySelector('h4 a.series[href], .imgseries a.series[href]');
     const image = item.querySelector('.imgseries img');
     const rank = Number(text(item.querySelector('.ctr'))) || i + 1;
-    return enrichCard({ source:'xin', url:normXin(attr(link, 'href')), title:text(item.querySelector('h4 a')) || attr(image, 'alt'), image:absolute(attr(image, 'data-src') || attr(image, 'src'), SOURCES.xin.base), type:'Donghua', rank }, item);
+    return enrichCard({ source:'xin', url:normXin(attr(link, 'href')), title:text(item.querySelector('h4 a')) || attr(image, 'alt'), image:xinArtworkIn(item), type:'Donghua', rank }, item);
   }));
 }
 const titleArtworkKey = title => String(title || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -369,12 +369,15 @@ function xinArtworkIn(node) {
   if (!node) return '';
   const images = [...(node.tagName?.toLowerCase() === 'img' ? [node] : []), ...node.querySelectorAll('img')];
   for (const image of images) {
-    const url = absolute(attr(image, 'data-src') || attr(image, 'data-lazy-src') || attr(image, 'data-original') || attr(image, 'src'), SOURCES.xin.base);
+    const srcset = attr(image, 'data-srcset') || attr(image, 'srcset');
+    const firstSrcset = srcset.split(',')[0]?.trim().split(/\s+/)[0] || '';
+    const url = absolute(attr(image, 'data-src') || attr(image, 'data-lazy-src') || attr(image, 'data-original') || firstSrcset || attr(image, 'src'), SOURCES.xin.base);
     if (url) return url;
   }
-  const styled = [...(node.getAttribute?.('style') ? [node] : []), ...node.querySelectorAll('[style]')];
+  const styled = [...(node.getAttribute?.('style') ? [node] : []), ...node.querySelectorAll('[style], [data-bg]')];
   for (const element of styled) {
-    const background = attr(element, 'style').match(/url\(['"]?([^'")]+)['"]?\)/i)?.[1] || '';
+    const style = attr(element, 'style');
+    const background = attr(element, 'data-bg') || style.match(/url\(['"]?([^'")]+)['"]?\)/i)?.[1] || '';
     const url = absolute(background, SOURCES.xin.base);
     if (url) return url;
   }
@@ -427,7 +430,19 @@ export async function getAiringToday() {
       items.push(enrichCard({ source: 'xin', url, title, image, type: 'Donghua', badge: 'SUB', status: '' }, el));
     }
   }
-  return distinct(items).slice(0, 12);
+  const airing = distinct(items).slice(0, 12);
+  const missingArtwork = airing.map((item, index) => ({ item, index })).filter(entry => !entry.item.image);
+  let cursor = 0;
+  await Promise.all(Array.from({ length: Math.min(3, missingArtwork.length) }, async () => {
+    while (cursor < missingArtwork.length) {
+      const { item, index } = missingArtwork[cursor++];
+      try {
+        const detail = await getDetail(item);
+        if (detail.image) airing[index] = { ...item, image: detail.image };
+      } catch { /* Keep the schedule card if the detail page is unavailable. */ }
+    }
+  }));
+  return airing;
 }
 export async function getDiscoverAnime() {
   const document = doc(await getText(`${SOURCES.sogo.base}/filter?sort=most-viewed&page=1`));
@@ -709,8 +724,8 @@ export async function getDetail(item) {
     return withContent({ ...item, title, image, banner, synopsis, genres, status: metaValue(document, 'Status'), aired: metaValue(document, 'Date aired'), episodeCount: metaValue(document, 'Episodes'), type: metaValue(document, 'Type') || item.type, rating: ratingInDocument(document, metaValue), episodes });
   }
   const title = text(document.querySelector('h1.entry-title, h1[itemprop="name"]')) || item.title;
-  const image = absolute(attr(document.querySelector('.thumbook .thumb img'), 'src'), SOURCES.xin.base) || item.image;
-  const banner = absolute(attr(document.querySelector('.bigcover img'), 'src'), SOURCES.xin.base);
+  const image = xinArtworkIn(document.querySelector('.thumbook .thumb')) || item.image;
+  const banner = xinArtworkIn(document.querySelector('.bigcover'));
   const paragraphs = [...document.querySelectorAll('.synp .entry-content p')].map(text).filter(p => p && p.toLowerCase() !== 'english');
   const synopsis = paragraphs[0] || text(document.querySelector('.synp .entry-content'));
   const genres = [...document.querySelectorAll('.genxed a')].map(text);
