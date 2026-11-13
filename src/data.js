@@ -355,7 +355,7 @@ const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','
 export async function getAiringToday() {
   const document = doc(await getText(`${SOURCES.xin.base}/`));
   const today = DAY_NAMES[new Date().getDay()];
-  const all = [...document.querySelectorAll('h2,h3,h4,h5,h6,strong,b,span,div')];
+  const all = [...document.querySelectorAll('h2,h3,h4,h5,h6,strong,b,span,div,a,p,ul,li')];
   let start = -1;
   for (let i = 0; i < all.length; i++) {
     if (text(all[i]).toLowerCase() === today.toLowerCase()) { start = i; break; }
