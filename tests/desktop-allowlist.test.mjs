@@ -8,10 +8,14 @@ test('desktop allowlist mirrors Network.java document/image host rules', () => {
   assert.equal(allowedSource('http://animesogo.to/home'), false); // https only
   assert.equal(allowedSource('https://user@animesogo.to/'), false); // no userinfo
   assert.equal(allowedSource('https://animesogo.to:8443/'), false); // port must be 443
-  assert.equal(allowedSource('https://evil.animesogo.to/'), false); // exact hosts, no subdomains
+  assert.equal(allowedSource('https://evil.animesogo.to/'), false); // documents remain exact-host only
   assert.equal(allowedSource('https://animesogo.to.evil.com/'), false);
-  assert.equal(checkUrl('https://static.aniwaves.ru/a.jpg', false).hostname, 'static.aniwaves.ru');
-  assert.throws(() => checkUrl('https://static.aniwaves.ru/a', true), /Unsupported source host/); // image-only host
+  assert.equal(checkUrl('https://img.animexin.dev/a.jpg', false).hostname, 'img.animexin.dev');
+  assert.equal(checkUrl('https://eu.cdn.anipixcdn.co/a.jpg', false).hostname, 'eu.cdn.anipixcdn.co');
+  assert.equal(checkUrl('https://img.themoviedb.org/a.jpg', false).hostname, 'img.themoviedb.org');
+  assert.throws(() => checkUrl('https://animexin.dev.evil.com/a.jpg', false), /Unsupported source host/);
+  assert.throws(() => checkUrl('https://evil.example/a.jpg', false), /Unsupported source host/);
+  assert.throws(() => checkUrl('https://img.animexin.dev/a', true), /Unsupported source host/); // document hosts stay exact
   assert.throws(() => checkUrl('not a url', true), /Invalid source URL/);
 });
 
@@ -29,6 +33,7 @@ test('source base/name/matching and referer rules match Android', () => {
   assert.equal(matchesSource('sogo', 'https://animesuge.cz/watch/x'), false);
   assert.equal(matchesSource('nope', 'https://animesogo.to/'), false);
   assert.equal(refererFor(new URL('https://animexin.dev/a')), 'https://animexin.dev/');
+  assert.equal(refererFor(new URL('https://img.animexin.dev/a.jpg')), 'https://animexin.dev/');
   assert.equal(refererFor(new URL('https://static.aniwaves.ru/a.jpg')), 'https://aniwaves.ru/');
   assert.equal(refererFor(new URL('https://image.tmdb.org/a.jpg')), 'https://animesogo.to/');
   assert.equal(isHttps('https://cdn.example.com/x.m3u8'), true);

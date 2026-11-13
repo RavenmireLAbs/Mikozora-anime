@@ -1,13 +1,20 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; the app shows only that newest entry.
-export const APP_VERSION = '0.36.1';
+export const APP_VERSION = '0.36.2';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.36.1',
+    version: '0.36.2',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Anime and donghua artwork restored', description: 'Fixed missing posters and banners by allowing trusted image CDN subdomains and sending the correct source referer for source-hosted artwork.' },
+    ],
+  },
+  {
+    version: '0.36.1',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Airing today cards fixed', description: 'The What is airing today section on the home page now correctly shows its cards. A selector fix ensures the day heading\'s links are captured even when they are direct children rather than nested inside container elements.' },
     ],

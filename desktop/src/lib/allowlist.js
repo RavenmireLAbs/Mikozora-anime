@@ -15,16 +15,20 @@ const DOCUMENT_HOSTS = new Set([
 ]);
 const IMAGE_HOSTS = new Set([
   'animesogo.to', 'animesuge.cz', 'anikototv.to', 'animerulz.com.in', 'aniwaves.ru',
-  'static.aniwaves.ru', 'animebash.in', 'animexin.dev', 'naruldonghua.com',
-  'donghuastream.org', 'donghuaworld.com', 'cdn.anipixcdn.co', 'image.tmdb.org',
-  'media.themoviedb.org', 's4.anilist.co', 's3.anilist.co',
+  'animebash.in', 'animexin.dev', 'naruldonghua.com', 'donghuastream.org',
+  'donghuaworld.com', 'anipixcdn.co', 'themoviedb.org', 'anilist.co',
 ]);
+function isImageHost(host) {
+  return [...IMAGE_HOSTS].some(trusted => host === trusted || host.endsWith(`.${trusted}`));
+}
 
 export function checkUrl(raw, document) {
   let u;
   try { u = new URL(raw); } catch { throw new Error('Invalid source URL'); }
+  const host = u.hostname.toLowerCase();
+  const allowedHost = document ? DOCUMENT_HOSTS.has(host) : isImageHost(host);
   if (u.protocol !== 'https:' || u.username || u.password || (u.port && u.port !== '443')
-      || !(document ? DOCUMENT_HOSTS : IMAGE_HOSTS).has(u.hostname.toLowerCase())) {
+      || !allowedHost) {
     throw new Error('Unsupported source host');
   }
   return u;
@@ -92,11 +96,14 @@ export function matchesSource(source, raw) {
   } catch { return false; }
 }
 
-// Referer rule from Network.get(): a document host refers to itself, the
-// Aniwaves static host to its main site, everything else to AnimeSogo.
+// Refer from a source-owned image CDN to its corresponding source origin;
+// unrelated shared artwork hosts retain the default AnimeSogo referer.
 export function refererFor(url) {
   const host = url.hostname.toLowerCase();
-  if (DOCUMENT_HOSTS.has(host)) return `https://${host}/`;
-  if (host === 'static.aniwaves.ru') return 'https://aniwaves.ru/';
+  for (const source of DOCUMENT_HOSTS) {
+    if (source !== 'api.github.com' && (host === source || host.endsWith(`.${source}`))) {
+      return `https://${source}/`;
+    }
+  }
   return 'https://animesogo.to/';
 }
