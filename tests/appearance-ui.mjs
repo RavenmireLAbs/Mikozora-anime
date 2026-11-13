@@ -32,20 +32,20 @@ async function setup({viewport,mobile,extra={},oldRoot=null}={}){
  page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error'&&m.text().includes('Content Security Policy'))errors.push(m.text())});
  await page.addInitScript(({seed})=>{
   if(!localStorage.getItem('appearance.test.seed')){for(const [k,v] of Object.entries(seed))localStorage.setItem(k,v);localStorage.setItem('appearance.test.seed','1')}
-  window.__appearances=[];
+  window.__appearances=[];window.__mockFailSources=false;
   window.__oldDownloads=[{id:'legacy',item:{source:'sogo',title:'Legacy Show'},episode:{number:'1',title:'Episode 1'},status:'completed',storageMode:'folder',exportUri:'content://folder/legacy.mp4'}];
   window.__mockUpdates={automatic:false,alerts:false,watchedCount:1,initializedCount:1,unreadCount:0,updates:[],errors:[],checking:false,queued:false,notificationStatus:'allowed'};
   const reply=(id,value)=>setTimeout(()=>window.__mokuNativeChunk(id,typeof value==='string'?value:JSON.stringify(value),true,null),0);
   const sogoCard='<div class="ani items"><div class="item"><div class="type">TV</div><a class="poster" href="/watch/legacy-show/ep-2"><img src="https://cdn.anipixcdn.co/thumbnail/test.jpg"></a><div class="ep-status sub">2</div><a class="name" href="/watch/legacy-show/ep-2">Legacy Show</a></div></div>';
   function fixture(raw){const u=new URL(raw);
-   if(u.hostname==='animesogo.to'&&u.pathname==='/home')return `<div class="swiper-slide item" style="background-image:url('https://cdn.anipixcdn.co/thumbnail/hero.jpg')"><a href="/watch/legacy-show"><div class="title">Legacy Show</div><div class="genre">Action</div></a></div><div id="top-anime"><div class="tab-content" data-name="week"><a class="item" href="/watch/legacy-show"><div class="poster"><span style="background-image:url('https://cdn.anipixcdn.co/thumbnail/test.jpg')"></span></div><div class="name">Legacy Show</div></a></div></div>`;
+   if(u.hostname==='animesogo.to'&&u.pathname==='/home')return `<div class="swiper-slide item" style="background-image:url('https://cdn.anipixcdn.co/thumbnail/hero.jpg')"><a href="/watch/legacy-show"><div class="title">The Extraordinary Adventures of the Legendary Celestial Dragon Academy</div><div class="genre">Action</div></a></div><div id="top-anime"><div class="tab-content" data-name="week"><a class="item" href="/watch/legacy-show"><div class="poster"><span style="background-image:url('https://cdn.anipixcdn.co/thumbnail/test.jpg')"></span></div><div class="name">Legacy Show</div></a></div></div>`;
    if(u.hostname==='animesogo.to'&&(['/latest-updated','/filter'].includes(u.pathname)||u.pathname.startsWith('/status/')))return sogoCard;
    if(u.hostname==='animesogo.to'&&u.pathname==='/watch/legacy-show')return `<div id="watch-page" data-id="123"><div id="player"><div class="backdrop" style="background-image:url('https://cdn.anipixcdn.co/thumbnail/test.jpg')"></div></div><section id="w-info"><div class="poster"><img src="https://cdn.anipixcdn.co/thumbnail/test.jpg"></div><h1 class="title">Legacy Show</h1><div class="bl-meta"><div class="meta"><div>Status: <span>Finished Airing</span></div><div>Date aired: <span>Oct 3, 2002</span></div><div>Episodes: <span>220</span></div><div>Type: <span>TV</span></div></div></div></section></div>`;
    if(u.hostname==='animesogo.to'&&u.pathname==='/ajax/episode/list/123')return JSON.stringify({status:200,result:'<ul class="episodes"><li><a data-num="1" data-ids="s1" data-sub="1">1</a></li><li><a data-num="2" data-ids="s2" data-sub="1">2</a></li></ul>'});
    return '<html></html>';
   }
   window.MokuBridge={
-   request(id,url){reply(id,fixture(url))},downloads(id){reply(id,window.__oldDownloads)},exportSettings(id){reply(id,{configured:true,granted:true,name:'Anime folder'})},
+   request(id,url){if(window.__mockFailSources&&/(animesogo\.to|animexin\.dev)/.test(url)){window.__mokuNativeChunk(id,'',true,'Mock source unavailable');return;}reply(id,fixture(url))},downloads(id){reply(id,window.__oldDownloads)}, exportSettings(id){reply(id,{configured:true,granted:true,name:'Anime folder'})},
    openPlayer(){},openExternal(){},openDownload(){},openExport(){},setAppearance(mode,accent){window.__appearances.push({mode,accent})},
    downloadOptions(id){reply(id,{servers:[{id:'s',label:'Server',qualities:[{id:'best',label:'Best'}]}],unavailable:0})},
    syncEpisodeTitles(id){reply(id,window.__mockUpdates)},episodeUpdates(id){reply(id,window.__mockUpdates)},checkEpisodes(id){reply(id,window.__mockUpdates)},
@@ -117,7 +117,17 @@ try{
   await page.reload({waitUntil:'domcontentloaded'});await page.locator('.app-shell').waitFor();value=await getTheme(page);
   assert.equal(value.mode,'light');assert.equal(value.accent,'purple');assert.deepEqual(value.native,{mode:'light',accent:'purple'});
   // Theme persists while navigating all major screens, including dialogs and release notes.
-  await nav(page,config.mobile,'Discover');await page.locator('.hero').waitFor();await noOverflow(page);
+  await nav(page,config.mobile,'Discover');await page.locator('.hero-content-long h2').waitFor();await noOverflow(page);
+  const heroLayout=await page.evaluate(()=>{const hero=document.querySelector('.hero').getBoundingClientRect(),title=document.querySelector('.hero-content h2').getBoundingClientRect(),actions=document.querySelector('.hero-buttons').getBoundingClientRect();return {hero:{top:hero.top,bottom:hero.bottom,left:hero.left,right:hero.right},title:{top:title.top,bottom:title.bottom,left:title.left,right:title.right},actions:{top:actions.top,bottom:actions.bottom,left:actions.left,right:actions.right}}});
+  assert.ok(heroLayout.title.top>=heroLayout.hero.top&&heroLayout.title.bottom<=heroLayout.actions.top,'long hero title stays above its actions');
+  assert.ok(heroLayout.actions.bottom<=heroLayout.hero.bottom-8,'long-title hero buttons stay inside the hero on mobile and desktop');
+  assert.ok(heroLayout.actions.left>=heroLayout.hero.left&&heroLayout.actions.right<=heroLayout.hero.right,'long-title hero buttons stay horizontally inside the hero');
+  await page.evaluate(()=>{window.__mockFailSources=true;document.querySelector('button.refresh').click()});
+  await page.getByRole('status').filter({hasText:'Some source data may be out of date'}).waitFor();
+  await page.evaluate(()=>{window.__mockFailSources=false});
+  await page.getByRole('button',{name:'Retry failed sections'}).click();
+  await page.getByRole('status').filter({hasText:'Some source data may be out of date'}).waitFor({state:'hidden'});
+  assert.equal(await page.locator('.hero-content-long').count(),1,'successful retry restores the long-title spotlight');
   assert.equal(await page.locator('.cover-img img').first().evaluate(el=>getComputedStyle(el).filter),'none','artwork is not color-filtered');
   await page.screenshot({path:resolve(SHOTS,`${config.mobile?'mobile':'desktop'}-light-home.png`)});
   await nav(page,config.mobile,'Browse');await page.getByRole('heading',{name:/Find your next favorite/}).waitFor();await noOverflow(page);

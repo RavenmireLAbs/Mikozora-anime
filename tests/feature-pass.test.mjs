@@ -119,3 +119,14 @@ test('spotlight long titles get compact responsive spacing while short titles ke
   assert.match(css, /\.hero-content-long p\{margin:8px 0 12px\}/);
   assert.match(css, /@media\(max-width:760px\)\{[\s\S]*?\.hero-content-long h2\{font-size:clamp\(18px,5vw,21px\)\}/);
 });
+
+test('home source failures retain last good titles and expose a retry action', async () => {
+  const ui = await readFile('src/main.jsx', 'utf8');
+  const css = await readFile('src/style.css', 'utf8');
+  assert.match(ui, /errors:\{\},loadingSogo:true/);
+  assert.match(ui, /if\(alive\)setState\(x=>\(\{\.\.\.x,\.\.\.\(loadingKey\?\{\[loadingKey\]:false\}:\{\}\),errors:\{\.\.\.x\.errors,\[key\]:true\}\}\)\)/);
+  assert.match(ui, /Some source data may be out of date/);
+  assert.match(ui, /Retry failed sections/);
+  assert.match(ui, /onRetry=\{refreshSources\}/);
+  assert.match(css, /\.home-source-status\{display:flex/);
+});
