@@ -11,6 +11,9 @@ export const RELEASES = [
     entries: [
       { title: 'Volume slider memory', description: 'Your last-used volume is now remembered automatically. Adjust the volume slider or tap mute in the direct online player or offline player, and Mikozora saves that level for next time. Any episode you open—streaming or offline—starts at the volume you left it at instead of always defaulting to full volume. A new Remembered volume setting in Online Player Pro lets you set a default volume from 0 to 100 percent.' },
       { title: 'No more accidental APK clobbering', description: 'The Android build workflow no longer overwrites the latest GitHub Release every time code is merged to main. Releases are now published only when you push a version tag (for example v0.34.0), so routine merges and dependency bumps no longer rebuild and replace the current release APK.' },
+      { title: 'Airing today on your home page', description: 'A new card on the home page shows the donghua airing today, pulled live from AnimeXin\'s weekly schedule. Scroll through today\'s releases and tap any title to open it—no need to check each source individually to see what\'s new.' },
+      { title: 'Embed fallback when a server stalls', description: 'When an embedded third-party player hasn\'t loaded after 15 seconds, Mikozora now shows a prompt offering to switch to the next available server. No more staring at a blank iframe wondering if it\'s broken.' },
+      { title: 'Search suggestions from your library', description: 'If a search returns no results, Mikozora checks your saved library for close matches and shows them as "Did you mean?" suggestion chips. Clicking a suggestion opens that title directly—useful when the source site\'s search doesn\'t recognize an alternate title or romanization.' },
     ],
   },
   {
