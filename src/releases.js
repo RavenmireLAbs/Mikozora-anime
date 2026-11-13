@@ -1,13 +1,20 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; the app shows only that newest entry.
-export const APP_VERSION = '0.36.0';
+export const APP_VERSION = '0.36.1';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.36.0',
+    version: '0.36.1',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Airing today cards fixed', description: 'The What is airing today section on the home page now correctly shows its cards. A selector fix ensures the day heading\'s links are captured even when they are direct children rather than nested inside container elements.' },
+    ],
+  },
+  {
+    version: '0.36.0',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Instant search preview', description: 'As you type in the Browse search bar, Mikozora now shows up to six matching titles in a live dropdown—complete with cover art, title and source name. Press Enter or click "See all results" to run the full search. The preview drops away when you tab away from the search field.' },
       { title: 'Episode type filters', description: 'Series detail pages now include an episode type dropdown next to the sort button. Filter by All, Sub only, ONA or Movie to quickly find the episode format you want—especially useful for long-running shows with movies and ONA specials mixed in.' },
