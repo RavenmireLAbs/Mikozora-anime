@@ -16,10 +16,17 @@ final class Network {
     static final String UA = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36";
     // Source document hosts, plus api.github.com for the in-app update checker.
     private static final Set<String> DOCUMENT_HOSTS = new HashSet<>(Arrays.asList("animesogo.to", "animesuge.cz", "anikototv.to", "animerulz.com.in", "aniwaves.ru", "animebash.in", "animexin.dev", "naruldonghua.com", "donghuastream.org", "donghuaworld.com", "api.github.com"));
-    private static final Set<String> IMAGE_HOSTS = new HashSet<>(Arrays.asList("animesogo.to", "animesuge.cz", "anikototv.to", "animerulz.com.in", "aniwaves.ru", "static.aniwaves.ru", "animebash.in", "animexin.dev", "naruldonghua.com", "donghuastream.org", "donghuaworld.com", "cdn.anipixcdn.co", "image.tmdb.org", "media.themoviedb.org", "s4.anilist.co", "s3.anilist.co"));
+    // Artwork providers frequently serve posters and banners from rotating CDN
+    // subdomains (for example, img.animexin.dev or a regional Anipix host).
+    // Keep document requests exact-host only, but allow HTTPS subdomains of
+    // these explicitly trusted artwork domains for image requests/redirects.
+    private static final Set<String> IMAGE_HOSTS = new HashSet<>(Arrays.asList("animesogo.to", "animesuge.cz", "anikototv.to", "animerulz.com.in", "aniwaves.ru", "animebash.in", "animexin.dev", "naruldonghua.com", "donghuastream.org", "donghuaworld.com", "anipixcdn.co", "themoviedb.org", "anilist.co"));
     private Network() {}
     static boolean allowedSource(String raw) {
         try { checkUrl(raw, true); return true; } catch (Exception ignored) { return false; }
+    }
+    static boolean allowedImage(String raw) {
+        try { checkUrl(raw, false); return true; } catch (Exception ignored) { return false; }
     }
     // The in-app update checker opens this project's GitHub release page and
     // APK asset in the browser. GitHub is not a content source, so keep the
@@ -73,11 +80,27 @@ final class Network {
         try { URL u = new URL(raw); String host = u.getHost().toLowerCase(); return "https".equalsIgnoreCase(u.getProtocol()) && u.getUserInfo() == null && (u.getPort() == -1 || u.getPort() == 443) && !host.isEmpty() && !host.equals("localhost") && !host.endsWith(".localhost") && !host.endsWith(".local") && host.contains(".") && !host.matches("[0-9.]+") && !host.contains(":"); }
         catch (Exception ignored) { return false; }
     }
+    private static boolean isImageHost(String host) {
+        for (String trusted : IMAGE_HOSTS) {
+            if (host.equals(trusted) || host.endsWith("." + trusted)) return true;
+        }
+        return false;
+    }
+    private static String refererFor(String host) {
+        for (String source : DOCUMENT_HOSTS) {
+            if (!"api.github.com".equals(source) && (host.equals(source) || host.endsWith("." + source))) {
+                return "https://" + source + "/";
+            }
+        }
+        return "https://animesogo.to/";
+    }
     private static URL checkUrl(String raw, boolean document) throws IOException {
         URL u;
         try { u = new URL(raw); } catch (Exception e) { throw new IOException("Invalid source URL"); }
+        String host = u.getHost().toLowerCase();
+        boolean allowedHost = document ? DOCUMENT_HOSTS.contains(host) : isImageHost(host);
         if (!"https".equalsIgnoreCase(u.getProtocol()) || u.getUserInfo() != null || (u.getPort() != -1 && u.getPort() != 443)
-                || !(document ? DOCUMENT_HOSTS : IMAGE_HOSTS).contains(u.getHost().toLowerCase())) {
+                || !allowedHost) {
             throw new IOException("Unsupported source host");
         }
         return u;
@@ -104,8 +127,7 @@ final class Network {
             connection.setInstanceFollowRedirects(false);
             connection.setRequestProperty("User-Agent", UA);
             String host=current.getHost().toLowerCase();
-            String referer=DOCUMENT_HOSTS.contains(host)?"https://"+host+"/":
-                host.equals("static.aniwaves.ru")?"https://aniwaves.ru/":"https://animesogo.to/";
+            String referer=refererFor(host);
             connection.setRequestProperty("Referer", referer);
             connection.setRequestProperty("X-Requested-With", "XMLHttpRequest");
             connection.setRequestProperty("Accept-Encoding", "identity");

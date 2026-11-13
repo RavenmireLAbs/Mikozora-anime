@@ -14,6 +14,11 @@ public final class NativeSourceRulesSmoke {
             for(String[] other:sources)if(!other[0].equals(s[0]))yes(!Network.matchesSource(s[0],other[1]+"/episode/1"),s[0]+" cannot be paired with "+other[0]);
         }
         yes(!Network.allowedSource("https://127.0.0.1/private"),"private host rejected");
+        yes(Network.allowedImage("https://img.animexin.dev/poster.jpg"),"source image CDN subdomain accepted");
+        yes(Network.allowedImage("https://eu.cdn.anipixcdn.co/poster.jpg"),"regional artwork CDN accepted");
+        yes(Network.allowedImage("https://img.themoviedb.org/poster.jpg"),"TMDB artwork subdomain accepted");
+        yes(!Network.allowedImage("https://animexin.dev.evil.test/poster.jpg"),"spoofed image host rejected");
+        yes(!Network.allowedImage("https://evil.example/poster.jpg"),"untrusted image host rejected");
         yes(!Network.matchesSource("unknown","https://animesogo.to/watch/example"),"unknown source rejected");
         System.out.println("PASS source host rules: 10 sources, cross-source mismatches, spoofing and legacy IDs.");
     }
