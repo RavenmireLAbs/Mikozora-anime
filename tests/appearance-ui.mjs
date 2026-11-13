@@ -125,6 +125,9 @@ try{
   await page.evaluate(()=>{window.__mockFailSources=true;document.querySelector('button.refresh').click()});
   await page.getByRole('status').filter({hasText:'Some source data may be out of date'}).waitFor();
   await page.evaluate(()=>{window.__mockFailSources=false});
+  await page.getByRole('button',{name:'Refresh AnimeSogo'}).click();
+  await page.locator('.home-source-row').filter({hasText:'AnimeSogo'}).getByText(/Updated/).waitFor();
+  assert.match(await page.locator('.home-source-row').filter({hasText:'AnimeXin'}).getAttribute('class'),/failed/,'AnimeXin retains its own failure state until its own retry succeeds');
   await page.getByRole('button',{name:'Retry failed sections'}).click();
   await page.getByRole('status').filter({hasText:'Some source data may be out of date'}).waitFor({state:'hidden'});
   assert.equal(await page.locator('.hero-content-long').count(),1,'successful retry restores the long-title spotlight');

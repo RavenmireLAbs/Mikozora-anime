@@ -1,13 +1,20 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; the app shows only that newest entry.
-export const APP_VERSION = '0.36.6';
+export const APP_VERSION = '0.36.7';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.36.6',
+    version: '0.36.7',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'See source freshness at a glance', description: 'Discover now shows separate last-success times for AnimeSogo and AnimeXin, and lets you refresh either source without reloading the other.' },
+    ],
+  },
+  {
+    version: '0.36.6',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Clearer source health on Discover', description: 'Discover keeps its last loaded titles when a source fails, marks that data as potentially out of date, and offers a retry without leaving the page.' },
     ],
