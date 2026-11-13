@@ -303,6 +303,25 @@ function parseXinCards(document) {
     return enrichCard({ source: 'xin', url: normXin(attr(a, 'href')), title: attr(a, 'title') || text(item.querySelector('.tt h2')) || text(item.querySelector('.tt')), image: absolute(attr(image, 'data-src') || attr(image, 'src'), SOURCES.xin.base), type: text(item.querySelector('.typez')) || 'Donghua', badge: text(item.querySelector('.sb')) || 'SUB', status: text(item.querySelector('.epx')) }, item);
   }));
 }
+function parseXinWeeklyCards(document) {
+  return distinct([...document.querySelectorAll('.wpop-weekly li')].map((item, i) => {
+    const link = item.querySelector('h4 a.series[href], .imgseries a.series[href]');
+    const image = item.querySelector('.imgseries img');
+    const rank = Number(text(item.querySelector('.ctr'))) || i + 1;
+    return enrichCard({ source:'xin', url:normXin(attr(link, 'href')), title:text(item.querySelector('h4 a')) || attr(image, 'alt'), image:absolute(attr(image, 'data-src') || attr(image, 'src'), SOURCES.xin.base), type:'Donghua', rank }, item);
+  }));
+}
+const titleArtworkKey = title => String(title || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+function xinArtworkLookup(document) {
+  const byUrl = new Map(), byTitle = new Map();
+  for (const item of [...parseXinWeeklyCards(document), ...parseXinCards(document)]) {
+    if (!item.image) continue;
+    if (item.url && !byUrl.has(item.url)) byUrl.set(item.url, item.image);
+    const key = titleArtworkKey(item.title);
+    if (key && !byTitle.has(key)) byTitle.set(key, item.image);
+  }
+  return { byUrl, byTitle };
+}
 export async function getFeatured() {
   const document = doc(await getText(`${SOURCES.sogo.base}/home`));
   const slides = [...document.querySelectorAll('.swiper-slide.item')].map(item => {
@@ -339,19 +358,45 @@ export async function getTrending(source) {
   }
   if (source === 'xin') {
     const document = doc(await getText(`${SOURCES.xin.base}/`));
-    const items = [...document.querySelectorAll('.wpop-weekly li')].map((item, i) => {
-      const link = item.querySelector('h4 a.series[href], .imgseries a.series[href]');
-      const image = item.querySelector('.imgseries img');
-      const rank = Number(text(item.querySelector('.ctr'))) || i + 1;
-      return enrichCard({ source:'xin', url:normXin(attr(link, 'href')), title:text(item.querySelector('h4 a')) || attr(image, 'alt'), image:absolute(attr(image, 'data-src') || attr(image, 'src'), SOURCES.xin.base), type:'Donghua', rank }, item);
-    });
-    return distinct(items);
+    return parseXinWeeklyCards(document);
   }
   throw new Error('Unknown source');
 }
 // AnimeXin's homepage has a weekly schedule: day headings (Mon–Sun) followed by
 // the series airing on that day. Return today's airing titles as cards.
 const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+function xinArtworkIn(node) {
+  if (!node) return '';
+  const images = [...(node.tagName?.toLowerCase() === 'img' ? [node] : []), ...node.querySelectorAll('img')];
+  for (const image of images) {
+    const url = absolute(attr(image, 'data-src') || attr(image, 'data-lazy-src') || attr(image, 'data-original') || attr(image, 'src'), SOURCES.xin.base);
+    if (url) return url;
+  }
+  const styled = [...(node.getAttribute?.('style') ? [node] : []), ...node.querySelectorAll('[style]')];
+  for (const element of styled) {
+    const background = attr(element, 'style').match(/url\(['"]?([^'")]+)['"]?\)/i)?.[1] || '';
+    const url = absolute(background, SOURCES.xin.base);
+    if (url) return url;
+  }
+  return '';
+}
+function xinScheduleArtwork(link, url) {
+  let scope = link;
+  for (let depth = 0; scope && depth < 5; depth++, scope = scope.parentElement) {
+    const links = [...(scope.tagName?.toLowerCase() === 'a' ? [scope] : []), ...scope.querySelectorAll('a[href]')];
+    const matches = links.filter(candidate => normXin(attr(candidate, 'href')) === url);
+    for (const candidate of matches) {
+      const image = xinArtworkIn(candidate);
+      if (image) return image;
+    }
+    const relatedUrls = new Set(links.map(candidate => normXin(attr(candidate, 'href'))).filter(Boolean));
+    if (relatedUrls.size === 1 && relatedUrls.has(url)) {
+      const image = xinArtworkIn(scope);
+      if (image) return image;
+    }
+  }
+  return '';
+}
 export async function getAiringToday() {
   const document = doc(await getText(`${SOURCES.xin.base}/`));
   const today = DAY_NAMES[new Date().getDay()];
@@ -361,6 +406,7 @@ export async function getAiringToday() {
     if (text(all[i]).toLowerCase() === today.toLowerCase()) { start = i; break; }
   }
   if (start < 0) return [];
+  const artwork = xinArtworkLookup(document);
   const items = [];
   for (let i = start + 1; i < all.length; i++) {
     const el = all[i];
@@ -375,9 +421,10 @@ export async function getAiringToday() {
       if (!href || !href.startsWith('/') && !href.includes('animexin.dev')) continue;
       const url = normXin(href);
       if (!url) continue;
-      const title = attr(a, 'title') || text(a);
+      const title = attr(a, 'title') || text(a) || attr(a.querySelector('img'), 'alt');
       if (!title) continue;
-      items.push(enrichCard({ source: 'xin', url, title, image: '', type: 'Donghua', badge: 'SUB', status: '' }, el));
+      const image = xinScheduleArtwork(a, url) || artwork.byUrl.get(url) || artwork.byTitle.get(titleArtworkKey(title)) || '';
+      items.push(enrichCard({ source: 'xin', url, title, image, type: 'Donghua', badge: 'SUB', status: '' }, el));
     }
   }
   return distinct(items).slice(0, 12);
