@@ -109,3 +109,12 @@ test('0.29 UI wires grouped Universal Search and confirmation-gated Source Match
   assert.match(css, /\.source-version-row\{flex-direction:column/);
   assert.match(css, /\.source-version-actions \.btn\{flex:1\}/);
 });
+
+test('spotlight hero retries with the title poster when its banner image fails', async () => {
+  const ui = await readFile('src/main.jsx', 'utf8');
+  const css = await readFile('src/style.css', 'utf8');
+  assert.match(ui, /const heroArtwork = \[\.\.\.new Set\(\[item\?\.banner,item\?\.image\]/);
+  assert.match(ui, /onError=\{\(\)=>setHeroArtworkIndex\(index=>index\+1\)\}/);
+  assert.match(ui, /className="hero-art" src=\{imageUrl\(heroArtwork\[heroArtworkIndex\]\)\}/);
+  assert.match(css, /\.hero-art\{position:absolute/);
+});
