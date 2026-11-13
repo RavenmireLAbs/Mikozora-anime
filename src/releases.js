@@ -1,13 +1,20 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; the app shows only that newest entry.
-export const APP_VERSION = '0.36.5';
+export const APP_VERSION = '0.36.6';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.36.5',
+    version: '0.36.6',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Clearer source health on Discover', description: 'Discover keeps its last loaded titles when a source fails, marks that data as potentially out of date, and offers a retry without leaving the page.' },
+    ],
+  },
+  {
+    version: '0.36.5',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Long spotlight titles fit cleanly', description: 'The Discover hero now adjusts spacing and title size for longer anime names so the metadata and action buttons stay visible on desktop and mobile.' },
     ],

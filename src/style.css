@@ -937,3 +937,13 @@ button.search-chip:hover,.search-chip.saved>button:first-child:hover{color:var(-
   .hero-content-long p{margin:7px 0 10px}
 }
 @media(max-width:390px){.hero-content.hero-content-long{max-width:84%}}
+
+.home-source-status{display:flex;align-items:center;gap:12px;margin:0 0 18px;padding:12px 14px;border:1px solid #594d30;border-radius:9px;background:#2a271d;color:#e7d49b}
+.home-source-status>svg{flex:none}
+.home-source-status>div{display:grid;gap:3px;flex:1;min-width:0}
+.home-source-status strong{font-size:11px;color:#f0e2b5}
+.home-source-status span{font-size:10px;line-height:1.45;color:#c8b98e}
+.home-source-status button{flex:none;border:1px solid #77653c;border-radius:7px;background:#39321f;color:#f0e2b5;padding:8px 10px;font-size:10px;font-weight:800}
+.home-source-status button:hover:not(:disabled){background:#494027}
+.home-source-status button:disabled{opacity:.65;cursor:wait}
+@media(max-width:560px){.home-source-status{align-items:flex-start;flex-wrap:wrap;gap:8px 10px}.home-source-status>div{flex-basis:calc(100% - 30px)}.home-source-status button{margin-left:27px}}
