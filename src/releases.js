@@ -1,13 +1,25 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; the app shows only that newest entry.
-export const APP_VERSION = '0.35.0';
+export const APP_VERSION = '0.36.0';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.35.0',
+    version: '0.36.0',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Instant search preview', description: 'As you type in the Browse search bar, Mikozora now shows up to six matching titles in a live dropdown—complete with cover art, title and source name. Press Enter or click "See all results" to run the full search. The preview drops away when you tab away from the search field.' },
+      { title: 'Episode type filters', description: 'Series detail pages now include an episode type dropdown next to the sort button. Filter by All, Sub only, ONA or Movie to quickly find the episode format you want—especially useful for long-running shows with movies and ONA specials mixed in.' },
+      { title: 'History filters', description: 'The History page now has time-range and source dropdowns above the episode list. Filter by Today, This week, This month or All time, and narrow by any specific source. A "No matches" empty state appears if your filters hide everything.' },
+      { title: 'Keyboard navigation', description: 'Press / anywhere to jump to the Browse search bar. Press g then h to return to Home, g then l to open Library, or g then d to open Downloads—two-key shortcuts for desktop and power users.' },
+      { title: 'Home page sticky sub-nav', description: 'A slim sticky bar now pins to the top of the home page with quick jumps to Home, Trending, New and Discover sections. Scroll down to browse and tap a section name to jump back—no more scrolling to find the next rail.' },
+      { title: 'Settings group icons', description: 'Each settings section header now has a small icon: an eye for Content, refresh for Episode Updates, download for Smart Downloads, folder for Download Location, hard drive for Background Downloads, play for Offline Playback, database for Your Data and info for About. Settings is faster to scan at a glance.' },
+    ],
+  },
+  {
+    version: '0.35.0',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Airing today on your home page', description: 'A new card on the home page shows the donghua airing today, pulled live from AnimeXin\'s weekly schedule. Scroll through today\'s releases and tap any title to open it—no need to check each source individually to see what\'s new.' },
       { title: 'Embed fallback when a server stalls', description: 'When an embedded third-party player hasn\'t loaded after 15 seconds, Mikozora now shows a prompt offering to switch to the next available server. No more staring at a blank iframe wondering if it\'s broken.' },
