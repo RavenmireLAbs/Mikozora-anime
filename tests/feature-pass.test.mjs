@@ -124,9 +124,13 @@ test('home source failures retain last good titles and expose a retry action', a
   const ui = await readFile('src/main.jsx', 'utf8');
   const css = await readFile('src/style.css', 'utf8');
   assert.match(ui, /errors:\{\},loadingSogo:true/);
-  assert.match(ui, /if\(alive\)setState\(x=>\(\{\.\.\.x,\.\.\.\(loadingKey\?\{\[loadingKey\]:false\}:\{\}\),errors:\{\.\.\.x\.errors,\[key\]:true\}\}\)\)/);
+  assert.match(ui, /if\(isAlive\(\)\)setState\(x=>\(\{\.\.\.x,\.\.\.\(loadingKey\?\{\[loadingKey\]:false\}:\{\}\),errors:\{\.\.\.x\.errors,\[key\]:true\}\}\)\)/);
   assert.match(ui, /Some source data may be out of date/);
   assert.match(ui, /Retry failed sections/);
-  assert.match(ui, /onRetry=\{refreshSources\}/);
+  assert.match(ui, /home-source-health-grid/);
+  assert.match(ui, /retryHomeSource=source=>\{if\(!HOME_SOURCE_IDS\.includes\(source\)\)return;clearNetworkCache\(\);setSourceRetry/);
+  assert.match(ui, /Refresh \$\{sourceName\(row\.source\)\}/);
+  assert.match(ui, /onRetry=\{retryHomeSource\}/);
   assert.match(css, /\.home-source-status\{display:flex/);
+  assert.match(css, /\.home-source-health-grid\{/);
 });
