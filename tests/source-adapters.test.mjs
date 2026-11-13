@@ -4,6 +4,9 @@ import { DOMParser } from 'linkedom';
 
 globalThis.DOMParser = DOMParser;
 const xinMirror = Buffer.from('<iframe src="https://player.example.org/video/one"></iframe>').toString('base64');
+const weekdayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const todayName = weekdayNames[new Date().getDay()];
+const nextDayName = weekdayNames[(new Date().getDay() + 1) % weekdayNames.length];
 const fixture = url => {
   const u = new URL(url);
   if (u.hostname === 'animesogo.to' && u.pathname === '/home') return `<div class="swiper-slide item" style="background-image: url('https://cdn.anipixcdn.co/thumbnail/hero.jpg')"><a href="/watch/test-show"><div class="title">Test Show</div><div class="genre">Action, Fantasy</div></a></div><div id="top-anime"><div class="tab-content" data-name="day"><a class="item" href="/watch/day-only"><div class="name">Day only</div></a></div><div class="tab-content" data-name="week"><a class="item" href="/watch/test-show/ep-2"><div class="poster"><span style="background-image: url('https://media.themoviedb.org/t/p/test.jpg');"></span></div><div class="name">Weekly Test Show</div></a><a class="item" href="https://example.org/watch/invalid"><div class="name">Bad source</div></a></div></div>`;
@@ -12,7 +15,7 @@ const fixture = url => {
   if (u.hostname === 'animesogo.to' && u.pathname === '/ajax/episode/list/123') return JSON.stringify({status:200,result:'<ul class="episodes"><li><a data-num="1" data-ids="episode-token" data-sub="1" data-dub="1">1</a></li><li><a data-num="2" data-ids="episode-token-2" data-sub="1">2</a></li></ul>'});
   if (u.hostname === 'animesogo.to' && u.pathname === '/ajax/server/list') return JSON.stringify({status:200,result:'<div class="type" data-type="sub"><a class="server" data-link-id="sid-A"><span>HD-1</span></a></div>'});
   if (u.hostname === 'animesogo.to' && u.pathname === '/ajax/server') return JSON.stringify({status:200,result:{url:'https://player.example.org/embed/test'}});
-  if (u.hostname === 'animexin.dev' && (u.pathname === '/anime/' || u.pathname === '/')) return `<div class="popularslider"><a href="/test-episode-2/">A recent episode, not a series</a></div><ul class="wpop-weekly"><li><div class="ctr">1</div><div class="imgseries"><a class="series" href="https://animexin.dev/test-donghua/"><img src="https://animexin.dev/test.jpg" alt="Test Donghua"></a></div><h4><a class="series" href="https://animexin.dev/test-donghua/">Test Donghua</a></h4></li></ul><div class="postbody"><div class="listupd"><article class="bs"><a href="https://animexin.dev/test-donghua/" title="Test Donghua"><div class="typez">ONA</div><span class="sb">Sub</span><span class="epx">Ongoing</span><img src="https://animexin.dev/test.jpg"></a></article></div></div><div class="hpage"><a class="r" href="?page=2">Next</a></div>`;
+  if (u.hostname === 'animexin.dev' && (u.pathname === '/anime/' || u.pathname === '/')) return `<div class="popularslider"><a href="/test-episode-2/">A recent episode, not a series</a></div><ul class="wpop-weekly"><li><div class="ctr">1</div><div class="imgseries"><a class="series" href="https://animexin.dev/test-donghua/"><img src="https://animexin.dev/test.jpg" alt="Test Donghua"></a></div><h4><a class="series" href="https://animexin.dev/test-donghua/">Test Donghua</a></h4></li></ul><div class="postbody"><div class="listupd"><article class="bs"><a href="https://animexin.dev/test-donghua/" title="Test Donghua"><div class="typez">ONA</div><span class="sb">Sub</span><span class="epx">Ongoing</span><img src="https://animexin.dev/test.jpg"></a></article></div></div><div class="hpage"><a class="r" href="?page=2">Next</a></div><section class="schedule"><h3>${todayName}</h3><div class="schedule-entry"><a href="https://animexin.dev/test-donghua/">Test Donghua</a></div><h3>${nextDayName}</h3><a href="https://animexin.dev/another-show/">Another show</a></section>`;
   if (u.hostname === 'animexin.dev' && u.pathname === '/test-donghua/') return `<h1 class="entry-title">Test Donghua</h1><div class="thumbook"><div class="thumb"><img src="https://animexin.dev/test.jpg"></div></div><div class="spe"><span><b>Released on:</b> June 14, 2023</span><span><b>Released:</b> Jun 24, 2023</span><span><b>Status:</b> Ongoing</span><span><b>Episodes:</b> 182</span><span><b>Rating:</b> 8.10</span><span><b>Type:</b> ONA</span></div><div class="genxed"><a>Fantasy</a></div><div class="synp"><div class="entry-content"><p>English</p><p>A fantasy synopsis.</p></div></div><div class="eplister"><ul><li><a href="https://animexin.dev/test-episode-2/"><div class="epl-num">2</div><div class="epl-title">Episode 2</div><div class="epl-date">Yesterday</div></a></li></ul></div>`;
   if (u.hostname === 'animexin.dev' && u.pathname === '/post-only/') return `<h1 class="entry-title">Post only</h1><div class="spe"><span><b>Released on:</b> June 14, 2023</span></div>`;
   if (u.hostname === 'animexin.dev' && u.pathname === '/test-episode-2/') return `<select class="mirror"><option value="">Select</option><option value="${xinMirror}">English mirror</option><option value="${Buffer.from('<iframe src="//ok.ru/videoembed/123?nochat=1"></iframe>').toString('base64')}">OK.ru mirror</option><option value="${Buffer.from('<iframe data-src="/player/relative"></iframe>').toString('base64')}">Relative mirror</option><option value="${Buffer.from('<iframe src="javascript:alert(1)"></iframe>').toString('base64')}">Invalid</option><option value="${Buffer.from('<iframe src="https://127.0.0.1/private"></iframe>').toString('base64')}">Private IP</option></select>`;
@@ -29,7 +32,7 @@ globalThis.window = { MokuBridge: { request(id,url) {
     } catch(e) { window.__mokuNativeChunk(id,'',true,e.message); }
   },0);
 }}};
-const { getFeatured,getTrending,getDiscoverAnime,getCatalog,getDetail,getServers,imageUrl,clearNetworkCache } = await import('../src/data.js');
+const { getFeatured,getTrending,getAiringToday,getDiscoverAnime,getCatalog,getDetail,getServers,imageUrl,clearNetworkCache } = await import('../src/data.js');
 
 test('AnimeSogo featured and catalog normalize episode links to series', async()=>{
   const featured=await getFeatured(); assert.equal(featured[0].title,'Test Show');assert.equal(featured[0].url,'https://animesogo.to/watch/test-show');
@@ -60,6 +63,11 @@ test('Weekly rankings use each source leaderboard, never the latest episode feed
   assert.deepEqual(xin.map(x=>[x.rank,x.title,x.url]),[[1,'Test Donghua','https://animexin.dev/test-donghua/']]);
   assert.ok(!xin.some(x=>x.url.includes('episode')));
   await assert.rejects(()=>getTrending('unknown'),/Unknown source/);
+});
+test('Airing today titles reuse artwork from AnimeXin listing cards',async()=>{
+  const airing=await getAiringToday();
+  assert.deepEqual(airing.map(item=>item.title),['Test Donghua']);
+  assert.equal(airing[0].image,'https://animexin.dev/test.jpg');
 });
 test('Discover anime and status filters use source routes; search never pretends to filter',async()=>{
   await getDiscoverAnime();
