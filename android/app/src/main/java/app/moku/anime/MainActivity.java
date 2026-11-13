@@ -36,6 +36,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 public final class MainActivity extends Activity implements PlayerNavigation.RequestListener {
     private WebView web;
@@ -49,6 +50,7 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
     private final AtomicInteger optionGeneration = new AtomicInteger();
     private final AtomicBoolean openUpdates = new AtomicBoolean(false);
     private final AtomicBoolean openDownloads = new AtomicBoolean(false);
+    private final AtomicReference<String> openWidgetItem = new AtomicReference<>(null);
     private final SharedPreferences.OnSharedPreferenceChangeListener updatesListener=(prefs,key)->{
         if(EpisodeStore.DATA.equals(key))signalUpdates();
     };
@@ -78,8 +80,9 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
         // state in this preference file. Clear it on upgrade; Drive files and
         // any Google-side grant are not touched by the app.
         try { getSharedPreferences("moku_google_drive_sync", MODE_PRIVATE).edit().clear().apply(); } catch(Exception ignored) {}
-        if(state!=null){pendingFolderRequest=state.getString("folderRequestId");pendingSyncFolderRequest=state.getString("syncFolderRequestId");pendingBackupSave=state.getString("backupSaveRequestId");pendingBackupOpen=state.getString("backupOpenRequestId");pendingTextSave=state.getString("textSaveRequestId");pendingTextOpen=state.getString("textOpenRequestId");openUpdates.set(state.getBoolean("openUpdates",false));openDownloads.set(state.getBoolean("openDownloads",false));}
+        if(state!=null){pendingFolderRequest=state.getString("folderRequestId");pendingSyncFolderRequest=state.getString("syncFolderRequestId");pendingBackupSave=state.getString("backupSaveRequestId");pendingBackupOpen=state.getString("backupOpenRequestId");pendingTextSave=state.getString("textSaveRequestId");pendingTextOpen=state.getString("textOpenRequestId");openUpdates.set(state.getBoolean("openUpdates",false));openDownloads.set(state.getBoolean("openDownloads",false));openWidgetItem.set(state.getString("openWidgetItem"));}
         if(getIntent()!=null&&getIntent().getBooleanExtra(EpisodeNotifier.EXTRA_OPEN,false)){openUpdates.set(true);getIntent().removeExtra(EpisodeNotifier.EXTRA_OPEN);}
+        queueWidgetOpen(getIntent());
         if(getIntent()!=null&&getIntent().getBooleanExtra(DownloadWorker.EXTRA_OPEN_DOWNLOADS,false)){openDownloads.set(true);getIntent().removeExtra(DownloadWorker.EXTRA_OPEN_DOWNLOADS);}
         EpisodeNotifier.ensureChannel(this);
         EpisodeStore.preferences(this).registerOnSharedPreferenceChangeListener(updatesListener);
@@ -251,6 +254,34 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
         }
     }
     private final class Bridge {
+        @JavascriptInterface public void appLockSettings(String id) {
+            if(id==null||!id.matches("[0-9]{1,12}"))return;
+            sendChunks(id,AppLock.state(MainActivity.this).toString(),null);
+        }
+        @JavascriptInterface public void setAppLockEnabled(String id,boolean enabled) {
+            if(id==null||!id.matches("[0-9]{1,12}"))return;
+            boolean saved=AppLock.setEnabled(MainActivity.this,enabled);
+            JSONObject state=AppLock.state(MainActivity.this);
+            if(!saved)try{state.put("error",enabled&&!state.optBoolean("deviceSecure")?"Set a PIN, pattern, or password in Android settings before enabling App Lock.":"Could not save the App Lock setting.");}catch(Exception ignored){}
+            runOnUiThread(()->AppLock.applyScreenshotProtection(MainActivity.this,getWindow()));
+            sendChunks(id,state.toString(),null);
+        }
+        @JavascriptInterface public void openDeviceSecuritySettings(String id) {
+            if(id==null||!id.matches("[0-9]{1,12}"))return;
+            runOnUiThread(()->{
+                try {
+                    startActivity(new Intent(Settings.ACTION_SECURITY_SETTINGS));
+                    sendChunks(id,"{\"opened\":true}",null);
+                } catch(Exception error) { sendChunks(id,"{\"opened\":false}",null); }
+            });
+        }
+        @JavascriptInterface public void updateHomeWidget(String payload) {
+            if(payload==null||payload.length()>8000)return;
+            try {
+                JSONObject data=new JSONObject(payload);
+                HomeWidgetProvider.saveData(MainActivity.this,data.optString("title",""),data.optString("episode",""));
+            } catch(Exception ignored) { }
+        }
         @JavascriptInterface public void setAppearance(String mode,String accent) {
             if(!Appearance.save(MainActivity.this,mode,accent))return;
             runOnUiThread(()->{if(!closed){Appearance.Palette current=Appearance.read(MainActivity.this);Appearance.applyWindow(MainActivity.this,current);if(web!=null)web.setBackgroundColor(current.background);}});
@@ -304,6 +335,7 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
         }
         @JavascriptInterface public boolean takeOpenUpdates(){return openUpdates.getAndSet(false);}
         @JavascriptInterface public boolean takeOpenDownloads(){return openDownloads.getAndSet(false);}
+        @JavascriptInterface public String takeOpenWidgetItem(){String value=openWidgetItem.getAndSet(null);return value==null?"":value;}
         @JavascriptInterface public void episodeNotificationPermission(boolean automaticPrompt){runOnUiThread(()->notificationPermission(automaticPrompt));}
         @JavascriptInterface public void openPlayer(String payload) {
             if (payload == null || payload.length() > 300000) {
@@ -732,8 +764,20 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
         super.onRequestPermissionsResult(requestCode,permissions,grantResults);
         if(requestCode==91||requestCode==92){signalUpdates();episodeCommands.execute(()->EpisodeNotifier.refresh(this,false));}
     }
+    private void queueWidgetOpen(Intent intent) {
+        if(intent==null||!intent.getBooleanExtra(HomeWidgetProvider.EXTRA_OPEN_ITEM,false))return;
+        String source=intent.getStringExtra(HomeWidgetProvider.EXTRA_SOURCE);
+        String url=intent.getStringExtra(HomeWidgetProvider.EXTRA_URL);
+        intent.removeExtra(HomeWidgetProvider.EXTRA_OPEN_ITEM);
+        intent.removeExtra(HomeWidgetProvider.EXTRA_SOURCE);
+        intent.removeExtra(HomeWidgetProvider.EXTRA_URL);
+        if(source==null||url==null||source.length()>30||url.length()>2500||!Network.matchesSource(source,url))return;
+        try{openWidgetItem.set(new JSONObject().put("source",source).put("url",url).toString());}catch(Exception ignored){}
+    }
     @Override protected void onNewIntent(Intent intent){
         super.onNewIntent(intent);setIntent(intent);
+        queueWidgetOpen(intent);
+        if(openWidgetItem.get()!=null)runOnUiThread(()->{if(!closed&&web!=null)web.evaluateJavascript("window.dispatchEvent(new Event('moku-open-widget'))",null);});
         if(intent!=null&&intent.getBooleanExtra(EpisodeNotifier.EXTRA_OPEN,false)){
             intent.removeExtra(EpisodeNotifier.EXTRA_OPEN);openUpdates.set(true);
             runOnUiThread(()->{if(!closed&&web!=null)web.evaluateJavascript("window.dispatchEvent(new Event('moku-open-updates'))",null);});
@@ -754,6 +798,7 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
         if(pendingTextOpen!=null)out.putString("textOpenRequestId",pendingTextOpen);
         out.putBoolean("openUpdates",openUpdates.get());
         out.putBoolean("openDownloads",openDownloads.get());
+        if(openWidgetItem.get()!=null)out.putString("openWidgetItem",openWidgetItem.get());
     }
     @Override protected void onActivityResult(int requestCode,int resultCode,Intent data) {
         super.onActivityResult(requestCode,resultCode,data);

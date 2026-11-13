@@ -409,6 +409,7 @@ html[data-themed] .home-source-row small{color:var(--moku-text-899989,#899989)}
 html[data-themed] .home-source-row.failed small{color:var(--moku-text-d7ad91,#d7ad91)}
 html[data-themed] .home-source-row>button{border:1px solid var(--moku-border-39473a,#39473a);background:var(--moku-bg-232e24,#232e24);color:var(--moku-text-bddaa9,#bddaa9)}
 html[data-themed] .home-source-row>button:hover:not(:disabled){background:var(--moku-bg-2d3b2e,#2d3b2e);border-color:var(--moku-border-586c56,#586c56)}
+html[data-themed] .privacy-lock-settings .setting-row>button[aria-pressed=true]{color:var(--moku-text-caeda7,#caeda7);border-color:var(--moku-border-4d6442,#4d6442);background:var(--moku-bg-273724,#273724)}
 
 html[data-themed]{background:var(--bg)}
 /* Hero and detail art stay dark, with independently readable text and controls. */

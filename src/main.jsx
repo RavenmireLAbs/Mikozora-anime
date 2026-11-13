@@ -4,9 +4,9 @@ import {
   Home, Compass, Bookmark, History, Layers3, Settings2, Search, ArrowRight,
   ArrowUpRight, ChevronLeft, ChevronRight, Play, Check, RefreshCw, X, Clock3,
   ExternalLink, Sparkles, SlidersHorizontal, Film, LoaderCircle, AlertCircle,
-  Trash2, RotateCcw, FolderHeart, CircleHelp, ShieldCheck, Plus, ListVideo, Download, HardDrive, ListChecks, CheckCircle2, Heart, FolderPlus, Pencil, Folder, Flame, Bell, Sun, Moon, EyeOff, Eye, Info, Database, Star, Maximize, Link2, Unlink, CalendarClock, ArrowUp, ArrowDown, Gauge, Volume2, VolumeX
+  Trash2, RotateCcw, FolderHeart, CircleHelp, ShieldCheck, Plus, ListVideo, Download, HardDrive, ListChecks, CheckCircle2, Heart, FolderPlus, Pencil, Folder, Flame, Bell, Sun, Moon, EyeOff, Eye, Info, Database, Star, Maximize, Link2, Unlink, CalendarClock, ArrowUp, ArrowDown, Gauge, Volume2, VolumeX, LockKeyhole
 } from 'lucide-react';
-import { SOURCES, getCatalog, getDetail, getFeatured, getTrending, getDiscoverAnime, getAiringToday, getServers, imageUrl, isAndroid, clearNetworkCache, getDownloads, getDownloadOptions, enqueueDownloads, removeDownload, setDownloadQueueOrder, openDownload, getExportSettings, chooseDownloadFolder, clearDownloadFolder, exportDownload, openExport, hasEpisodeUpdates, syncEpisodeTitles, getEpisodeUpdates, checkEpisodes, setEpisodeAutomatic, setEpisodeAlerts, markEpisodeRead, fetchLatestRelease, exportBackupToFile, readBackupFromFile, isDesktopApp, hasNativeDownloads, setPlayerReferer, hasDeviceSync, getDeviceSyncSettings, chooseDeviceSyncFolder, clearDeviceSyncFolder, readDeviceSyncFolder, writeDeviceSyncFile, hasTextFiles, exportTextToFile, readTextFromFile, hasOnlinePlayerPro, resolveOnlineStream, clearOnlineStream, openOnlinePlayerPro, hasBackgroundDownloads, getBackgroundStatus, setBackgroundDownloads, requestBackgroundExemption } from './data';
+import { SOURCES, getCatalog, getDetail, getFeatured, getTrending, getDiscoverAnime, getAiringToday, getServers, imageUrl, isAndroid, clearNetworkCache, getDownloads, getDownloadOptions, enqueueDownloads, removeDownload, setDownloadQueueOrder, openDownload, getExportSettings, chooseDownloadFolder, clearDownloadFolder, exportDownload, openExport, hasEpisodeUpdates, syncEpisodeTitles, getEpisodeUpdates, checkEpisodes, setEpisodeAutomatic, setEpisodeAlerts, markEpisodeRead, fetchLatestRelease, exportBackupToFile, readBackupFromFile, isDesktopApp, hasNativeDownloads, setPlayerReferer, hasDeviceSync, getDeviceSyncSettings, chooseDeviceSyncFolder, clearDeviceSyncFolder, readDeviceSyncFolder, writeDeviceSyncFile, hasTextFiles, exportTextToFile, readTextFromFile, hasOnlinePlayerPro, resolveOnlineStream, clearOnlineStream, openOnlinePlayerPro, hasBackgroundDownloads, getBackgroundStatus, setBackgroundDownloads, requestBackgroundExemption, hasAppLock, getAppLockSettings, setAppLockEnabled, openDeviceSecuritySettings, updateHomeWidget } from './data';
 import { buildPlaybackPlaylist, compactPlaybackPlaylist } from './playback';
 import { monitoredTitles, unreadByTitle } from './episode-updates';
 import { SMART_DOWNLOADS_KEY, readSmartDownloads, saveSmartDownloads, smartTitleSelection, smartDownloadsForSync, withDownloadPreset } from './smart-downloads';
@@ -1524,6 +1524,22 @@ function DeviceSyncSettings({available=false,folder={},meta={},status={},choose=
   </div>;
 }
 function SettingsPage({library,history,clearLibrary,clearHistory,openLicenses,openReleaseNotes,folder,chooseFolder,usePrivate,updates,updatesAvailable,changeAutomatic,changeAlerts,notificationPermission,appearance,changeAppearance,contentPrefs,changeContentPrefs,appUpdate,pendingUpdate,updateStatus,checkUpdate,changeAutoCheck,downloadUpdate,exportBackup,importBackup,smartDownloads,changeSmartDownloads,deviceSync,offlinePlayback,changeOfflinePlayback=()=>{},openDownloads,onlinePlayback,changeOnlinePlayback=()=>{},onlinePlayerAvailable=false,collections=[],progress=[],libraryMeta={},portability={},canUseTextFiles=false,saveTextFile,readTextFile,applyPortabilityResult=()=>{},notify=()=>{},backgroundDownloads={enabled:true,batteryOptimization:'unknown',pending:false,available:false},changeBackgroundDownloads=()=>{},requestBackgroundAccess=()=>{}}) {
+  const lockAvailable=hasAppLock();
+  const [appLock,setAppLock]=useState({enabled:false,deviceSecure:false,loading:true});
+  useEffect(()=>{
+    if(!lockAvailable)return;
+    let active=true;
+    const load=()=>getAppLockSettings().then(value=>{if(active)setAppLock({...value,loading:false})}).catch(()=>{if(active)setAppLock({enabled:false,deviceSecure:false,loading:false,error:'Could not read App Lock settings.'})});
+    load();window.addEventListener('focus',load);
+    return()=>{active=false;window.removeEventListener('focus',load)};
+  },[lockAvailable]);
+  const toggleAppLock=async enabled=>{
+    try{const value=await setAppLockEnabled(enabled);setAppLock({...value,loading:false});if(value.error)notify(value.error);else notify(enabled?'App Lock will protect Mikozora when you leave it':'App Lock turned off')}
+    catch(error){notify(error.message||'Could not change App Lock')}
+  };
+  const openDeviceLockSettings=async()=>{
+    try{await openDeviceSecuritySettings()}catch{notify('Could not open Android security settings')}
+  };
   const current=!hasNativeDownloads()?(isDesktopApp()?'Unavailable in this Windows build':'Available in the Android app'):!folder?.configured?'Mikozora only · no external folder selected':folder.granted?folder.name||'Selected folder':'Folder access lost · choose it again';
   const notificationText=!updatesAvailable?'Available in the Android app':updates.notificationStatus==='allowed'?(isDesktopApp()?'Allowed in Windows':'Allowed in Android'):updates.notificationStatus==='permission'?'Android notification permission is needed':updates.notificationStatus==='channel-blocked'?'New episode channel is blocked in Android':(isDesktopApp()?'Notifications are blocked in Windows':'Notifications are blocked in Android');
   const updateText=pendingUpdate?`Mikozora ${pendingUpdate.version} is ready — you’re on ${APP_VERSION}.`:updateStatus.phase==='checking'?'Checking GitHub for a newer version…':updateStatus.phase==='error'?(updateStatus.message||'Could not check just now. Try again in a moment.'):appUpdate.lastCheck?`You’re up to date · Checked ${prettyTime(appUpdate.lastCheck)}`:`You’re on Mikozora ${APP_VERSION} · Not checked yet`;
@@ -1537,6 +1553,7 @@ function SettingsPage({library,history,clearLibrary,clearHistory,openLicenses,op
     <div className="settings-group content-settings"><div className="settings-group-head"><span className="settings-icon"><Eye size={16}/></span><div className="settings-title">CONTENT <span>AGE RATINGS &amp; NSFW</span></div></div><div className="setting-row"><div className="setting-icon"><EyeOff size={19}/></div><div><strong>Hide NSFW content</strong><p>{contentPrefs.hideNsfw?'On · Adult-marked titles are hidden':'Off · Adult-marked titles can appear'}</p></div><button aria-label="Hide NSFW content" aria-pressed={!!contentPrefs.hideNsfw} onClick={()=>changeContentPrefs({hideNsfw:!contentPrefs.hideNsfw})}>{contentPrefs.hideNsfw?'On':'Off'}</button></div>
       <div className="folder-explainer content-explainer"><p>When on, titles a source marks 18+ or with adult genres such as Ecchi or Hentai are completely hidden — from Discover, Browse, search results, your Library and History — and cannot be opened. This is separate from the Browse content filter and stays on until you turn it off.</p><p>Nothing is deleted: your library, collections, history and downloads stay exactly as they are. Every card shows the age rating its source provides, or NR when it provides none. Sources do not label every title, so hiding NSFW cannot guarantee everything shown is suitable for all ages.</p></div>
     </div>
+    {lockAvailable&&<div className="settings-group privacy-lock-settings"><div className="settings-group-head"><span className="settings-icon"><LockKeyhole size={16}/></span><div className="settings-title">PRIVATE APP LOCK <span>ON THIS DEVICE</span></div></div><div className="setting-row"><div className="setting-icon"><LockKeyhole size={19}/></div><div><strong>Lock Mikozora</strong><p>{appLock.enabled?'On · Android asks for your device screen lock when you return. Recent-app screenshots and widget titles are hidden.':appLock.loading?'Checking Android security settings…':appLock.deviceSecure?'Off · Protect Mikozora with your device PIN, pattern, or password.':'Set a device screen lock before enabling this.'}</p></div>{appLock.deviceSecure?<button aria-label="Private app lock" aria-pressed={!!appLock.enabled} disabled={appLock.loading} onClick={()=>toggleAppLock(!appLock.enabled)}>{appLock.loading?'…':appLock.enabled?'On':'Off'}</button>:<button onClick={openDeviceLockSettings}>Set up</button>}</div>{appLock.error&&<div className="folder-explainer"><p>{appLock.error}</p></div>}<div className="folder-explainer"><p>The lock uses Android’s own secure screen lock; Mikozora does not store a PIN or fingerprint. Add the <strong>Continue watching</strong> widget from your launcher’s widget picker. When App Lock is on, it hides saved titles.</p></div></div>}
     <div className="settings-group episode-settings"><div className="settings-group-head"><span className="settings-icon"><RefreshCw size={16}/></span><div className="settings-title">EPISODE UPDATES <span>YOUR COLLECTIONS</span></div></div><div className="setting-row"><div className="setting-icon"><RefreshCw size={19}/></div><div><strong>Automatic checks</strong><p>{isDesktopApp()?'On open and about every 6 hours while Mikozora is open or resting in the system tray. Closing the window keeps checks running in the tray.':'On open and about every 6 hours while connected. Android can delay checks or pause them after a force-stop.'}</p></div><button aria-label="Automatic episode checks" aria-pressed={!!updates.automatic} disabled={!updatesAvailable} onClick={()=>changeAutomatic(!updates.automatic)}>{updates.automatic?'On':'Off'}</button></div><div className="setting-row"><div className="setting-icon"><Bell size={19}/></div><div><strong>{isDesktopApp()?'Windows':'Android'} episode alerts</strong><p>{updates.alerts?'On in Mikozora':'Off in Mikozora'} · New episodes still appear in Updates.</p></div><button aria-label={isDesktopApp()?'Windows episode alerts':'Android episode alerts'} aria-pressed={!!updates.alerts} disabled={!updatesAvailable} onClick={()=>changeAlerts(!updates.alerts)}>{updates.alerts?'On':'Off'}</button></div><div className="setting-row"><div className="setting-icon"><ShieldCheck size={19}/></div><div><strong>{isDesktopApp()?'Windows':'Android'} notification access</strong><p>{notificationText}</p></div><button disabled={!updatesAvailable} onClick={notificationPermission}>{updates.notificationStatus==='permission'?'Allow':'Manage'}</button></div></div>
     <div className="settings-group smart-download-settings"><div className="settings-group-head"><span className="settings-icon"><Download size={16}/></span><div className="settings-title">SMART DOWNLOADS <span>NEW EPISODES</span></div></div>
       <div className="setting-row"><div className="setting-icon"><Sparkles size={19}/></div><div><strong>Download new episodes automatically</strong><p>{isDesktopApp()?'For selected series while Mikozora is open or resting in the system tray.':'For selected series after episode checks, including Android background checks.'}</p></div><button aria-label="Smart downloads" aria-pressed={!!smart.enabled} disabled={!smartAvailable} onClick={()=>changeSmartDownloads({enabled:!smart.enabled})}>{smart.enabled?'On':'Off'}</button></div>
@@ -2337,6 +2354,19 @@ function App() {
   const back=()=>window.history.back();
   const browse=(src)=>{if(src==='history'){go('history');return}setBrowseSource(src);setQuery('');go('browse');};
   const open=item=>go('detail',item);
+  useEffect(()=>{
+    const requestWidgetItem=()=>{
+      try{
+        const raw=window.MokuBridge?.takeOpenWidgetItem?.();
+        if(!raw)return;
+        const target=JSON.parse(raw);
+        const item=knownSourceItems.find(candidate=>candidate.source===target.source&&candidate.url===target.url);
+        if(item)open(item);
+      }catch{}
+    };
+    window.addEventListener('moku-open-widget',requestWidgetItem);requestWidgetItem();
+    return()=>window.removeEventListener('moku-open-widget',requestWidgetItem);
+  },[knownSourceItems]);
   const updateAction=async(action,message)=>{
     try{const next=await action();setUpdates(next);setUpdatesActionError('');if(message)setToast(message);return next;}
     catch(e){const error=e.message||'Could not update episode checks.';setUpdatesActionError(error);setToast(error);return null;}
@@ -2945,6 +2975,12 @@ function App() {
   const catchUpQueue=useMemo(()=>buildCatchUpQueue({progress,history,libraryMeta,plans:watchPlanner,relatedKeysByTitle:sourceRelatedKeys,sort:'smart',limit:50}),[progress,history,libraryMeta,watchPlanner,sourceRelatedKeys]);
   const catchUpSummary=useMemo(()=>plannerSummary(catchUpQueue),[catchUpQueue]);
   const continueItems=useMemo(()=>continueWatching(progress,history,12,sourceRelatedKeys),[progress,history,sourceRelatedKeys]);
+  const widgetContinue=continueItems.find(entry=>!hideNsfw||!isNsfw(entry.item));
+  const widgetRecent=widgetContinue?null:history.find(entry=>!hideNsfw||!isNsfw(entry.item));
+  const widgetTitle=widgetContinue?.item?.title||widgetRecent?.item?.title||'';
+  const widgetItem=widgetContinue?.item||widgetRecent?.item||null;
+  const widgetEpisode=widgetContinue?`Next · Episode ${widgetContinue.episode?.number||''}`:widgetRecent?`Recently opened · Episode ${widgetRecent.episode?.number||''}`:'';
+  useEffect(()=>{updateHomeWidget({title:widgetTitle,episode:widgetEpisode,source:widgetItem?.source||'',url:widgetItem?.url||''})},[widgetTitle,widgetEpisode,widgetItem?.source,widgetItem?.url]);
   const libraryProgress=useMemo(()=>progressByTitle(progress,history,sourceRelatedKeys),[progress,history,sourceRelatedKeys]);
   const resumeNext=entry=>play(entry.item,entry.episode,{playlist:entry.episodes});
   const openFranchiseChainDialog=initial=>setChainDialog({

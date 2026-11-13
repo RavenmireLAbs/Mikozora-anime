@@ -1,0 +1,61 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/home_widget_background"
+    android:clickable="true"
+    android:focusable="true"
+    android:gravity="center_vertical"
+    android:orientation="vertical"
+    android:paddingStart="18dp"
+    android:paddingTop="14dp"
+    android:paddingEnd="18dp"
+    android:paddingBottom="14dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:fontFamily="sans"
+        android:letterSpacing="0.12"
+        android:maxLines="1"
+        android:text="MIKOZORA · CONTINUE WATCHING"
+        android:textColor="#BFE88D"
+        android:textSize="10sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/widget_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:fontFamily="sans"
+        android:maxLines="1"
+        android:text="Your next episode, at a glance"
+        android:textColor="#F1F5EF"
+        android:textSize="17sp"
+        android:textStyle="bold"
+        android:layout_marginTop="9dp" />
+
+    <TextView
+        android:id="@+id/widget_episode"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:fontFamily="sans"
+        android:maxLines="1"
+        android:text="Open Mikozora to get started"
+        android:textColor="#B2BDB2"
+        android:textSize="12sp"
+        android:layout_marginTop="3dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fontFamily="sans"
+        android:text="TAP TO OPEN  ›"
+        android:textColor="#BFE88D"
+        android:textSize="10sp"
+        android:textStyle="bold"
+        android:layout_marginTop="10dp" />
+</LinearLayout>
