@@ -963,3 +963,8 @@ button.search-chip:hover,.search-chip.saved>button:first-child:hover{color:var(-
 .home-source-row>button:hover:not(:disabled){background:#2d3b2e;border-color:#586c56}
 .home-source-row>button:disabled{opacity:.6;cursor:wait}
 @media(max-width:560px){.home-source-health{padding:10px}.home-source-health-grid{grid-template-columns:1fr}.home-source-row{padding:8px 9px}}
+
+/* Private-device security controls */
+.privacy-lock-settings .setting-row>button[aria-pressed=true]{color:#caeda7;border-color:#4d6442;background:#273724}
+.privacy-lock-settings .setting-row>button{flex:none}
+@media(max-width:760px){.privacy-lock-settings .setting-row{gap:10px}.privacy-lock-settings .setting-row>div:nth-child(2){min-width:0}}
