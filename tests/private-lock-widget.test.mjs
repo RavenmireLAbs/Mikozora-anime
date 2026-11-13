@@ -48,6 +48,7 @@ test('Android Continue Watching widget is launcher-discoverable, updates private
   assert.match(provider, /FLAG_ACTIVITY_NEW_TASK \| Intent\.FLAG_ACTIVITY_CLEAR_TOP/);
   assert.match(provider, /EXTRA_OPEN_ITEM/);
   assert.match(bridge, /takeOpenWidgetItem\(\)/);
+  assert.match(bridge, /HomeWidgetProvider\.saveData\(MainActivity\.this,data\.optString\("title",""\),data\.optString\("episode",""\),data\.optString\("source",""\),data\.optString\("url",""\)\)/);
   assert.match(bridge, /queueWidgetOpen\(intent\)/);
   assert.match(ui, /moku-open-widget/);
   assert.match(provider, /Unlock Mikozora to view your list/);

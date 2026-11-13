@@ -279,7 +279,7 @@ public final class MainActivity extends Activity implements PlayerNavigation.Req
             if(payload==null||payload.length()>8000)return;
             try {
                 JSONObject data=new JSONObject(payload);
-                HomeWidgetProvider.saveData(MainActivity.this,data.optString("title",""),data.optString("episode",""));
+                HomeWidgetProvider.saveData(MainActivity.this,data.optString("title",""),data.optString("episode",""),data.optString("source",""),data.optString("url",""));
             } catch(Exception ignored) { }
         }
         @JavascriptInterface public void setAppearance(String mode,String accent) {
