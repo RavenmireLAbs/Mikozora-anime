@@ -1,7 +1,7 @@
 {
   "name": "mikozora",
   "productName": "Mikozora",
-  "version": "0.35.0",
+  "version": "0.36.0",
   "description": "Mikozora for Windows \u2014 browse, watch and track anime and donghua.",
   "private": true,
   "type": "module",
