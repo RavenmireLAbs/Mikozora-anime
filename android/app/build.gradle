@@ -16,8 +16,8 @@ android {
         applicationId 'app.moku.anime'
         minSdk 23
         targetSdk 34
-        versionCode 56
-        versionName '0.36.11'
+        versionCode 57
+        versionName '0.36.12'
     }
     signingConfigs {
         release {

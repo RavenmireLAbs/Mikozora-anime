@@ -34,6 +34,11 @@ test('shared UI wires discovery, personal shelf, library tools and player upgrad
   assert.match(ui, /Mark through/);
   assert.match(ui, /Select range/);
   assert.match(ui, /episodesInRange\(orderedEpisodes,rangeFrom,rangeTo\)/);
+  assert.match(ui, /Episode selection limit/);
+  assert.match(ui, /EPISODE_SELECTION_LIMITS\.map/);
+  assert.match(ui, /limitEpisodeSelection\(episodes,selectionLimit\)/);
+  assert.match(ui, /Choose up to \$\{selectionLimit\} episodes in one batch/);
+  assert.match(ui, /Select up to \{selectionLimit==='all'\?'all matching episodes'/);
   assert.match(ui, /Next unwatched · \$\{nextUnwatched\.number\}/);
   assert.match(ui, /Jump to episode number/);
   assert.match(ui, /Previous video server/);

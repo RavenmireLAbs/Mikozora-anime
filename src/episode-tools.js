@@ -2,6 +2,17 @@
 // built-in browser/desktop player. Sources often list episodes newest-first;
 // "through", "next unwatched" and ranges must reason in story order instead.
 
+export const EPISODE_SELECTION_LIMITS = Object.freeze([50, 100, 200, 'all']);
+
+/** Cap a bulk selection; "all" deliberately means every matching episode. */
+export function limitEpisodeSelection(episodes, limit = 50) {
+  const rows = Array.isArray(episodes) ? episodes : [];
+  if (limit === 'all') return rows.slice();
+  const parsed = Number(limit);
+  const cap = Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : 50;
+  return rows.slice(0, cap);
+}
+
 export function episodeNumberValue(episode) {
   const value = Number.parseFloat(episode?.number ?? episode);
   return Number.isFinite(value) ? value : Number.POSITIVE_INFINITY;

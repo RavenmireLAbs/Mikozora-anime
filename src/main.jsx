@@ -21,7 +21,7 @@ import { CONTENT_KEY, GENRES, DEFAULT_CONTENT_PREFS, readContentPrefs, saveConte
 import { markDeviceSyncPublished, prepareDeviceSync, publicDeviceSyncMeta, readDeviceSyncMeta, resetDeviceSyncPublication, setDeviceSyncAuto, stableStringify } from './device-sync';
 import { PERSONAL_STATUSES, readLibraryMeta, saveLibraryMeta, libraryMetaFor, setLibraryMeta as setLibraryMetaRecord, removeLibraryMeta, pruneLibraryMeta, personalStatusLabel, libraryProgressState, sortLibraryTitles, libraryStats } from './library-meta';
 import { buildTasteProfile, topTasteGenres, recommendTitles, sortBrowseTitles, similarTitles, moodShelves, pickRandomTitle } from './discovery';
-import { chronologicalEpisodes, episodeNumberKey, findEpisodeByNumber, firstUnwatchedEpisode, episodesThrough, episodesInRange, wrappedIndex } from './episode-tools';
+import { chronologicalEpisodes, episodeNumberKey, findEpisodeByNumber, firstUnwatchedEpisode, episodesThrough, episodesInRange, limitEpisodeSelection, EPISODE_SELECTION_LIMITS, wrappedIndex } from './episode-tools';
 import { OFFLINE_STORAGE_LIMITS_GB, OFFLINE_AUTO_DELETE_DAYS, readOfflineManager, saveOfflineManager, normalizeOfflineManager, downloadBytes, downloadStorageSummary, downloadCleanupCandidates, cleanupBytes, queueOrderIds, moveQueueOrder, sortManagerDownloads, watchedInfoFor, downloadTitleKey } from './offline-manager';
 import { OFFLINE_PLAYBACK_RATES, OFFLINE_SEEK_SECONDS, OFFLINE_SLEEP_MINUTES, OFFLINE_SUBTITLE_SIZES, OFFLINE_SUBTITLE_COLORS, OFFLINE_SUBTITLE_BACKGROUNDS, readOfflinePlayback, saveOfflinePlayback, normalizeOfflinePlayback, offlineSubtitleStyle, nextDownloadedEpisodes, offlinePlaybackPayload } from './offline-playback';
 import { WATCH_PLAN_MODES, readWatchPlanner, saveWatchPlanner, setWatchPlan, buildCatchUpQueue, plannerSummary, buildBingeSession, watchPlanLabel } from './watch-planner';
@@ -726,7 +726,7 @@ function FranchiseChainPanel({ item, openItem, chainView = null, knownCandidates
 function DetailPage({item, openEpisode, has, toggle, organize, back, history, refreshKey, queueEpisodes, downloads, showDownloads, notify, hideNsfw = false, openSettings, watched, onEpisodesReady, markWatched, smartSelection, smartEnabled, toggleSmartDownload, libraryMeta = {}, updateLibraryMeta, openItem, linkedItems = [], linkedKeys = [], watchedNumbers = new Set(), onLinkSource, onUnlinkSource, releaseRadar = {}, onReleaseRadarRule = () => {}, radarActivity = null, onlinePositions = {}, similarCandidates = [], pendingImported = null, saveShareCard = null, franchiseChainView = null, franchiseCandidates = [], franchiseChainByKey = {}, onFranchiseCreate, onFranchiseEdit, onOpenChains, onContinueMarathon}) {
   const [state,setState]=useState({detail:null,loading:true,error:''});
   const [order,setOrder]=useState('newest'); const [filter,setFilter]=useState(''); const [visible,setVisible]=useState(40); const [epFilter,setEpFilter]=useState('all');
-  const [selecting,setSelecting]=useState(false); const [selected,setSelected]=useState([]);
+  const [selecting,setSelecting]=useState(false); const [selected,setSelected]=useState([]); const [selectionLimit,setSelectionLimit]=useState('50');
   const [episodeJump,setEpisodeJump]=useState(''); const [rangeFrom,setRangeFrom]=useState(''); const [rangeTo,setRangeTo]=useState('');
   useEffect(()=>{let alive=true;setState({detail:null,loading:true,error:''});setVisible(40);setFilter('');setSelected([]);setSelecting(false);setEpisodeJump('');setRangeFrom('');setRangeTo('');getDetail(item).then(detail=>alive&&setState({detail,loading:false,error:''})).catch(e=>alive&&setState({detail:null,loading:false,error:e.message||'Could not load this title.'}));return()=>{alive=false}},[item.source,item.url,refreshKey]);
   useEffect(()=>{if(state.detail?.episodes?.length)onEpisodesReady?.(state.detail);},[state.detail]);
@@ -762,7 +762,8 @@ function DetailPage({item, openEpisode, has, toggle, organize, back, history, re
     void saveShareCard({kind:'series-card',eyebrow:'MIKOZORA SERIES CARD',title:detail.title,subtitle:`${sourceName(detail.source)}${detail.status?` · ${displayStatus(detail.status)}`:''}${detailGenres.length?` · ${detailGenres.slice(0,3).join(' · ')}`:''}`,stats});
   };
   const chooseEpisode=ep=>{
-    if(!selected.includes(ep.url)&&selected.length>=50){notify('Choose up to 50 episodes in one batch');return;}
+    const cap=selectionLimit==='all'?Infinity:Number(selectionLimit)||50;
+    if(!selected.includes(ep.url)&&selected.length>=cap){notify(`Choose up to ${selectionLimit} episodes in one batch`);return;}
     setSelected(previous=>previous.includes(ep.url)?previous.filter(x=>x!==ep.url):[...previous,ep.url]);
   };
   const selectedEpisodes=orderedEpisodes.filter(ep=>selected.includes(ep.url));
@@ -782,8 +783,9 @@ function DetailPage({item, openEpisode, has, toggle, organize, back, history, re
     const range=episodesInRange(orderedEpisodes,rangeFrom,rangeTo);
     if(!range.length){notify('No numeric episodes fall in that range');return;}
     setSelecting(true);
-    setSelected(range.slice(0,50).map(ep=>ep.url));
-    if(range.length>50)notify('Selected the first 50 episodes in that range');
+    const selectedRange=limitEpisodeSelection(range,selectionLimit);
+    setSelected(selectedRange.map(ep=>ep.url));
+    if(selectedRange.length<range.length)notify(`Selected the first ${selectedRange.length} episodes in that range (limit ${selectionLimit})`);
   };
   const rating=ratingOf(detail);
   const releasedYear=yearOf(detail);
@@ -817,10 +819,10 @@ function DetailPage({item, openEpisode, has, toggle, organize, back, history, re
       </div>}
       {!state.loading && episodes.length>0 && <div className="batch-tools">
         <button className="text-link" onClick={()=>{setSelecting(x=>!x);setSelected([])}}><ListChecks size={16}/>{selecting?'Cancel selection':'Select episodes'}</button>
-        {selecting&&<><button className="text-link muted" onClick={()=>setSelected(episodes.slice(0,50).map(ep=>ep.url))}>{episodes.length>50?'Select first 50':'Select all matching'}</button><button className="btn primary batch-download" disabled={!selected.length} onClick={()=>queueEpisodes(detail,selectedEpisodes)}><Download size={15}/> Download {selected.length||''}</button><button className="text-link" disabled={!selected.length} onClick={()=>markWatched(detail,selectedEpisodes,true)}>Mark watched</button><button className="text-link muted" disabled={!selected.length} onClick={()=>markWatched(detail,selectedEpisodes,false)}>Mark unwatched</button></>}
+        {selecting&&<><label className="batch-size-picker">Select up to<select aria-label="Episode selection limit" value={selectionLimit} onChange={event=>{const value=event.target.value;setSelectionLimit(value);setSelected(previous=>limitEpisodeSelection(orderedEpisodes.filter(ep=>previous.includes(ep.url)),value).map(ep=>ep.url));}}>{EPISODE_SELECTION_LIMITS.map(limit=><option key={limit} value={limit}>{limit==='all'?'All':' '+limit}</option>)}</select></label><button className="text-link muted" onClick={()=>setSelected(limitEpisodeSelection(episodes,selectionLimit).map(ep=>ep.url))}>{selectionLimit==='all'||episodes.length<=(Number(selectionLimit)||50)?'Select all matching':`Select first ${selectionLimit}`}</button><button className="btn primary batch-download" disabled={!selected.length} onClick={()=>queueEpisodes(detail,selectedEpisodes)}><Download size={15}/> Download {selected.length||''}</button><button className="text-link" disabled={!selected.length} onClick={()=>markWatched(detail,selectedEpisodes,true)}>Mark watched</button><button className="text-link muted" disabled={!selected.length} onClick={()=>markWatched(detail,selectedEpisodes,false)}>Mark unwatched</button></>}
         {!selecting&&<button className="text-link muted" onClick={showDownloads}>Your downloads <ArrowRight size={15}/></button>}
       </div>}
-      {selecting&&<p className="batch-hint">Choose up to 50 per batch. Use Select range for a numeric run, or search and choose episodes one by one.</p>}
+      {selecting&&<p className="batch-hint">Select up to {selectionLimit==='all'?'all matching episodes':`${selectionLimit} episodes`} per batch. Use Select range for a numeric run, or search and choose episodes one by one.</p>}
       {state.loading?<div className="episode-loading"><LoaderCircle className="spin" size={19}/> Fetching episodes from {sourceName(item.source)}...</div>:episodes.length ? <><div className="episode-list">{episodes.slice(0,visible).map((ep,i)=>{
         const offline=downloads.find(d=>d.episode?.url===ep.url && d.item?.source===detail.source && d.status==='completed');
         const directPosition=onlinePositionFor(onlinePositions,detail,ep);

@@ -8,6 +8,8 @@ import {
   firstUnwatchedEpisode,
   episodesThrough,
   episodesInRange,
+  limitEpisodeSelection,
+  EPISODE_SELECTION_LIMITS,
   wrappedIndex,
 } from '../src/episode-tools.js';
 
@@ -38,6 +40,18 @@ test('episode lookup, first unwatched, through and numeric ranges use story orde
   assert.deepEqual(episodesThrough(rows, 'missing'), []);
   assert.deepEqual(episodesInRange(rows, 4, 2).map(x => x.number), ['2', '3', '4']);
   assert.deepEqual(episodesInRange(rows, 'x', 4), []);
+});
+
+test('episode batch selection supports 50, 100, 200, and all matching episodes', () => {
+  const rows = Array.from({ length: 260 }, (_, index) => ep(index + 1));
+  assert.deepEqual(EPISODE_SELECTION_LIMITS, [50, 100, 200, 'all']);
+  assert.equal(limitEpisodeSelection(rows, 50).length, 50);
+  assert.equal(limitEpisodeSelection(rows, 100).length, 100);
+  assert.equal(limitEpisodeSelection(rows, 200).length, 200);
+  assert.equal(limitEpisodeSelection(rows, 'all').length, 260);
+  assert.equal(limitEpisodeSelection(rows.slice(0, 3), 50).length, 3);
+  assert.equal(limitEpisodeSelection(rows, 'invalid').length, 50);
+  assert.deepEqual(limitEpisodeSelection(null, 'all'), []);
 });
 
 test('wrappedIndex cycles server choices safely', () => {
