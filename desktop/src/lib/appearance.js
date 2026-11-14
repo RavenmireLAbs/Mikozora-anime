@@ -7,6 +7,7 @@ const BACKGROUNDS = {
   purple: { dark: '#15131a', light: '#f8f6fb' },
   pink: { dark: '#191317', light: '#fcf6f8' },
   amber: { dark: '#191613', light: '#fbf8f1' },
+  'midnight-sakura': { dark: '#11131B', light: '#F7F4F1' },
 };
 
 // Matches DEFAULT_APPEARANCE in src/appearance.js.

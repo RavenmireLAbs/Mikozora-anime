@@ -23,7 +23,7 @@ final class Appearance {
         }
     }
     static boolean validMode(String value){return "dark".equals(value)||"light".equals(value);}
-    static boolean validAccent(String value){return "green".equals(value)||"blue".equals(value)||"purple".equals(value)||"pink".equals(value)||"amber".equals(value);}
+    static boolean validAccent(String value){return "green".equals(value)||"blue".equals(value)||"purple".equals(value)||"pink".equals(value)||"amber".equals(value)||"midnight-sakura".equals(value);}
     static Palette palette(String mode,String accent){
         if(!validMode(mode))mode="dark";
         if(!validAccent(accent))accent="green";
@@ -35,6 +35,7 @@ final class Appearance {
             case "purple": background=0xff15131a;nav=0xff1d1923;highlight=0xffd8c2ff;panel=0xff241e2a;border=0xff473a52;text=0xffefe8f5;muted=0xffaa9fb5;break;
             case "pink": background=0xff191317;nav=0xff22191d;highlight=0xffffc1d4;panel=0xff2a1e24;border=0xff523a47;text=0xfff5e8ee;muted=0xffb5a0aa;break;
             case "amber": background=0xff191613;nav=0xff211d17;highlight=0xfff7d79b;panel=0xff2a261e;border=0xff514b3a;text=0xfff5efe5;muted=0xffb5ad9d;break;
+            case "midnight-sakura": background=0xff11131b;nav=0xff151722;highlight=0xffe98bb5;panel=0xff1b1d29;border=0xff343748;text=0xfff3f0f7;muted=0xffa7a4b5;break;
         }
         if(light){
             switch(accent){
@@ -42,6 +43,7 @@ final class Appearance {
                 case "purple":background=0xfff8f6fb;highlight=0xff694a98;break;
                 case "pink":background=0xfffcf6f8;highlight=0xff9d3d5d;break;
                 case "amber":background=0xfffbf8f1;highlight=0xff805800;break;
+                case "midnight-sakura":background=0xfff7f4f1;highlight=0xffb44b78;return new Palette(mode,accent,background,nav,0xffffffff,0xffe2dce2,0xff302934,0xff625d6a,highlight);
                 default:background=0xfff7f9f5;highlight=0xff476d2a;break;
             }
             return new Palette(mode,accent,background,nav,0xfff0f3ee,0xffc8d2c7,0xff1b281d,0xff4e6150,highlight);

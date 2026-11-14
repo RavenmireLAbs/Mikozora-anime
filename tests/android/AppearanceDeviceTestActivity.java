@@ -32,9 +32,9 @@ public final class AppearanceDeviceTestActivity extends Activity {
             require("dark".equals(original.mode)&&"green".equals(original.accent)&&original.background==0xff101312,"default dark green");
             require(!Appearance.save(c,"system","green")&&!Appearance.save(c,"light","bad")&&!Appearance.save(c,null,"blue"),"invalid bridge inputs rejected");
             require("dark".equals(Appearance.read(c).mode),"invalid save did not mutate stored choice");
-            String[] modes={"dark","light"},accents={"green","blue","purple","pink","amber"};
-            int[] dark={0xff101312,0xff101418,0xff15131a,0xff191317,0xff191613};
-            int[] light={0xfff7f9f5,0xfff5f8fb,0xfff8f6fb,0xfffcf6f8,0xfffbf8f1};
+            String[] modes={"dark","light"},accents={"green","blue","purple","pink","amber","midnight-sakura"};
+            int[] dark={0xff101312,0xff101418,0xff15131a,0xff191317,0xff191613,0xff11131b};
+            int[] light={0xfff7f9f5,0xfff5f8fb,0xfff8f6fb,0xfffcf6f8,0xfffbf8f1,0xfff7f4f1};
             for(String mode:modes)for(int i=0;i<accents.length;i++){
                 String accent=accents[i];require(Appearance.save(c,mode,accent),"valid save "+mode+"/"+accent);
                 Appearance.Palette p=Appearance.read(c);
@@ -61,7 +61,7 @@ public final class AppearanceDeviceTestActivity extends Activity {
             c.getSharedPreferences("moku_appearance_v1",MODE_PRIVATE).edit().putInt("mode",7).putInt("accent",9).commit();
             require("dark".equals(Appearance.read(c).mode)&&"green".equals(Appearance.read(c).accent),"wrong preference types fall back safely");
             require(Appearance.save(c,"light","pink"),"final persistent selection");
-            Log.i(TAG,"RESULT PASS 10 palettes, contrast, validation and API 23-25/26 system bars");
+            Log.i(TAG,"RESULT PASS 12 palettes, contrast, validation and API 23-25/26 system bars");
         }catch(Throwable error){Log.e(TAG,"RESULT FAIL "+error.getMessage(),error);}
         finish();
     }
