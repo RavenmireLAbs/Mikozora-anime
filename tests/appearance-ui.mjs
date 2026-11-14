@@ -159,5 +159,5 @@ try{
   const {context,page,errors}=await setup({viewport:{width:320,height:568},mobile:true,extra:{[APPEARANCE_KEY]:raw}});await open(page);await settings(page,true);
   const state=await getTheme(page);assert.equal(state.accent,'blue');assert.equal(state.mode,raw==='{bad'?'dark':'light');assert.deepEqual(errors,[]);await context.close();
  }
- console.log('PASS appearance UI: all 12 combinations, immediate native bridge + storage, keyboard, restart, desktop/320px, contrast, artwork, navigation, dialogs, release notes and preserved user data under production CSP.');
+ console.log('PASS appearance UI: all 40 combinations, immediate native bridge + storage, keyboard, restart, desktop/320px, contrast, artwork, navigation, dialogs, release notes and preserved user data under production CSP.');
 }finally{await browser.close()}

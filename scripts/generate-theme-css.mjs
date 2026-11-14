@@ -39,7 +39,7 @@ function transform(hex,role,mode,accent) {
     [r,g,b]=[0,2,4].map(i=>parseInt(rgb.slice(i,i+2),16));
   let [h,s,l]=rgbToHsl(r,g,b);
   const green=h>=65&&h<=165&&s>=0.12;
-  if(green)h+=accent.hue-95;
+  if(green){h+=accent.hue-95;if(accent.neutralize)s*=.12;}
   if(mode==='dark')return hslToHex(h,s,l,alpha);
   if(role==='text') {
     if(l<.30){l=.97;s=.07;}
