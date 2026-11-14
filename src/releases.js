@@ -1,13 +1,20 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; the app shows only that newest entry.
-export const APP_VERSION = '0.36.8';
+export const APP_VERSION = '0.36.9';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.36.8',
+    version: '0.36.9',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Simpler source status on Discover', description: 'Removed the per-source freshness panel and dedicated refresh buttons while retaining the stale-data warning and retry actions for failed sections.' },
+    ],
+  },
+  {
+    version: '0.36.8',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Keep your anime space private', description: 'Protect Mikozora with your Android device screen lock. Screenshots are blocked while App Lock is on, and Continue Watching widget titles stay hidden.' },
       { title: 'Continue watching from your home screen', description: 'Add the Mikozora widget to see your next episode at a glance and tap through to that series.' },

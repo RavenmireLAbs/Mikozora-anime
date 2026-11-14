@@ -127,10 +127,9 @@ test('home source failures retain last good titles and expose a retry action', a
   assert.match(ui, /if\(isAlive\(\)\)setState\(x=>\(\{\.\.\.x,\.\.\.\(loadingKey\?\{\[loadingKey\]:false\}:\{\}\),errors:\{\.\.\.x\.errors,\[key\]:true\}\}\)\)/);
   assert.match(ui, /Some source data may be out of date/);
   assert.match(ui, /Retry failed sections/);
-  assert.match(ui, /home-source-health-grid/);
-  assert.match(ui, /retryHomeSource=source=>\{if\(!HOME_SOURCE_IDS\.includes\(source\)\)return;clearNetworkCache\(\);setSourceRetry/);
-  assert.match(ui, /Refresh \$\{sourceName\(row\.source\)\}/);
+  assert.match(ui, /retryHomeSource=source=>\{if\(source!=='sogo'&&source!=='xin'\)return;clearNetworkCache\(\);setSourceRetry/);
   assert.match(ui, /onRetry=\{retryHomeSource\}/);
+  assert.doesNotMatch(ui, /home-source-health|sourceHealth|formatHomeSourceFreshness|Refresh \$\{sourceName\(row\.source\)\}/);
   assert.match(css, /\.home-source-status\{display:flex/);
-  assert.match(css, /\.home-source-health-grid\{/);
+  assert.doesNotMatch(css, /\.home-source-health|\.home-source-row|\.home-source-dot/);
 });
