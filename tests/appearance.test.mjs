@@ -23,15 +23,20 @@ test('Midnight Sakura is selectable and its palette stays aligned across web and
  assert.equal(desktopBackgroundFor({mode:'dark',accent:'midnight-sakura'}),sakura.bgDark);
  assert.equal(desktopBackgroundFor({mode:'light',accent:'midnight-sakura'}),sakura.bgLight);
  const generated=await readFile(new URL('../src/theme-generated.css',import.meta.url),'utf8');
+ const native=await readFile(new URL('../android/app/src/main/java/app/moku/anime/Appearance.java',import.meta.url),'utf8');
+ for(const accent of ACCENTS)assert.ok(native.includes(`"${accent.id}"`),`Android accepts ${accent.id}`);
  assert.match(generated,/data-mode="dark"\]\[data-accent="midnight-sakura"\]\{[^}]*--accent:#E98BB5;--bg:#11131B/);
  assert.match(generated,/--moku-text-b9d9a1:#8EDFD0;--moku-text-e0ffbd:#B9F4E6;--moku-bg-dcfab5:#F5B8D3/);
 });
-test('all twelve combinations persist independently without touching existing user data',()=>{
+test('all forty combinations persist independently without touching existing user data',()=>{
+ assert.equal(ACCENTS.length,20);
+ assert.equal(new Set(ACCENTS.map(accent=>accent.id)).size,20,'palette ids are unique');
  const base={'moku.library.v1':'saved titles','moku.collections.v1':'collections','moku.history.v1':'history','folder':'folder grant','episode-updates':'settings'};
  const s=storage(base);
  for(const {id:mode} of MODES)for(const {id:accent} of ACCENTS){
   assert.equal(saveAppearance(s,{mode,accent,extra:'discard'}),true);
   assert.deepEqual(readAppearance(s),{mode,accent});
+  assert.equal(desktopBackgroundFor({mode,accent}),ACCENTS.find(item=>item.id===accent)[mode==='dark'?'bgDark':'bgLight']);
  }
  const snapshot=s.snapshot();delete snapshot[APPEARANCE_KEY];assert.deepEqual(snapshot,base);
  assert.equal(saveAppearance({setItem(){throw new Error('blocked')}},{mode:'light',accent:'blue'}),false);

@@ -1,13 +1,20 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; the app shows only that newest entry.
-export const APP_VERSION = '0.36.10';
+export const APP_VERSION = '0.36.11';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.36.10',
+    version: '0.36.11',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Twenty selectable color themes', description: 'Choose from 20 coordinated color palettes, each with dark and light modes, across web, desktop, and Android.' },
+    ],
+  },
+  {
+    version: '0.36.10',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'New Midnight Sakura theme', description: 'Choose the Midnight Sakura palette in Settings for an indigo night look with rose accents, mint details, and a coordinated light mode.' },
     ],
