@@ -87,7 +87,7 @@ try{
     await noOverflow(page);
     await checkContrast(page,['.appearance-intro strong','.appearance-intro p','.appearance-mode.selected .mode-copy strong','.appearance-mode.selected .mode-copy small','.appearance-field legend','.appearance-color.selected','.settings-title','.setting-row strong','.setting-row p']);
     const boxes=await page.locator('.appearance-colors button').evaluateAll(buttons=>buttons.map(b=>{let r=b.getBoundingClientRect();return {left:r.left,right:r.right,width:r.width}}));
-    assert.ok(boxes.every(b=>b.left>=0&&b.right<=config.viewport.width&&b.width>=35),'all five accent controls fit');
+    assert.ok(boxes.every(b=>b.left>=0&&b.right<=config.viewport.width&&b.width>=35),'all accent controls fit');
     if(config.mobile){
      await nav(page,true,'Library');await page.getByRole('heading',{name:'Saved for later.'}).waitFor();
      await checkContrast(page,['.card-title','.card-meta']);await noOverflow(page);
@@ -159,5 +159,5 @@ try{
   const {context,page,errors}=await setup({viewport:{width:320,height:568},mobile:true,extra:{[APPEARANCE_KEY]:raw}});await open(page);await settings(page,true);
   const state=await getTheme(page);assert.equal(state.accent,'blue');assert.equal(state.mode,raw==='{bad'?'dark':'light');assert.deepEqual(errors,[]);await context.close();
  }
- console.log('PASS appearance UI: all 10 combinations, immediate native bridge + storage, keyboard, restart, desktop/320px, contrast, artwork, navigation, dialogs, release notes and preserved user data under production CSP.');
+ console.log('PASS appearance UI: all 12 combinations, immediate native bridge + storage, keyboard, restart, desktop/320px, contrast, artwork, navigation, dialogs, release notes and preserved user data under production CSP.');
 }finally{await browser.close()}

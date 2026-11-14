@@ -11,6 +11,7 @@ export const ACCENTS = [
   { id:'purple', label:'Purple', hue:265, dark:'#d8c2ff', light:'#694a98', bgDark:'#15131a', bgLight:'#f8f6fb', navDark:'#1d1923' },
   { id:'pink', label:'Pink', hue:337, dark:'#ffc1d4', light:'#9d3d5d', bgDark:'#191317', bgLight:'#fcf6f8', navDark:'#22191d' },
   { id:'amber', label:'Amber', hue:40, dark:'#f7d79b', light:'#805800', bgDark:'#191613', bgLight:'#fbf8f1', navDark:'#211d17' },
+  { id:'midnight-sakura', label:'Midnight Sakura', hue:245, dark:'#E98BB5', light:'#B44B78', bgDark:'#11131B', bgLight:'#F7F4F1', navDark:'#151722', secondaryDark:'#8EDFD0', secondaryLight:'#267360', secondaryHoverDark:'#B9F4E6', secondaryHoverLight:'#184F43', themeInkDark:'#35202B', themeInkLight:'#FFFFFF', heroInk:'#35202B', primaryHoverDark:'#F5B8D3', primaryHoverLight:'#963D67' },
 ];
 export function normalizeAppearance(value) {
   const candidate=value&&typeof value==='object'?value:{};

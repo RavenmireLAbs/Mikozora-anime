@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import {ACCENTS,MODES,APPEARANCE_KEY,DEFAULT_APPEARANCE,normalizeAppearance,readAppearance,saveAppearance,applyAppearance,syncNativeAppearance} from '../src/appearance.js';
+import { backgroundFor as desktopBackgroundFor } from '../desktop/src/lib/appearance.js';
 
 function storage(seed={}) {
  const map=new Map(Object.entries(seed));
@@ -15,7 +17,16 @@ test('light green is the default; malformed preferences safely fall back per fie
  assert.deepEqual(normalizeAppearance({mode:null,accent:42}),DEFAULT_APPEARANCE);
  assert.deepEqual(readAppearance({getItem(){throw new Error('blocked')}}),DEFAULT_APPEARANCE);
 });
-test('all ten combinations persist independently without touching existing user data',()=>{
+test('Midnight Sakura is selectable and its palette stays aligned across web and Windows',async()=>{
+ const sakura=ACCENTS.find(accent=>accent.id==='midnight-sakura');
+ assert.deepEqual({label:sakura.label,dark:sakura.dark,light:sakura.light,bgDark:sakura.bgDark,bgLight:sakura.bgLight,navDark:sakura.navDark,secondaryDark:sakura.secondaryDark,secondaryLight:sakura.secondaryLight},{label:'Midnight Sakura',dark:'#E98BB5',light:'#B44B78',bgDark:'#11131B',bgLight:'#F7F4F1',navDark:'#151722',secondaryDark:'#8EDFD0',secondaryLight:'#267360'});
+ assert.equal(desktopBackgroundFor({mode:'dark',accent:'midnight-sakura'}),sakura.bgDark);
+ assert.equal(desktopBackgroundFor({mode:'light',accent:'midnight-sakura'}),sakura.bgLight);
+ const generated=await readFile(new URL('../src/theme-generated.css',import.meta.url),'utf8');
+ assert.match(generated,/data-mode="dark"\]\[data-accent="midnight-sakura"\]\{[^}]*--accent:#E98BB5;--bg:#11131B/);
+ assert.match(generated,/--moku-text-b9d9a1:#8EDFD0;--moku-text-e0ffbd:#B9F4E6;--moku-bg-dcfab5:#F5B8D3/);
+});
+test('all twelve combinations persist independently without touching existing user data',()=>{
  const base={'moku.library.v1':'saved titles','moku.collections.v1':'collections','moku.history.v1':'history','folder':'folder grant','episode-updates':'settings'};
  const s=storage(base);
  for(const {id:mode} of MODES)for(const {id:accent} of ACCENTS){
