@@ -21,7 +21,6 @@ import { CONTENT_KEY, GENRES, DEFAULT_CONTENT_PREFS, readContentPrefs, saveConte
 import { markDeviceSyncPublished, prepareDeviceSync, publicDeviceSyncMeta, readDeviceSyncMeta, resetDeviceSyncPublication, setDeviceSyncAuto, stableStringify } from './device-sync';
 import { PERSONAL_STATUSES, readLibraryMeta, saveLibraryMeta, libraryMetaFor, setLibraryMeta as setLibraryMetaRecord, removeLibraryMeta, pruneLibraryMeta, personalStatusLabel, libraryProgressState, sortLibraryTitles, libraryStats } from './library-meta';
 import { buildTasteProfile, topTasteGenres, recommendTitles, sortBrowseTitles, similarTitles, moodShelves, pickRandomTitle } from './discovery';
-import { HOME_SOURCE_HEALTH_KEY, HOME_SOURCE_IDS, readHomeSourceHealth, recordHomeSourceSuccess, formatHomeSourceFreshness } from './source-health';
 import { chronologicalEpisodes, episodeNumberKey, findEpisodeByNumber, firstUnwatchedEpisode, episodesThrough, episodesInRange, wrappedIndex } from './episode-tools';
 import { OFFLINE_STORAGE_LIMITS_GB, OFFLINE_AUTO_DELETE_DAYS, readOfflineManager, saveOfflineManager, normalizeOfflineManager, downloadBytes, downloadStorageSummary, downloadCleanupCandidates, cleanupBytes, queueOrderIds, moveQueueOrder, sortManagerDownloads, watchedInfoFor, downloadTitleKey } from './offline-manager';
 import { OFFLINE_PLAYBACK_RATES, OFFLINE_SEEK_SECONDS, OFFLINE_SLEEP_MINUTES, OFFLINE_SUBTITLE_SIZES, OFFLINE_SUBTITLE_COLORS, OFFLINE_SUBTITLE_BACKGROUNDS, readOfflinePlayback, saveOfflinePlayback, normalizeOfflinePlayback, offlineSubtitleStyle, nextDownloadedEpisodes, offlinePlaybackPayload } from './offline-playback';
@@ -239,23 +238,19 @@ function TrendingSection({ rankings, loading, open, hideNsfw = false, onRetry = 
 function HomePage({open, has, toggle, browse, recent, refreshKey, refreshSources = () => {}, hideNsfw = false, continueItems = [], resumeNext, removeContinue, library = [], progress = [], libraryMeta = {}, catchUpItems = [], catchUpSummary = null, openPlanner, marathonChains = [], continueMarathon, openChains}) {
   const [state,setState] = useState({featured:[],sogo:[],xin:[],discover:[],trendSogo:[],trendXin:[],upcomingSogo:[],upcomingXin:[],airingToday:[],errors:{},loadingSogo:true,loadingXin:true,loadingDiscover:true,loadingTrendSogo:true,loadingTrendXin:true,loadingUpcomingSogo:true,loadingUpcomingXin:true,loadingAiring:true,refreshingSogo:true,refreshingXin:true});
   const [sourceRetry,setSourceRetry]=useState({sogo:0,xin:0});
-  const [sourceHealth,setSourceHealth]=useState(()=>readHomeSourceHealth());
-  const retryHomeSource=source=>{if(!HOME_SOURCE_IDS.includes(source))return;clearNetworkCache();setSourceRetry(previous=>({...previous,[source]:previous[source]+1}));};
-  const loadSourceRequest=(isAlive,source,key,request,apply,loadingKey)=>Promise.resolve().then(request).then(value=>{
-    if(isAlive()){
-      setState(x=>({...x,...apply(value),...(loadingKey?{[loadingKey]:false}:{}),errors:{...x.errors,[key]:false}}));
-      setSourceHealth(previous=>{const next=recordHomeSourceSuccess(previous,source);try{window.localStorage.setItem(HOME_SOURCE_HEALTH_KEY,JSON.stringify(next));}catch{}return next;});
-    }
+  const retryHomeSource=source=>{if(source!=='sogo'&&source!=='xin')return;clearNetworkCache();setSourceRetry(previous=>({...previous,[source]:previous[source]+1}));};
+  const loadSourceRequest=(isAlive,key,request,apply,loadingKey)=>Promise.resolve().then(request).then(value=>{
+    if(isAlive())setState(x=>({...x,...apply(value),...(loadingKey?{[loadingKey]:false}:{}),errors:{...x.errors,[key]:false}}));
   }).catch(()=>{if(isAlive())setState(x=>({...x,...(loadingKey?{[loadingKey]:false}:{}),errors:{...x.errors,[key]:true}}));});
   useEffect(()=>{
     let alive=true;
     setState(x=>({...x,loadingSogo:true,loadingDiscover:true,loadingTrendSogo:true,loadingUpcomingSogo:true,refreshingSogo:true}));
     Promise.all([
-      loadSourceRequest(()=>alive,'sogo','featured',getFeatured,value=>({featured:value})),
-      loadSourceRequest(()=>alive,'sogo','sogo',()=>getCatalog('sogo'),value=>({sogo:value.items}),'loadingSogo'),
-      loadSourceRequest(()=>alive,'sogo','discover',getDiscoverAnime,value=>({discover:value}),'loadingDiscover'),
-      loadSourceRequest(()=>alive,'sogo','trendSogo',()=>getTrending('sogo'),value=>({trendSogo:value}),'loadingTrendSogo'),
-      loadSourceRequest(()=>alive,'sogo','upcomingSogo',()=>getCatalog('sogo',{status:'upcoming'}),value=>({upcomingSogo:value.items}),'loadingUpcomingSogo'),
+      loadSourceRequest(()=>alive,'featured',getFeatured,value=>({featured:value})),
+      loadSourceRequest(()=>alive,'sogo',()=>getCatalog('sogo'),value=>({sogo:value.items}),'loadingSogo'),
+      loadSourceRequest(()=>alive,'discover',getDiscoverAnime,value=>({discover:value}),'loadingDiscover'),
+      loadSourceRequest(()=>alive,'trendSogo',()=>getTrending('sogo'),value=>({trendSogo:value}),'loadingTrendSogo'),
+      loadSourceRequest(()=>alive,'upcomingSogo',()=>getCatalog('sogo',{status:'upcoming'}),value=>({upcomingSogo:value.items}),'loadingUpcomingSogo'),
     ]).finally(()=>{if(alive)setState(x=>({...x,refreshingSogo:false}));});
     return ()=>{alive=false};
   },[refreshKey,sourceRetry.sogo]);
@@ -263,10 +258,10 @@ function HomePage({open, has, toggle, browse, recent, refreshKey, refreshSources
     let alive=true;
     setState(x=>({...x,loadingXin:true,loadingTrendXin:true,loadingUpcomingXin:true,loadingAiring:true,refreshingXin:true}));
     Promise.all([
-      loadSourceRequest(()=>alive,'xin','xin',()=>getCatalog('xin'),value=>({xin:value.items}),'loadingXin'),
-      loadSourceRequest(()=>alive,'xin','trendXin',()=>getTrending('xin'),value=>({trendXin:value}),'loadingTrendXin'),
-      loadSourceRequest(()=>alive,'xin','upcomingXin',()=>getCatalog('xin',{status:'upcoming'}),value=>({upcomingXin:value.items}),'loadingUpcomingXin'),
-      loadSourceRequest(()=>alive,'xin','airing',getAiringToday,value=>({airingToday:value}),'loadingAiring'),
+      loadSourceRequest(()=>alive,'xin',()=>getCatalog('xin'),value=>({xin:value.items}),'loadingXin'),
+      loadSourceRequest(()=>alive,'trendXin',()=>getTrending('xin'),value=>({trendXin:value}),'loadingTrendXin'),
+      loadSourceRequest(()=>alive,'upcomingXin',()=>getCatalog('xin',{status:'upcoming'}),value=>({upcomingXin:value.items}),'loadingUpcomingXin'),
+      loadSourceRequest(()=>alive,'airing',getAiringToday,value=>({airingToday:value}),'loadingAiring'),
     ]).finally(()=>{if(alive)setState(x=>({...x,refreshingXin:false}));});
     return ()=>{alive=false};
   },[refreshKey,sourceRetry.xin]);
@@ -314,17 +309,8 @@ function HomePage({open, has, toggle, browse, recent, refreshKey, refreshSources
   const upcomingItems = [...filterTitles(state.upcomingSogo||[],{hideNsfw}), ...filterTitles(state.upcomingXin||[],{hideNsfw})].filter((x,i,a)=>a.findIndex(y=>y.url===x.url)===i).slice(0,14);
   const homeFailures=Object.values(state.errors).some(Boolean);
   const loadingUpcoming=state.loadingUpcomingSogo||state.loadingUpcomingXin;
-  const homeRefreshing=state.refreshingSogo||state.refreshingXin;
   const hasStaleHomeData=[state.featured,state.sogo,state.xin,state.discover,state.trendSogo,state.trendXin,state.upcomingSogo,state.upcomingXin,state.airingToday].some(items=>items.length>0);
-  const homeSourceErrors={sogo:['featured','sogo','discover','trendSogo','upcomingSogo'],xin:['xin','trendXin','upcomingXin','airing']};
-  const sourceRows=HOME_SOURCE_IDS.map(source=>{
-    const failed=homeSourceErrors[source].some(key=>state.errors[key]);
-    const updatedAt=sourceHealth[source];
-    const updatedText=updatedAt?formatHomeSourceFreshness(updatedAt):'';
-    const refreshing=source==='sogo'?state.refreshingSogo:state.refreshingXin;
-    const detail=failed?(updatedText?`Some sections failed · last success ${updatedText}`:'Unavailable · no successful update yet'):refreshing?(updatedText?`Refreshing · last success ${updatedText}`:'Loading first update…'):(updatedText?`Updated ${updatedText}`:'Not updated yet');
-    return {source,failed,refreshing,detail};
-  });
+  const homeRefreshing=state.refreshingSogo||state.refreshingXin;
   const date = new Intl.DateTimeFormat(undefined, { weekday:'long', month:'short', day:'numeric' }).format(new Date()).toUpperCase();
   return <div className="content home-page">
     <nav className="home-subnav" aria-label="Section navigation">
@@ -335,7 +321,6 @@ function HomePage({open, has, toggle, browse, recent, refreshKey, refreshSources
     </nav>
     <div className="welcome-row"><div><div className="date-line"><span className="date-star">✦</span> {date} <span className="date-separator"/> A GOOD DAY FOR ANIME</div><h1>Your next story starts here<span>.</span></h1><p>Good to have you here. What are we watching today?</p></div><div className="source-count"><div className="source-count-icon"><Layers3 size={17}/></div><div><strong>{Object.keys(SOURCES).length} sources</strong><small>One cozy place</small></div><i/></div></div>
     {homeFailures&&<div className="home-source-status" role="status"><AlertCircle size={17}/><div><strong>{hasStaleHomeData?'Some source data may be out of date':'Some source sections are unavailable'}</strong><span>{hasStaleHomeData?'Showing the last loaded titles where possible.':'Try again when your connection is available.'}</span></div><button type="button" onClick={refreshSources} disabled={homeRefreshing}>{homeRefreshing?'Retrying…':'Retry failed sections'}</button></div>}
-    <section className="home-source-health" aria-label="Source freshness"><span className="eyebrow">YOUR SOURCES</span><div className="home-source-health-grid">{sourceRows.map(row=><div className={`home-source-row${row.failed?' failed':''}${row.refreshing?' refreshing':''}`} key={row.source}><span className="home-source-dot" aria-hidden="true"/><div><strong>{sourceName(row.source)}</strong><small>{row.detail}</small></div><button type="button" onClick={()=>retryHomeSource(row.source)} disabled={row.refreshing} aria-label={`Refresh ${sourceName(row.source)}`} title={`Refresh ${sourceName(row.source)}`}>{row.refreshing?<LoaderCircle size={15} className="spin"/>:<RefreshCw size={15}/>}</button></div>)}</div></section>
     {homeStats.streak>0 && <div className="home-stats-bar" aria-label="Your watch stats"><div className="home-stats-item"><Flame size={15} className="home-stats-icon"/><div><strong>{homeStats.streak}-day streak</strong><small>keep it going</small></div></div><div className="home-stats-item"><Clock3 size={15} className="home-stats-icon"/><div><strong>{homeStats.currentMonthEpisodes||0} episodes this month</strong><small>{monthLabel(homeStats.currentMonth)}</small></div></div><div className="home-stats-item"><Bookmark size={15} className="home-stats-icon"/><div><strong>{library.length} in your library</strong><small>saved titles</small></div></div><div className="home-stats-item"><ListVideo size={15} className="home-stats-icon"/><div><strong>{formatWatchDuration(homeStats.estimatedMinutes)}</strong><small>estimated watch time</small></div></div></div>}
     <div id="home-hero"><Hero featured={shown(state.featured)} fallback={shown(state.sogo)} open={x=>x?open(x):browse('all')} has={has} toggle={toggle}/></div>
     {!state.loadingAiring && (state.airingToday.length>0 || state.errors.airing) && <section className="content-section airing-section"><SectionHeading eyebrow="AIRING TODAY" title={`What's airing today`} link="Browse donghua" action={()=>browse('xin')}/>{state.airingToday.length>0?<div className="airing-rail">{state.airingToday.map(item=><button key={identity(item)} className="airing-card" onClick={()=>open(item)}><div className="airing-cover"><Cover item={item}/></div><span className="airing-title">{item.title}</span></button>)}</div>:<ErrorNote source="xin" onRetry={()=>retryHomeSource('xin')}/> }</section>}

@@ -124,10 +124,9 @@ try{
   assert.ok(heroLayout.actions.left>=heroLayout.hero.left&&heroLayout.actions.right<=heroLayout.hero.right,'long-title hero buttons stay horizontally inside the hero');
   await page.evaluate(()=>{window.__mockFailSources=true;document.querySelector('button.refresh').click()});
   await page.getByRole('status').filter({hasText:'Some source data may be out of date'}).waitFor();
+  assert.equal(await page.locator('.home-source-health').count(),0,'the per-source freshness panel is removed');
+  assert.equal(await page.getByRole('button',{name:'Refresh AnimeSogo'}).count(),0,'the dedicated per-source refresh action is removed');
   await page.evaluate(()=>{window.__mockFailSources=false});
-  await page.getByRole('button',{name:'Refresh AnimeSogo'}).click();
-  await page.locator('.home-source-row').filter({hasText:'AnimeSogo'}).getByText(/Updated/).waitFor();
-  assert.match(await page.locator('.home-source-row').filter({hasText:'AnimeXin'}).getAttribute('class'),/failed/,'AnimeXin retains its own failure state until its own retry succeeds');
   await page.getByRole('button',{name:'Retry failed sections'}).click();
   await page.getByRole('status').filter({hasText:'Some source data may be out of date'}).waitFor({state:'hidden'});
   assert.equal(await page.locator('.hero-content-long').count(),1,'successful retry restores the long-title spotlight');
