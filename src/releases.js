@@ -1,13 +1,20 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; the app shows only that newest entry.
-export const APP_VERSION = '0.36.11';
+export const APP_VERSION = '0.36.12';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.36.11',
+    version: '0.36.12',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Select larger episode batches', description: 'Choose 50, 100, 200, or all matching episodes when marking a long series watched or unwatched, selecting a range, or downloading episodes.' },
+    ],
+  },
+  {
+    version: '0.36.11',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Twenty selectable color themes', description: 'Choose from 20 coordinated color palettes, each with dark and light modes, across web, desktop, and Android.' },
     ],
