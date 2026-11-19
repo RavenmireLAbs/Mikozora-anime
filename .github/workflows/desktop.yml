@@ -70,7 +70,7 @@ jobs:
           npm ci
           npm run sync-web
           npm run dist
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v4
         with:
           name: Mikozora-Windows
           path: desktop/dist/*.exe
