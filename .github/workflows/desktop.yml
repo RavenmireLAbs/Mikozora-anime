@@ -17,6 +17,7 @@ on:
       - 'vite.config.js'
       - 'package.json'
       - 'package-lock.json'
+      - 'tests/**'
       - '.github/workflows/desktop.yml'
   pull_request:
     paths:
@@ -28,6 +29,7 @@ on:
       - 'vite.config.js'
       - 'package.json'
       - 'package-lock.json'
+      - 'tests/**'
       - '.github/workflows/desktop.yml'
   release:
     types: [published]

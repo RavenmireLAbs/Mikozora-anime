@@ -191,7 +191,6 @@ export function subtitleRenditionOptions(master, variant, { source = '' } = {}) 
 export function selectSubtitleRenditions(master, variant, {
   source = '', language = 'english', englishOnlySource = false, subtitleSelection = null,
 } = {}) {
-  if (!variant?.subtitlesGroup) return [];
   if (subtitleSelection?.mode === 'none') return [];
   const options = subtitleRenditions(master, variant);
   if (subtitleSelection?.mode === 'custom') {

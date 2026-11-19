@@ -30,12 +30,15 @@ export function smartQueueDecision(event, track, records, maxUnwatchedPerSeries)
 
 /** Pure port of EpisodeNotifier's summary content. */
 export function buildNotification(state) {
-  const unread = Number(state?.unreadCount) || 0;
-  if (!unread || state?.alerts === false) return null;
+  if (!state?.unreadCount || state?.alerts === false) return null;
+  const eligible = (state.updates || []).filter(
+    (event) => event && !event.read && !event.alertSuppressed && event.item && event.episode,
+  );
+  const unread = eligible.length;
+  if (!unread) return null;
   const lines = [];
-  for (const event of state.updates || []) {
+  for (const event of eligible) {
     if (lines.length >= 3) break;
-    if (!event || event.read || event.alertSuppressed || !event.item || !event.episode) continue;
     const number = String(event.episode.number || '');
     lines.push(`${event.item.title || 'Your series'} · ${number === '' ? (event.episode.title || 'New episode') : `Episode ${number}`}`);
   }

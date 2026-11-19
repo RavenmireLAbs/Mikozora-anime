@@ -84,6 +84,7 @@ final class OfflineStore {
                     completionEvents.execute(() -> {
                         OfflineStore.update(app,id,"status","completed");
                         DownloadWorker.notifyReady(app,id);
+                        ExportStore.maybeAutoExport(app,id);
                         BackgroundDownloads.refresh(app);
                     });
                 }

@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanUserAgent, playerEmbedHeaders, playerRefererForEpisode } from '../desktop/src/lib/player-network.js';
+import {
+  cleanOnlineStreamContext,
+  cleanUserAgent,
+  onlineStreamHeaders,
+  onlineStreamResponseHeaders,
+  playerEmbedHeaders,
+  playerRefererForEpisode,
+  playerRequestHeaders,
+  playerResponseHeaders,
+} from '../desktop/src/lib/player-network.js';
 
 test('player referer is the validated source origin, mirroring the Android wrapper', () => {
   assert.equal(playerRefererForEpisode('https://animesogo.to/watch/example/ep-3'), 'https://animesogo.to/');
@@ -51,4 +60,48 @@ test('Electron and application tokens are removed from the browser user agent', 
     cleanUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Mikozora/0.21.0 Chrome/140.0.0.0 Electron/45.2.1 Safari/537.36'),
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
   );
+});
+
+test('online stream context validates HTTPS URLs and scopes headers to the stream host', () => {
+  const now = 1_000_000;
+  const ctx = cleanOnlineStreamContext({ url: 'https://cdn.example/master.m3u8', referer: 'https://animesogo.to/' }, now);
+  assert.equal(ctx.host, 'cdn.example');
+  assert.equal(cleanOnlineStreamContext({ url: 'http://cdn.example/master.m3u8', referer: 'https://animesogo.to/' }, now), null);
+
+  const req = onlineStreamHeaders({
+    url: 'https://cdn.example/seg.ts',
+    resourceType: 'xhr',
+    referrer: 'mikozora://app/',
+    requestHeaders: { Origin: 'mikozora://app', Referer: 'mikozora://app/' },
+  }, ctx, now + 1000);
+  assert.equal(req.Referer, 'https://animesogo.to/');
+  assert.equal(req.Origin, undefined);
+
+  const unrelated = onlineStreamHeaders({
+    url: 'https://other.example/seg.ts',
+    resourceType: 'xhr',
+    referrer: 'mikozora://app/',
+    requestHeaders: { Referer: 'mikozora://app/' },
+  }, ctx, now + 1000);
+  assert.equal(unrelated.Referer, 'mikozora://app/');
+
+  const res = onlineStreamResponseHeaders({
+    url: 'https://cdn.example/seg.ts',
+    resourceType: 'xhr',
+    referrer: 'mikozora://app/',
+    responseHeaders: {},
+  }, ctx, now + 1000);
+  assert.deepEqual(res['Access-Control-Allow-Origin'], ['*']);
+  assert.deepEqual(playerResponseHeaders({
+    url: 'https://cdn.example/seg.ts',
+    resourceType: 'xhr',
+    referrer: 'mikozora://app/',
+    responseHeaders: {},
+  }, ctx, now + 1000)['Access-Control-Allow-Origin'], ['*']);
+  assert.equal(playerRequestHeaders({
+    url: 'https://cdn.example/seg.ts',
+    resourceType: 'xhr',
+    referrer: 'mikozora://app/',
+    requestHeaders: {},
+  }, 'https://animesogo.to/', ctx, now + 1000).Referer, 'https://animesogo.to/');
 });

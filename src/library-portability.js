@@ -72,10 +72,8 @@ function ratingFrom(raw) {
   const direct = Number(raw?.rating);
   if (Number.isFinite(direct) && direct > 0 && direct <= 5) return Math.trunc(direct);
   const score10 = Number(raw?.score10 ?? raw?.score);
-  if (Number.isFinite(score10) && score10 > 5 && score10 <= 10) return Math.max(1, Math.min(5, Math.round(score10 / 2)));
-  if (Number.isFinite(score10) && score10 > 0 && score10 <= 5 && raw?.score10 == null && raw?.score == null) return Math.trunc(score10);
+  if (Number.isFinite(score10) && score10 > 0 && score10 <= 10) return Math.max(1, Math.min(5, Math.round(score10 / 2)));
   if (Number.isFinite(score10) && score10 > 10 && score10 <= 100) return Math.max(1, Math.min(5, Math.round(score10 / 20)));
-  if (Number.isFinite(score10) && score10 > 0 && score10 <= 5) return Math.trunc(score10);
   return 0;
 }
 

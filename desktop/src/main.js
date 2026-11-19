@@ -204,9 +204,9 @@ async function handleAppRequest(request) {
   try {
     const url = new URL(request.url);
     const download = /^\/api\/download\/([a-f0-9]{32})\/(?:(video)|subtitle\/(\d{1,3}))$/.exec(url.pathname);
-    if (download) return handleDownloadRequest(request, url, download[1], download[2] ? null : download[3]);
+    if (download) return await handleDownloadRequest(request, url, download[1], download[2] ? null : download[3]);
     const onlineSubtitle = /^\/api\/online-stream\/([A-Za-z0-9-]{16,120})\/subtitle\/(\d{1,3})$/.exec(url.pathname);
-    if (onlineSubtitle) return handleOnlineSubtitleRequest(onlineSubtitle[1], onlineSubtitle[2]);
+    if (onlineSubtitle) return await handleOnlineSubtitleRequest(onlineSubtitle[1], onlineSubtitle[2]);
     if (url.pathname === '/api/image') {
       const target = url.searchParams.get('url') || '';
       const cached = imageCache.get(target);

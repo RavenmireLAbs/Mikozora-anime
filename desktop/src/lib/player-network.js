@@ -57,12 +57,15 @@ export function onlineStreamHeaders(details, context, now = Date.now()) {
   } catch {
     return headers;
   }
-  const launchedFrom = [details?.initiatorOrigin, details?.referrer, existingReferer(headers)]
+  const launchedFrom = [details?.initiatorOrigin, details?.initiator, details?.referrer, existingReferer(headers)]
     .find((value) => typeof value === 'string' && value && value !== 'null') || '';
   if (target.protocol !== 'https:' || !launchedFrom.startsWith('mikozora://')) return headers;
+  if (clean.host && target.hostname.toLowerCase() !== clean.host) return headers;
 
   for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === 'referer') delete headers[key];
+    const lower = key.toLowerCase();
+    if (lower === 'referer') delete headers[key];
+    if (lower === 'origin' && String(headers[key] || '').startsWith('mikozora://')) delete headers[key];
   }
   headers.Referer = clean.referer;
   return headers;
@@ -79,7 +82,7 @@ export function onlineStreamResponseHeaders(details, context, now = Date.now()) 
   } catch {
     return headers;
   }
-  const launchedFrom = [details?.initiatorOrigin, details?.referrer]
+  const launchedFrom = [details?.initiatorOrigin, details?.initiator, details?.referrer]
     .find((value) => typeof value === 'string' && value && value !== 'null') || '';
   if (target.protocol !== 'https:' || !launchedFrom.startsWith('mikozora://')) return headers;
 
