@@ -30,7 +30,13 @@ final class SafeHttp {
             if(x==0||x==10||x==127||x>=224||(x==100&&y>=64&&y<=127)||(x==169&&y==254)
                 ||(x==172&&y>=16&&y<=31)||(x==192&&y==168)||(x==198&&(y==18||y==19)))
                 throw new IOException("Private video host is not allowed");
-        } else if (b.length==16 && (b[0]&0xfe)==0xfc) throw new IOException("Private video host is not allowed");
+        } else if (b.length==16) {
+            if ((b[0]&0xfe)==0xfc) throw new IOException("Private video host is not allowed");
+            if (b[0]==0x20&&b[1]==0x02) throw new IOException("Private video host is not allowed");
+            if (b[0]==0x20&&b[1]==0x01&&b[2]==0x00&&b[3]==0x00) throw new IOException("Private video host is not allowed");
+            if (b[0]==0x20&&b[1]==0x01&&b[2]==0x0d&&b[3]==(byte)0xb8) throw new IOException("Private video host is not allowed");
+            if (b[0]==0x00&&b[1]==0x64&&b[2]==(byte)0xff&&b[3]==(byte)0x9b) throw new IOException("Private video host is not allowed");
+        }
     }
     static byte[] get(String raw, String referer, int limit) throws IOException {
         URL current=publicUrl(raw);

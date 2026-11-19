@@ -38,20 +38,32 @@ final class EpisodeNotifier {
     static void refresh(Context c,boolean alert) {
         try {
             NotificationManagerCompat manager=NotificationManagerCompat.from(c);
-            JSONObject state=EpisodeStore.state(c);int unread=state.optInt("unreadCount");
-            if(unread==0||!state.optBoolean("alerts",true)){manager.cancel(NOTIFICATION_ID);return;}
+            JSONObject state=EpisodeStore.state(c);
+            if(state.optInt("unreadCount")==0||!state.optBoolean("alerts",true)){manager.cancel(NOTIFICATION_ID);return;}
+            JSONArray items=state.getJSONArray("updates");
+            int unread=0;
+            for(int i=0;i<items.length();i++){
+                JSONObject event=items.optJSONObject(i);
+                if(event!=null&&!event.optBoolean("read")&&!event.optBoolean("alertSuppressed")&&event.optJSONObject("item")!=null&&event.optJSONObject("episode")!=null)unread++;
+            }
+            if(unread==0){manager.cancel(NOTIFICATION_ID);return;}
             if(!"allowed".equals(status(c)))return;
             ensureChannel(c);
-            JSONArray items=state.getJSONArray("updates");StringBuilder lines=new StringBuilder();int shown=0;
-            for(int i=0;i<items.length()&&shown<3;i++) {
-                JSONObject event=items.optJSONObject(i);if(event==null||event.optBoolean("read")||event.optBoolean("alertSuppressed"))continue;
-                JSONObject item=event.optJSONObject("item"),ep=event.optJSONObject("episode");
-                if(item==null||ep==null)continue;
-                if(lines.length()>0)lines.append('\n');
-                String number=ep.optString("number");
-                lines.append(item.optString("title","Your series")).append(" · ").append(number.isEmpty()?ep.optString("title","New episode"):"Episode "+number);shown++;
+            boolean locked=AppLock.enabled(c);
+            StringBuilder lines=new StringBuilder();int shown=0;
+            if(!locked){
+                for(int i=0;i<items.length()&&shown<3;i++) {
+                    JSONObject event=items.optJSONObject(i);if(event==null||event.optBoolean("read")||event.optBoolean("alertSuppressed"))continue;
+                    JSONObject item=event.optJSONObject("item"),ep=event.optJSONObject("episode");
+                    if(item==null||ep==null)continue;
+                    if(lines.length()>0)lines.append('\n');
+                    String number=ep.optString("number");
+                    lines.append(item.optString("title","Your series")).append(" · ").append(number.isEmpty()?ep.optString("title","New episode"):"Episode "+number);shown++;
+                }
+                if(unread>shown)lines.append("\n+").append(unread-shown).append(" more");
+            }else{
+                lines.append("Open Mikozora to view");
             }
-            if(unread>shown)lines.append("\n+").append(unread-shown).append(" more");
             Intent intent=new Intent(c,MainActivity.class).putExtra(EXTRA_OPEN,true)
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP);
             PendingIntent open=PendingIntent.getActivity(c,89119,intent,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);

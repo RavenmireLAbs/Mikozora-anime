@@ -73,6 +73,7 @@ export function isPublicAddress(address) {
   if (g[0] === 0x2001 && g[1] === 0x0002 && g[2] === 0) return false; // benchmarking
   if (g[0] === 0x2001 && (g[1] & 0xfff0) === 0x0010) return false; // ORCHID
   if (g[0] === 0x2001 && g[1] === 0) return false; // Teredo
+  if (g[0] === 0x2002) return false; // 6to4
   if (g[0] === 0x0064 && g[1] === 0xff9b) return false; // NAT64 well-known
   if ((g[0] & 0xff00) !== 0x2000 && (g[0] & 0xe000) !== 0x2000) return false; // require global unicast
   return true;

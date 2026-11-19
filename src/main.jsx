@@ -323,7 +323,7 @@ function HomePage({open, has, toggle, browse, recent, refreshKey, refreshSources
     {homeFailures&&<div className="home-source-status" role="status"><AlertCircle size={17}/><div><strong>{hasStaleHomeData?'Some source data may be out of date':'Some source sections are unavailable'}</strong><span>{hasStaleHomeData?'Showing the last loaded titles where possible.':'Try again when your connection is available.'}</span></div><button type="button" onClick={refreshSources} disabled={homeRefreshing}>{homeRefreshing?'Retrying…':'Retry failed sections'}</button></div>}
     {homeStats.streak>0 && <div className="home-stats-bar" aria-label="Your watch stats"><div className="home-stats-item"><Flame size={15} className="home-stats-icon"/><div><strong>{homeStats.streak}-day streak</strong><small>keep it going</small></div></div><div className="home-stats-item"><Clock3 size={15} className="home-stats-icon"/><div><strong>{homeStats.currentMonthEpisodes||0} episodes this month</strong><small>{monthLabel(homeStats.currentMonth)}</small></div></div><div className="home-stats-item"><Bookmark size={15} className="home-stats-icon"/><div><strong>{library.length} in your library</strong><small>saved titles</small></div></div><div className="home-stats-item"><ListVideo size={15} className="home-stats-icon"/><div><strong>{formatWatchDuration(homeStats.estimatedMinutes)}</strong><small>estimated watch time</small></div></div></div>}
     <div id="home-hero"><Hero featured={shown(state.featured)} fallback={shown(state.sogo)} open={x=>x?open(x):browse('all')} has={has} toggle={toggle}/></div>
-    {!state.loadingAiring && (state.airingToday.length>0 || state.errors.airing) && <section className="content-section airing-section"><SectionHeading eyebrow="AIRING TODAY" title={`What's airing today`} link="Browse donghua" action={()=>browse('xin')}/>{state.airingToday.length>0?<div className="airing-rail">{state.airingToday.map(item=><button key={identity(item)} className="airing-card" onClick={()=>open(item)}><div className="airing-cover"><Cover item={item}/></div><span className="airing-title">{item.title}</span></button>)}</div>:<ErrorNote source="xin" onRetry={()=>retryHomeSource('xin')}/> }</section>}
+    {!state.loadingAiring && ((hideNsfw?state.airingToday.filter(item=>!isNsfw(item)):state.airingToday).length>0 || state.errors.airing) && <section className="content-section airing-section"><SectionHeading eyebrow="AIRING TODAY" title={`What's airing today`} link="Browse donghua" action={()=>browse('xin')}/>{(hideNsfw?state.airingToday.filter(item=>!isNsfw(item)):state.airingToday).length>0?<div className="airing-rail">{(hideNsfw?state.airingToday.filter(item=>!isNsfw(item)):state.airingToday).map(item=><button key={identity(item)} className="airing-card" onClick={()=>open(item)}><div className="airing-cover"><Cover item={item}/></div><span className="airing-title">{item.title}</span></button>)}</div>:<ErrorNote source="xin" onRetry={()=>retryHomeSource('xin')}/> }</section>}
     {shownContinue.length>0 ? <section className="content-section continue-section"><SectionHeading eyebrow="PICK UP WHERE YOU LEFT OFF" title="Continue watching" link="View history" action={()=>browse('history')}/><div className="continue-rail">{shownContinue.slice(0,8).map((entry)=><div className="continue-card" key={identity(entry.item)}><button className="continue-main" onClick={()=>resumeNext(entry)} aria-label={`Play episode ${entry.episode.number} of ${entry.item.title}`}><div className="continue-cover"><Cover item={entry.item}/></div><div className="continue-info"><span>NEXT · EPISODE {entry.episode.number}</span><strong>{entry.item.title}</strong><small>{sourceName(entry.item.source)} · {entry.watchedCount} of {entry.total} watched</small><span className="continue-progress"><i style={{width:`${Math.min(100,Math.round(entry.watchedCount/entry.total*100))}%`}}/></span></div><span className="continue-play"><Play size={14} fill="currentColor"/></span></button><button className="continue-remove" onClick={()=>removeContinue(entry.item)} aria-label={`Remove ${entry.item.title} from Continue watching`} title="Remove from Continue watching"><X size={13}/></button></div>)}</div></section> : shownRecent.length>0 && <section className="content-section continue-section"><SectionHeading eyebrow="PICK UP WHERE YOU LEFT OFF" title="Recently opened" link="View history" action={()=>browse('history')}/><div className="continue-rail">{shownRecent.slice(0,4).map((entry)=><button className="continue-card" key={`${identity(entry.item)}|${entry.episode.number}`} onClick={()=>open(entry.item)}><div className="continue-cover"><Cover item={entry.item}/></div><div className="continue-info"><span>EPISODE {entry.episode.number}</span><strong>{entry.item.title}</strong><small>{sourceName(entry.item.source)} · {prettyTime(entry.time)}</small></div><span className="continue-play"><Play size={14} fill="currentColor"/></span></button>)}</div></section>}
     {shownCatchUp.length>0&&<section className="content-section catchup-home-section"><SectionHeading eyebrow="YOUR NEXT SITTING" title="Catch up, your way" link="Open planner" action={openPlanner}/><p className="catchup-home-copy">{catchUpSummary?.episodesBehind||0} episodes are waiting across {catchUpSummary?.titlesBehind||shownCatchUp.length} started {(catchUpSummary?.titlesBehind||shownCatchUp.length)===1?'series':'series'}{catchUpSummary?.nearlyFinished?` · ${catchUpSummary.nearlyFinished} nearly finished`:''}.</p><div className="continue-rail">{shownCatchUp.slice(0,4).map(entry=><div className="continue-card catchup-home-card" key={entry.key||identity(entry.item)}><button className="continue-main" onClick={()=>resumeNext(entry)} aria-label={`Play episode ${entry.episode.number} of ${entry.item.title}`}><div className="continue-cover"><Cover item={entry.item}/></div><div className="continue-info"><span>{entry.plan?`${watchPlanLabel(entry.plan.mode).toUpperCase()} · `:''}NEXT · EPISODE {entry.episode.number}</span><strong>{entry.item.title}</strong><small>{entry.behindCount} behind · {entry.watchedCount} of {entry.total} watched</small><span className="continue-progress"><i style={{width:`${Math.min(100,Math.round((entry.percent||0)*100))}%`}}/></span></div><span className="continue-play"><Play size={14} fill="currentColor"/></span></button><button className="catchup-series-link" onClick={()=>open(entry.item)}>Series</button></div>)}</div></section>}
     {shownMarathons.length>0&&<section className="content-section marathon-home-section"><SectionHeading eyebrow="FRANCHISE MARATHONS" title="Next in your chains" link="Open Marathon Mode" action={openChains}/><div className="continue-rail">{shownMarathons.slice(0,4).map(chain=>{const entry=chain.currentEntry;const percent=chain.percent==null?0:Math.min(100,Math.round(chain.percent*100));return <div className="continue-card marathon-home-card" key={chain.id}><button className="continue-main" onClick={()=>continueMarathon?.(chain)} aria-label={`Continue ${chain.name} with ${entry.item.title}`}><div className="continue-cover"><Cover item={entry.item}/></div><div className="continue-info"><span>{chain.handoff?'NEXT ENTRY':entry.label.toUpperCase()} · {chain.entriesCompleted} OF {chain.entries.length} ENTRIES DONE</span><strong>{entry.item.title}</strong><small>{chain.name}{entry.nextEpisode?` · Episode ${entry.nextEpisode.number} next`:entry.watchedCount?' · Open to load its episodes':' · Ready to start'}</small><span className="continue-progress"><i style={{width:`${percent}%`}}/></span></div><span className="continue-play"><Play size={14} fill="currentColor"/></span></button><button className="catchup-series-link" onClick={openChains}>Chain</button></div>;})}</div></section>}
@@ -350,6 +350,7 @@ function BrowsePage({open,has,toggle, query, setQuery, source, setSource, refres
   const [preview,setPreview] = useState([]);
   const [previewLoading,setPreviewLoading] = useState(false);
   const previewTimer=useRef(null);
+  const previewGeneration=useRef(0);
   useEffect(()=>{return()=>{if(previewTimer.current)window.clearTimeout(previewTimer.current)}},[]);
   useEffect(()=>{
     const clean=draft.trim();
@@ -357,15 +358,15 @@ function BrowsePage({open,has,toggle, query, setQuery, source, setSource, refres
     setPreviewLoading(true);
     if(previewTimer.current)window.clearTimeout(previewTimer.current);
     previewTimer.current=window.setTimeout(()=>{
-      const current=++generation.current;
+      const current=++previewGeneration.current;
       const selected=selectedSources(source);
       Promise.allSettled(selected.map(id=>getCatalog(id,{query:clean,page:1,status:'all'}))).then(results=>{
-        if(current!==generation.current)return;
-        const seen=new Set();const items=results.flatMap(r=>r.status==='fulfilled'?r.value.items:[]).filter(x=>{const k=identity(x);return !seen.has(k)&&seen.add(k)});
+        if(current!==previewGeneration.current)return;
+        const seen=new Set();const items=results.flatMap(r=>r.status==='fulfilled'?r.value.items:[]).filter(x=>{if(hideNsfw&&isNsfw(x))return false;const k=identity(x);return !seen.has(k)&&seen.add(k)});
         setPreview(rankUniversalResults(items,clean));setPreviewLoading(false);
-      }).catch(()=>{setPreview([]);setPreviewLoading(false)});
+      }).catch(()=>{if(current===previewGeneration.current){setPreview([]);setPreviewLoading(false);}});
     },300);
-  },[draft,source,query]);
+  },[draft,source,query,hideNsfw]);
   const [status,setStatus] = useState('all');
   const [genre,setGenre] = useState('');
   const [year,setYear] = useState('');
@@ -449,13 +450,14 @@ function BrowsePage({open,has,toggle, query, setQuery, source, setSource, refres
   const suggestions = useMemo(() => {
     if (!query.trim() || visibleItems.length > 0 || !library.length) return [];
     const ranked = (Array.isArray(library) ? library : [])
+      .filter(item => !hideNsfw || !isNsfw(item))
       .map(item => ({ item, score: universalSearchScore(item, query) }))
       .filter(entry => entry.score > 30)
       .sort((a, b) => b.score - a.score)
       .slice(0, 4)
       .map(entry => entry.item);
     return ranked;
-  }, [query, visibleItems.length, library]);
+  }, [query, visibleItems.length, library, hideNsfw]);
   const extraValue=['all','sogo','xin'].includes(source)?'':source;
   return <div className="content page-content"><div className="page-heading"><div><div className="eyebrow">SOMETHING FOR EVERY MOOD</div><h1>Find your next favorite<span>.</span></h1><p>Search across your sources or just see where the story takes you.</p></div><div className="heading-art"><Compass size={35}/><span>✦</span></div></div>
     <form className="browse-search" onSubmit={e=>{e.preventDefault();const clean=draft.trim();if(submitSearch)submitSearch(clean,source);else setQuery(clean);}} onBlur={()=>setTimeout(()=>setPreview([]),200)}><Search size={20}/><input value={draft} onChange={e=>setDraft(e.target.value)} placeholder="Search titles, adventures, worlds..." aria-label="Search titles" autoComplete="off"/><button className="btn primary" type="submit">Search <ArrowRight size={15}/></button>{(preview.length>0||previewLoading)&&draft.trim()&&draft.trim()!==query&&<div className="search-preview"><div className="search-preview-head"><span>{previewLoading?'Searching…':`${preview.length} ${preview.length===1?'match':'matches'}`}</span></div><div className="search-preview-list">{preview.slice(0,6).map(item=>(<button key={identity(item)} type="button" className="search-preview-item" onMouseDown={e=>{e.preventDefault();setDraft(item.title);if(submitSearch)submitSearch(item.title,source);else{setQuery(item.title);}}}><div className="search-preview-cover"><Cover item={item}/></div><span className="search-preview-title">{item.title}</span><small>{sourceName(item.source)}</small></button>))}</div><button type="button" className="search-preview-seeall" onMouseDown={e=>{e.preventDefault();const clean=draft.trim();if(submitSearch)submitSearch(clean,source);else setQuery(clean);}}>See all results <ArrowRight size={13}/></button></div>}</form>
@@ -733,7 +735,7 @@ function DetailPage({item, openEpisode, has, toggle, organize, back, history, re
   const detail=state.detail || item;
   const detailGenres=genreList(detail);
   const orderedEpisodes=useMemo(()=>chronologicalEpisodes(state.detail?.episodes||[]),[state.detail]);
-  const episodes=useMemo(()=>{ let sorted=order==='newest'?[...orderedEpisodes].reverse():orderedEpisodes;if(filter)sorted=sorted.filter(e=>`${e.number} ${e.title}`.toLowerCase().includes(filter.toLowerCase()));if(epFilter!=='all')sorted=sorted.filter(e=>{const t=(e.type||e.kind||'').toLowerCase();if(epFilter==='sub')return t.includes('sub')||!t;if(epFilter==='ona')return t.includes('ona');if(epFilter==='movie')return t.includes('movie');return true;});return sorted; },[orderedEpisodes,order,filter,epFilter]);
+  const episodes=useMemo(()=>{ let sorted=order==='newest'?[...orderedEpisodes].reverse():orderedEpisodes;if(filter)sorted=sorted.filter(e=>`${e.number} ${e.title}`.toLowerCase().includes(filter.toLowerCase()));if(epFilter!=='all')sorted=sorted.filter(e=>{if(epFilter==='sub')return e.sub!==false;const t=(e.type||e.kind||detail?.type||'').toLowerCase();if(epFilter==='ona')return t.includes('ona');if(epFilter==='movie')return t.includes('movie');return true;});return sorted; },[orderedEpisodes,order,filter,epFilter,detail?.type]);
   const effectiveWatched=useMemo(()=>{
     const set=new Set(watched || []);
     if(watchedNumbers?.size) {
@@ -750,7 +752,7 @@ function DetailPage({item, openEpisode, has, toggle, organize, back, history, re
   const nextUnwatched=firstUnwatchedEpisode(orderedEpisodes,effectiveWatched);
   const personalMeta=libraryMetaFor(libraryMeta,detail);
   const smartOn=!!smartEnabled&&!!smartSelection?.selected;
-  const similar=useMemo(()=>similarTitles(detail,similarCandidates,{},{limit:12,excludeLibrary:false,excludeWatched:false}),[detail,similarCandidates]);
+  const similar=useMemo(()=>similarTitles(detail,hideNsfw?similarCandidates.filter(c=>!isNsfw(c)):similarCandidates,{},{limit:12,excludeLibrary:false,excludeWatched:false}),[detail,similarCandidates,hideNsfw]);
   const shareSeriesCard=()=>{
     if(!saveShareCard)return;
     const stats=[
