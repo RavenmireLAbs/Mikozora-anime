@@ -75,6 +75,7 @@ jobs:
           name: Mikozora-Windows
           path: desktop/dist/*.exe
           if-no-files-found: error
+          retention-days: 7
       - name: Attach the executables to the GitHub release
         if: github.event_name == 'release' || inputs.release_tag != ''
         env:
