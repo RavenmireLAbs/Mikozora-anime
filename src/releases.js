@@ -1,13 +1,20 @@
 // Keep this version in sync with package.json and android/app/build.gradle.
 // Append a new entry at the front for each release; the app shows only that newest entry.
-export const APP_VERSION = '0.36.13';
+export const APP_VERSION = '0.36.14';
 export const EXPERIENCE_KEY = 'moku.startup.v1';
 export const LEGACY_KEYS = ['moku.library.v1', 'moku.history.v1', 'moku.collections.v1'];
 
 export const RELEASES = [
   {
-    version: '0.36.13',
+    version: '0.36.14',
     label: 'LATEST UPDATE',
+    entries: [
+      { title: 'Streamlined Settings layout', description: 'Merged related Privacy & Content and Downloads settings into unified sections for a cleaner, shorter Settings page.' },
+    ],
+  },
+  {
+    version: '0.36.13',
+    label: 'PREVIOUS UPDATE',
     entries: [
       { title: 'Fixes across filters, notifications, and playback', description: 'Fixed inbox alert-mode notifications, Browse pagination/typeahead, Detail episode filters, Hide NSFW enforcement, HLS subtitle selection, and 10-point score imports.' },
     ],
